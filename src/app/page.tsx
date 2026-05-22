@@ -1,65 +1,133 @@
-import Image from "next/image";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth, signOut } from "@/auth";
+import { db } from "@/db";
+import { tenants, deployments } from "@/db/schema";
+import { eq, desc } from "drizzle-orm";
 
-export default function Home() {
+export default async function DashboardPage() {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/signin");
+
+  const myTenants = await db
+    .select()
+    .from(tenants)
+    .where(eq(tenants.ownerUserId, session.user.id))
+    .orderBy(desc(tenants.createdAt));
+
+  const recentDeploys = myTenants.length
+    ? await db
+        .select()
+        .from(deployments)
+        .orderBy(desc(deployments.startedAt))
+        .limit(10)
+    : [];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="mx-auto max-w-5xl px-6 py-10">
+      <header className="flex items-center justify-between border-b pb-4 mb-8">
+        <div>
+          <h1 className="text-2xl font-semibold">AI Chatbot Platform</h1>
+          <p className="text-sm text-gray-500">
+            Signed in as {session.user.email}
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        <div className="flex gap-3">
+          <Link
+            href="/tenants/new"
+            className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            Deploy new tenant
+          </Link>
+          <form
+            action={async () => {
+              "use server";
+              await signOut({ redirectTo: "/signin" });
+            }}
           >
-            Documentation
-          </a>
+            <button
+              type="submit"
+              className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
-      </main>
-    </div>
+      </header>
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-lg font-medium">Your tenants</h2>
+        {myTenants.length === 0 ? (
+          <p className="rounded border border-dashed p-6 text-sm text-gray-500">
+            No tenants yet. Click <span className="font-medium">Deploy new tenant</span> to provision a chatbot stack into a customer AWS account.
+          </p>
+        ) : (
+          <ul className="divide-y rounded border">
+            {myTenants.map((t) => (
+              <li key={t.id} className="flex items-center justify-between p-4">
+                <div>
+                  <div className="font-medium">{t.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {t.slug} · AWS {t.awsAccountId} · {t.awsRegion} · v{t.chatbotVersion}
+                  </div>
+                </div>
+                <Link
+                  href={`/tenants/${t.id}`}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  View
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-medium">Recent deployments</h2>
+        {recentDeploys.length === 0 ? (
+          <p className="text-sm text-gray-500">No deployments yet.</p>
+        ) : (
+          <ul className="divide-y rounded border">
+            {recentDeploys.map((d) => (
+              <li key={d.id} className="flex items-center justify-between p-4 text-sm">
+                <div>
+                  <span className="font-mono text-xs text-gray-500">{d.id.slice(0, 8)}</span>
+                  <span className="ml-3">v{d.chatbotVersion}</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <StatusPill status={d.status} />
+                  {d.githubRunUrl && (
+                    <a
+                      href={d.githubRunUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      Logs
+                    </a>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    pending: "bg-gray-100 text-gray-700",
+    running: "bg-blue-100 text-blue-700",
+    succeeded: "bg-green-100 text-green-700",
+    failed: "bg-red-100 text-red-700",
+    cancelled: "bg-yellow-100 text-yellow-800",
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs ${styles[status] ?? styles.pending}`}>
+      {status}
+    </span>
   );
 }

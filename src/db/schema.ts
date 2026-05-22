@@ -1,0 +1,124 @@
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  pgEnum,
+  jsonb,
+  integer,
+  primaryKey,
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import type { AdapterAccountType } from "next-auth/adapters";
+
+export const deploymentStatusEnum = pgEnum("deployment_status", [
+  "pending",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+]);
+
+export const tenants = pgTable("tenants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+
+  awsAccountId: text("aws_account_id").notNull(),
+  awsRegion: text("aws_region").notNull().default("us-east-1"),
+  deploymentRoleArn: text("deployment_role_arn").notNull(),
+
+  domain: text("domain"),
+  chatbotVersion: text("chatbot_version").notNull().default("latest"),
+
+  config: jsonb("config").$type<Record<string, unknown>>().default({}),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const deployments = pgTable("deployments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+
+  status: deploymentStatusEnum("status").notNull().default("pending"),
+  chatbotVersion: text("chatbot_version").notNull(),
+
+  githubRunId: text("github_run_id"),
+  githubRunUrl: text("github_run_url"),
+
+  triggeredByUserId: text("triggered_by_user_id")
+    .notNull()
+    .references(() => users.id),
+
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+
+  errorMessage: text("error_message"),
+});
+
+export const users = pgTable("users", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name"),
+  email: text("email").unique(),
+  emailVerified: timestamp("email_verified", { withTimezone: true }),
+  image: text("image"),
+});
+
+export const accounts = pgTable(
+  "accounts",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").$type<AdapterAccountType>().notNull(),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: text("token_type"),
+    scope: text("scope"),
+    id_token: text("id_token"),
+    session_state: text("session_state"),
+  },
+  (account) => [primaryKey({ columns: [account.provider, account.providerAccountId] })],
+);
+
+export const sessions = pgTable("sessions", {
+  sessionToken: text("session_token").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expires: timestamp("expires", { withTimezone: true }).notNull(),
+});
+
+export const verificationTokens = pgTable(
+  "verification_tokens",
+  {
+    identifier: text("identifier").notNull(),
+    token: text("token").notNull(),
+    expires: timestamp("expires", { withTimezone: true }).notNull(),
+  },
+  (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })],
+);
+
+export const tenantsRelations = relations(tenants, ({ many, one }) => ({
+  deployments: many(deployments),
+  owner: one(users, { fields: [tenants.ownerUserId], references: [users.id] }),
+}));
+
+export const deploymentsRelations = relations(deployments, ({ one }) => ({
+  tenant: one(tenants, { fields: [deployments.tenantId], references: [tenants.id] }),
+  triggeredBy: one(users, {
+    fields: [deployments.triggeredByUserId],
+    references: [users.id],
+  }),
+}));
