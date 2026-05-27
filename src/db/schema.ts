@@ -19,6 +19,11 @@ export const deploymentStatusEnum = pgEnum("deployment_status", [
   "cancelled",
 ]);
 
+export const llmProviderEnum = pgEnum("llm_provider", [
+  "openai",
+  "anthropic",
+]);
+
 export const tenants = pgTable("tenants", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -31,8 +36,18 @@ export const tenants = pgTable("tenants", {
   awsRegion: text("aws_region").notNull().default("us-east-1"),
   deploymentRoleArn: text("deployment_role_arn").notNull(),
 
+  s3DocsBucket: text("s3_docs_bucket").notNull(),
+  s3DocsPrefix: text("s3_docs_prefix"),
+
+  llmProvider: llmProviderEnum("llm_provider").notNull(),
+  llmApiKeyEncrypted: text("llm_api_key_encrypted").notNull(),
+  llmSecretArn: text("llm_secret_arn"),
+
   domain: text("domain"),
   chatbotVersion: text("chatbot_version").notNull().default("latest"),
+
+  albDnsName: text("alb_dns_name"),
+  chatbotUrl: text("chatbot_url"),
 
   config: jsonb("config").$type<Record<string, unknown>>().default({}),
 

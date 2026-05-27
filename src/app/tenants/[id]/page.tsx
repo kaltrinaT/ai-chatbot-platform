@@ -37,12 +37,35 @@ export default async function TenantDetailPage({
       <h1 className="mt-4 text-2xl font-semibold">{tenant.name}</h1>
       <p className="text-sm text-gray-500">{tenant.slug}</p>
 
+      {tenant.chatbotUrl ? (
+        <a
+          href={tenant.chatbotUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-6 block rounded border border-green-200 bg-green-50 p-4 text-sm hover:bg-green-100"
+        >
+          <div className="text-xs font-medium uppercase tracking-wide text-green-700">
+            Chatbot live
+          </div>
+          <div className="mt-1 font-mono text-green-900">{tenant.chatbotUrl} ↗</div>
+        </a>
+      ) : (
+        <div className="mt-6 rounded border border-dashed p-4 text-sm text-gray-500">
+          Chatbot URL will appear here once the first deployment succeeds.
+        </div>
+      )}
+
       <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 rounded border p-4 text-sm">
         <Row label="AWS account" value={tenant.awsAccountId} />
         <Row label="Region" value={tenant.awsRegion} />
         <Row label="Deployment role" value={tenant.deploymentRoleArn} mono />
+        <Row label="S3 docs bucket" value={tenant.s3DocsBucket} />
+        <Row label="S3 prefix" value={tenant.s3DocsPrefix ?? "—"} />
+        <Row label="LLM provider" value={tenant.llmProvider} />
+        <Row label="LLM secret ARN" value={tenant.llmSecretArn ?? "(pending)"} mono />
         <Row label="Chatbot version" value={tenant.chatbotVersion} />
         <Row label="Domain" value={tenant.domain ?? "—"} />
+        <Row label="ALB DNS" value={tenant.albDnsName ?? "—"} mono />
         <Row label="Created" value={tenant.createdAt.toISOString()} />
       </dl>
 

@@ -17,6 +17,23 @@ export async function triggerDeployment({
   const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
   if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
 
+  const owner = process.env.CHATBOT_REPO_OWNER!;
+  const repo = process.env.CHATBOT_REPO_NAME!;
+  const workflowId = process.env.CHATBOT_DEPLOY_WORKFLOW ?? "deploy-tenant.yml";
+  const ref = process.env.CHATBOT_DEPLOY_REF ?? "main";
+
+  const imageBase = process.env.PLATFORM_CHATBOT_IMAGE_URI;
+  if (!imageBase) {
+    throw new Error(
+      "PLATFORM_CHATBOT_IMAGE_URI is not set. Should be the source image URI in your ECR, without a tag (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/chatbot).",
+    );
+  }
+  if (!tenant.llmSecretArn) {
+    throw new Error(
+      `Tenant ${tenant.id} has no llmSecretArn — the secret wasn't written to the client's Secrets Manager during onboarding.`,
+    );
+  }
+
   const [deployment] = await db
     .insert(deployments)
     .values({
@@ -26,11 +43,6 @@ export async function triggerDeployment({
       status: "pending",
     })
     .returning();
-
-  const owner = process.env.CHATBOT_REPO_OWNER!;
-  const repo = process.env.CHATBOT_REPO_NAME!;
-  const workflowId = process.env.CHATBOT_DEPLOY_WORKFLOW ?? "deploy-tenant.yml";
-  const ref = process.env.CHATBOT_DEPLOY_REF ?? "main";
 
   const octokit = new Octokit({ auth: process.env.GITHUB_PAT! });
 
@@ -48,6 +60,11 @@ export async function triggerDeployment({
         deployment_role_arn: tenant.deploymentRoleArn,
         chatbot_version: chatbotVersion,
         domain: tenant.domain ?? "",
+        s3_docs_bucket: tenant.s3DocsBucket,
+        s3_docs_prefix: tenant.s3DocsPrefix ?? "",
+        llm_provider: tenant.llmProvider,
+        llm_secret_arn: tenant.llmSecretArn,
+        your_ecr_image: `${imageBase}:${chatbotVersion}`,
       },
     });
 

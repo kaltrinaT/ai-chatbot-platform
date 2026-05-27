@@ -63,6 +63,42 @@ export default async function NewTenantPage() {
           placeholder="chat.acme.com"
         />
 
+        <hr className="my-2 border-gray-200" />
+        <h2 className="text-sm font-semibold text-gray-700">
+          Documents &amp; LLM
+        </h2>
+
+        <Field
+          label="S3 documents bucket"
+          name="s3DocsBucket"
+          placeholder="acme-chatbot-docs"
+          hint="Bucket in the customer account the chatbot will read documents from."
+          required
+        />
+        <Field
+          label="S3 prefix (optional)"
+          name="s3DocsPrefix"
+          placeholder="knowledge-base/"
+          hint="Restrict the chatbot to documents under this prefix."
+        />
+        <SelectField
+          label="LLM provider"
+          name="llmProvider"
+          options={[
+            { value: "openai", label: "OpenAI" },
+            { value: "anthropic", label: "Anthropic" },
+          ]}
+          required
+        />
+        <Field
+          label="LLM API key"
+          name="llmApiKey"
+          type="password"
+          placeholder="sk-..."
+          hint="Encrypted at rest, written to the customer's AWS Secrets Manager at deploy."
+          required
+        />
+
         <div className="flex gap-3 pt-2">
           <button
             type="submit"
@@ -90,6 +126,7 @@ function Field({
   required,
   defaultValue,
   pattern,
+  type,
 }: {
   label: string;
   name: string;
@@ -98,18 +135,57 @@ function Field({
   required?: boolean;
   defaultValue?: string;
   pattern?: string;
+  type?: string;
 }) {
   return (
     <label className="block">
       <span className="text-sm font-medium">{label}</span>
       <input
         name={name}
+        type={type ?? "text"}
         placeholder={placeholder}
         required={required}
         defaultValue={defaultValue}
         pattern={pattern}
+        autoComplete={type === "password" ? "off" : undefined}
         className="mt-1 block w-full rounded-md border px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
+      {hint && <span className="mt-1 block text-xs text-gray-500">{hint}</span>}
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  name,
+  options,
+  hint,
+  required,
+}: {
+  label: string;
+  name: string;
+  options: { value: string; label: string }[];
+  hint?: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium">{label}</span>
+      <select
+        name={name}
+        required={required}
+        defaultValue=""
+        className="mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus:border-black focus:outline-none"
+      >
+        <option value="" disabled>
+          Select…
+        </option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
       {hint && <span className="mt-1 block text-xs text-gray-500">{hint}</span>}
     </label>
   );

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { timingSafeEqual } from "crypto";
 import { db } from "@/db";
-import { deployments } from "@/db/schema";
+import { deployments, tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 const StatusUpdate = z.object({
@@ -10,6 +10,8 @@ const StatusUpdate = z.object({
   githubRunId: z.string().optional(),
   githubRunUrl: z.string().url().optional(),
   errorMessage: z.string().optional(),
+  albDnsName: z.string().optional(),
+  chatbotUrl: z.string().url().optional(),
 });
 
 function authorized(req: Request): boolean {
@@ -53,6 +55,17 @@ export async function POST(
 
   if (!updated) {
     return NextResponse.json({ error: "deployment not found" }, { status: 404 });
+  }
+
+  if (parsed.data.status === "succeeded" && (parsed.data.albDnsName || parsed.data.chatbotUrl)) {
+    await db
+      .update(tenants)
+      .set({
+        ...(parsed.data.albDnsName ? { albDnsName: parsed.data.albDnsName } : {}),
+        ...(parsed.data.chatbotUrl ? { chatbotUrl: parsed.data.chatbotUrl } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(tenants.id, updated.tenantId));
   }
 
   return NextResponse.json({ ok: true });
