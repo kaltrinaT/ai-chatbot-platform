@@ -1,0 +1,177 @@
+name: Deploy tenant chatbot
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        required: true
+        type: string
+      tenant_slug:
+        required: true
+        type: string
+      aws_account_id:
+        required: true
+        type: string
+      aws_region:
+        required: true
+        type: string
+      deployment_role_arn:
+        required: true
+        type: string
+      chatbot_version:
+        required: true
+        type: string
+      domain:
+        required: false
+        type: string
+        default: ""
+      s3_docs_bucket:
+        required: true
+        type: string
+      s3_docs_prefix:
+        required: false
+        type: string
+        default: ""
+      llm_provider:
+        required: true
+        type: string
+      llm_secret_arn:
+        required: true
+        type: string
+      your_ecr_image:
+        required: true
+        type: string
+        description: "Source image URI in the platform's ECR (with tag)"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────────────
+      # 1. Pull source image from the PLATFORM's ECR
+      # ─────────────────────────────────────────────────────────────
+      - name: Configure AWS credentials (platform — for source ECR read)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Pull source image
+        run: |
+          SOURCE_REGISTRY=$(echo "${{ inputs.your_ecr_image }}" | cut -d/ -f1)
+          aws ecr get-login-password --region ${{ inputs.aws_region }} \
+            | docker login --username AWS --password-stdin "$SOURCE_REGISTRY"
+          docker pull "${{ inputs.your_ecr_image }}"
+
+      # ─────────────────────────────────────────────────────────────
+      # 2. Assume client deployment role, push image to client ECR
+      # ─────────────────────────────────────────────────────────────
+      - name: Configure AWS credentials (client — assume tenant role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.deployment_role_arn }}
+          role-session-name: deploy-${{ inputs.tenant_slug }}-${{ github.run_id }}
+          role-duration-seconds: 3600
+
+      - name: Replicate image to client ECR
+        id: client_image
+        run: |
+          REPO_NAME="${{ inputs.tenant_slug }}/chatbot"
+          aws ecr describe-repositories --repository-names "$REPO_NAME" \
+            --region ${{ inputs.aws_region }} \
+            || aws ecr create-repository --repository-name "$REPO_NAME" \
+                 --region ${{ inputs.aws_region }} \
+                 --image-scanning-configuration scanOnPush=true
+
+          CLIENT_REGISTRY="${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com"
+          CLIENT_URI="$CLIENT_REGISTRY/$REPO_NAME:${{ inputs.chatbot_version }}"
+
+          aws ecr get-login-password --region ${{ inputs.aws_region }} \
+            | docker login --username AWS --password-stdin "$CLIENT_REGISTRY"
+          docker tag "${{ inputs.your_ecr_image }}" "$CLIENT_URI"
+          docker push "$CLIENT_URI"
+
+          echo "uri=$CLIENT_URI" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
+      # 3. Terraform apply
+      # ─────────────────────────────────────────────────────────────
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Terraform init
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ secrets.TF_STATE_REGION }}" \
+            -backend-config="key=tenants/${{ inputs.tenant_slug }}.tfstate" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform apply
+        working-directory: infra/terraform
+        run: |
+          terraform apply -auto-approve \
+            -var "tenant_slug=${{ inputs.tenant_slug }}" \
+            -var "aws_region=${{ inputs.aws_region }}" \
+            -var "image_uri=${{ steps.client_image.outputs.uri }}" \
+            -var "s3_docs_bucket=${{ inputs.s3_docs_bucket }}" \
+            -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
+            -var "llm_provider=${{ inputs.llm_provider }}" \
+            -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
+            -var "domain=${{ inputs.domain }}"
+
+      - name: Read Terraform outputs
+        id: tf
+        working-directory: infra/terraform
+        run: |
+          echo "alb_dns_name=$(terraform output -raw alb_dns_name)" >> "$GITHUB_OUTPUT"
+          echo "chatbot_url=$(terraform output -raw chatbot_url)" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
+      # 4. Callback to platform
+      # ─────────────────────────────────────────────────────────────
+      - name: Notify platform — success
+        if: success()
+        run: |
+          curl -sS -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "succeeded",
+            "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
+            "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+
+      - name: Notify platform — failure
+        if: failure()
+        run: |
+          curl -sS -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "failed",
+            "errorMessage": "Workflow run ${{ github.run_id }} failed; see GitHub Actions logs.",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
