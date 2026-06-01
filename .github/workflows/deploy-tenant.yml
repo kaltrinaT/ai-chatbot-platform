@@ -83,6 +83,7 @@ jobs:
           role-to-assume: ${{ inputs.deployment_role_arn }}
           role-session-name: deploy-${{ inputs.tenant_slug }}-${{ github.run_id }}
           role-duration-seconds: 3600
+          role-skip-session-tagging: true
 
       - name: Replicate image to client ECR
         id: client_image
