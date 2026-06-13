@@ -56,17 +56,34 @@ export default async function TenantDetailPage({
       )}
 
       <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 rounded border p-4 text-sm">
-        <Row label="AWS account" value={tenant.awsAccountId} />
-        <Row label="Region" value={tenant.awsRegion} />
-        <Row label="Deployment role" value={tenant.deploymentRoleArn} mono />
-        <Row label="S3 docs bucket" value={tenant.s3DocsBucket} />
-        <Row label="S3 prefix" value={tenant.s3DocsPrefix ?? "—"} />
+        <Row label="Cloud" value={tenant.cloudProvider === "azure" ? "Microsoft Azure" : "Amazon Web Services"} />
         <Row label="LLM provider" value={tenant.llmProvider} />
-        <Row label="LLM secret ARN" value={tenant.llmSecretArn ?? "(pending)"} mono />
         <Row label="Chatbot version" value={tenant.chatbotVersion} />
         <Row label="Domain" value={tenant.domain ?? "—"} />
-        <Row label="ALB DNS" value={tenant.albDnsName ?? "—"} mono />
         <Row label="Created" value={tenant.createdAt.toISOString()} />
+
+        {tenant.cloudProvider === "aws" ? (
+          <>
+            <Row label="AWS account" value={tenant.awsAccountId ?? "—"} />
+            <Row label="Region" value={tenant.awsRegion ?? "—"} />
+            <Row label="Deployment role" value={tenant.deploymentRoleArn ?? "—"} mono />
+            <Row label="S3 docs bucket" value={tenant.s3DocsBucket ?? "—"} />
+            <Row label="S3 prefix" value={tenant.s3DocsPrefix ?? "—"} />
+            <Row label="LLM secret ARN" value={tenant.llmSecretArn ?? "(pending)"} mono />
+            <Row label="ALB DNS" value={tenant.albDnsName ?? "—"} mono />
+          </>
+        ) : (
+          <>
+            <Row label="Subscription ID" value={tenant.azureSubscriptionId ?? "—"} mono />
+            <Row label="Azure region" value={tenant.azureRegion ?? "—"} />
+            <Row label="Resource group" value={tenant.azureResourceGroup ?? "—"} />
+            <Row label="Key Vault" value={tenant.azureKeyVaultName ?? "—"} />
+            <Row label="Storage account" value={tenant.azureStorageAccount ?? "—"} />
+            <Row label="Storage container" value={tenant.azureStorageContainer ?? "—"} />
+            <Row label="LLM secret URI" value={tenant.llmSecretArn ?? "(pending)"} mono />
+            <Row label="Container App FQDN" value={tenant.albDnsName ?? "—"} mono />
+          </>
+        )}
       </dl>
 
       <h2 className="mt-8 mb-3 text-lg font-medium">Deployments</h2>

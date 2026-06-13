@@ -1,4 +1,4 @@
-name: Deploy tenant chatbot
+name: Deploy tenant chatbot (Azure)
 
 on:
   workflow_dispatch:
@@ -9,15 +9,36 @@ on:
       tenant_slug:
         required: true
         type: string
-      aws_account_id:
+      azure_subscription_id:
         required: true
         type: string
-      aws_region:
+      azure_tenant_id:
         required: true
         type: string
-      deployment_role_arn:
+      azure_client_id:
         required: true
         type: string
+      azure_client_secret:
+        required: true
+        type: string
+      azure_region:
+        required: true
+        type: string
+        default: "eastus"
+      azure_storage_account:
+        required: true
+        type: string
+      azure_storage_container:
+        required: false
+        type: string
+        default: ""
+      llm_provider:
+        required: true
+        type: string
+      llm_key_vault_uri:
+        required: true
+        type: string
+        description: "URI of the LLM API key secret in the customer's Key Vault"
       chatbot_version:
         required: true
         type: string
@@ -25,20 +46,7 @@ on:
         required: false
         type: string
         default: ""
-      s3_docs_bucket:
-        required: true
-        type: string
-      s3_docs_prefix:
-        required: false
-        type: string
-        default: ""
-      llm_provider:
-        required: true
-        type: string
-      llm_secret_arn:
-        required: true
-        type: string
-      your_ecr_image:
+      source_ecr_image:
         required: true
         type: string
         description: "Source image URI in the platform's ECR (with tag)"
@@ -57,97 +65,118 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # 1. Pull source image from the PLATFORM's ECR
       # ─────────────────────────────────────────────────────────────
-      - name: Configure AWS credentials (platform — for source ECR read)
+      - name: Configure AWS credentials (pull source image from platform ECR)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws_region }}
+          aws-region: us-east-1
 
-      - name: Pull source image
+      - name: Pull source image from ECR
         run: |
-          SOURCE_REGISTRY=$(echo "${{ inputs.your_ecr_image }}" | cut -d/ -f1)
-          aws ecr get-login-password --region ${{ inputs.aws_region }} \
+          SOURCE_REGISTRY=$(echo "${{ inputs.source_ecr_image }}" | cut -d/ -f1)
+          aws ecr get-login-password --region us-east-1 \
             | docker login --username AWS --password-stdin "$SOURCE_REGISTRY"
-          docker pull "${{ inputs.your_ecr_image }}"
+          docker pull "${{ inputs.source_ecr_image }}"
 
       # ─────────────────────────────────────────────────────────────
-      # 2. Assume client deployment role, push image to client ECR
+      # 2. Login to Azure, push image to tenant ACR
       # ─────────────────────────────────────────────────────────────
-      - name: Configure AWS credentials (client — assume tenant role)
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Azure login
+        uses: azure/login@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws_region }}
-          role-to-assume: ${{ inputs.deployment_role_arn }}
-          role-session-name: deploy-${{ inputs.tenant_slug }}-${{ github.run_id }}
-          role-duration-seconds: 3600
-          role-skip-session-tagging: true
+          creds: >-
+            {
+              "clientId": "${{ inputs.azure_client_id }}",
+              "clientSecret": "${{ inputs.azure_client_secret }}",
+              "subscriptionId": "${{ inputs.azure_subscription_id }}",
+              "tenantId": "${{ inputs.azure_tenant_id }}"
+            }
 
-      - name: Replicate image to client ECR
-        id: client_image
+      - name: Create ACR if not exists and push image
+        id: acr
         run: |
-          REPO_NAME="${{ inputs.tenant_slug }}/chatbot"
-          aws ecr describe-repositories --repository-names "$REPO_NAME" \
-            --region ${{ inputs.aws_region }} \
-            || aws ecr create-repository --repository-name "$REPO_NAME" \
-                 --region ${{ inputs.aws_region }} \
-                 --image-scanning-configuration scanOnPush=true
+          ACR_NAME="chatbot$(echo "${{ inputs.tenant_slug }}" | tr -d '-' | cut -c1-44)"
+          RG_NAME="chatbot-${{ inputs.tenant_slug }}"
 
-          CLIENT_REGISTRY="${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com"
-          CLIENT_URI="$CLIENT_REGISTRY/$REPO_NAME:${{ inputs.chatbot_version }}"
+          # Create resource group if not exists
+          az group create --name "$RG_NAME" --location "${{ inputs.azure_region }}" --output none || true
 
-          aws ecr get-login-password --region ${{ inputs.aws_region }} \
-            | docker login --username AWS --password-stdin "$CLIENT_REGISTRY"
-          docker tag "${{ inputs.your_ecr_image }}" "$CLIENT_URI"
-          docker push "$CLIENT_URI"
+          # Create ACR if not exists
+          az acr create \
+            --name "$ACR_NAME" \
+            --resource-group "$RG_NAME" \
+            --sku Basic \
+            --admin-enabled true \
+            --location "${{ inputs.azure_region }}" \
+            --output none 2>/dev/null || true
 
-          echo "uri=$CLIENT_URI" >> "$GITHUB_OUTPUT"
+          ACR_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
+
+          docker login "$ACR_SERVER" --username "$ACR_NAME" --password "$ACR_PASSWORD"
+
+          DEST_URI="$ACR_SERVER/chatbot:${{ inputs.chatbot_version }}"
+          docker tag "${{ inputs.source_ecr_image }}" "$DEST_URI"
+          docker push "$DEST_URI"
+
+          echo "acr_server=$ACR_SERVER" >> "$GITHUB_OUTPUT"
+          echo "image_uri=$DEST_URI"    >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────────────────────
-      # 3. Terraform apply
+      # 3. Retrieve LLM API key from customer Key Vault
       # ─────────────────────────────────────────────────────────────
-      - name: Ensure ECS service-linked role exists
+      - name: Retrieve LLM API key from Key Vault
+        id: secret
         run: |
-          aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com 2>&1 \
-            | grep -qE "already exists|NoSuchEntity" || true
+          LLM_API_KEY=$(az keyvault secret show \
+            --id "${{ inputs.llm_key_vault_uri }}" \
+            --query value -o tsv)
+          echo "::add-mask::$LLM_API_KEY"
+          echo "llm_api_key=$LLM_API_KEY" >> "$GITHUB_OUTPUT"
 
+      # ─────────────────────────────────────────────────────────────
+      # 4. Terraform apply
+      # ─────────────────────────────────────────────────────────────
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
       - name: Terraform init
-        working-directory: infra/terraform
+        working-directory: infra/terraform/azure
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="region=${{ secrets.TF_STATE_REGION }}" \
-            -backend-config="key=tenants/${{ inputs.tenant_slug }}.tfstate" \
+            -backend-config="key=tenants/azure/${{ inputs.tenant_slug }}.tfstate" \
             -backend-config="encrypt=true"
 
       - name: Terraform apply
-        working-directory: infra/terraform
+        working-directory: infra/terraform/azure
         run: |
           terraform apply -auto-approve \
             -var "tenant_slug=${{ inputs.tenant_slug }}" \
-            -var "aws_region=${{ inputs.aws_region }}" \
-            -var "image_uri=${{ steps.client_image.outputs.uri }}" \
-            -var "s3_docs_bucket=${{ inputs.s3_docs_bucket }}" \
-            -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
+            -var "azure_subscription_id=${{ inputs.azure_subscription_id }}" \
+            -var "azure_tenant_id=${{ inputs.azure_tenant_id }}" \
+            -var "azure_client_id=${{ inputs.azure_client_id }}" \
+            -var "azure_client_secret=${{ inputs.azure_client_secret }}" \
+            -var "azure_region=${{ inputs.azure_region }}" \
+            -var "image_uri=${{ steps.acr.outputs.image_uri }}" \
+            -var "azure_storage_account=${{ inputs.azure_storage_account }}" \
+            -var "azure_storage_container=${{ inputs.azure_storage_container }}" \
             -var "llm_provider=${{ inputs.llm_provider }}" \
-            -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
+            -var "llm_api_key=${{ steps.secret.outputs.llm_api_key }}" \
             -var "domain=${{ inputs.domain }}"
 
       - name: Read Terraform outputs
         id: tf
-        working-directory: infra/terraform
+        working-directory: infra/terraform/azure
         run: |
-          echo "alb_dns_name=$(terraform output -raw alb_dns_name)" >> "$GITHUB_OUTPUT"
-          echo "chatbot_url=$(terraform output -raw chatbot_url)" >> "$GITHUB_OUTPUT"
+          echo "chatbot_url=$(terraform output -raw chatbot_url)"             >> "$GITHUB_OUTPUT"
+          echo "container_app_fqdn=$(terraform output -raw container_app_fqdn)" >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────────────────────
-      # 4. Callback to platform
+      # 5. Callback to platform
       # ─────────────────────────────────────────────────────────────
       - name: Notify platform — success
         if: success()
@@ -159,8 +188,8 @@ jobs:
             "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
           {
             "status": "succeeded",
-            "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
             "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
+            "albDnsName": "${{ steps.tf.outputs.container_app_fqdn }}",
             "githubRunId": "${{ github.run_id }}",
             "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }

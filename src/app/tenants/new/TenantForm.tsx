@@ -1,63 +1,59 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { createTenantAndDeploy, type FormState } from "./actions";
 
 export default function TenantForm() {
-  const [state, formAction, isPending] = useActionState(
-    createTenantAndDeploy,
-    null
-  );
+  const [state, formAction, isPending] = useActionState(createTenantAndDeploy, null);
+  const [cloud, setCloud] = useState<"aws" | "azure">("aws");
   const errors = state?.errors ?? {};
 
   return (
     <form action={formAction} className="mt-8 space-y-5">
-      <Field
-        label="Tenant name"
-        name="name"
-        placeholder="Acme Corp"
-        required
-        error={errors.name}
-      />
+      {/* Cloud provider selector */}
+      <div>
+        <span className="block text-sm font-medium mb-2">Cloud provider</span>
+        <div className="flex gap-3">
+          {(["aws", "azure"] as const).map((c) => (
+            <label
+              key={c}
+              className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm cursor-pointer ${
+                cloud === c ? "border-black bg-gray-50 font-medium" : "border-gray-200"
+              }`}
+            >
+              <input
+                type="radio"
+                name="cloudProvider"
+                value={c}
+                checked={cloud === c}
+                onChange={() => setCloud(c)}
+                className="sr-only"
+              />
+              {c === "aws" ? "Amazon Web Services" : "Microsoft Azure"}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <hr className="border-gray-200" />
+
+      {/* Shared fields */}
+      <Field label="Tenant name" name="name" placeholder="Acme Corp" required error={errors.name} />
       <Field
         label="Slug"
         name="slug"
-        placeholder="acme"
-        hint="Lowercase letters, numbers, dashes. Used in resource names."
+        placeholder={cloud === "azure" ? "acme (max 18 chars for Azure)" : "acme"}
+        hint={
+          cloud === "azure"
+            ? "3–18 chars, lowercase letters, numbers, hyphens. Azure Key Vault name limit."
+            : "3–32 chars, lowercase letters, numbers, hyphens."
+        }
         required
-        pattern="[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]"
+        pattern={cloud === "azure" ? "[a-z0-9][a-z0-9\\-]{1,16}[a-z0-9]" : "[a-z0-9][a-z0-9\\-]{1,30}[a-z0-9]"}
         minLength={3}
-        maxLength={32}
+        maxLength={cloud === "azure" ? 18 : 32}
         error={errors.slug}
-      />
-      <Field
-        label="Customer AWS account ID"
-        name="awsAccountId"
-        placeholder="123456789012"
-        required
-        pattern="\d{12}"
-        minLength={12}
-        maxLength={12}
-        error={errors.awsAccountId}
-      />
-      <Field
-        label="AWS region"
-        name="awsRegion"
-        placeholder="us-east-1"
-        defaultValue="us-east-1"
-        required
-        pattern="[a-z]{2}-[a-z]+-[0-9]"
-        title="Must be a valid AWS region, e.g. us-east-1"
-        error={errors.awsRegion}
-      />
-      <Field
-        label="Deployment role ARN"
-        name="deploymentRoleArn"
-        placeholder="arn:aws:iam::123456789012:role/ai-chatbot-platform-deployer"
-        hint="The IAM role in the customer account that this platform will assume to run Terraform."
-        required
-        error={errors.deploymentRoleArn}
       />
       <Field
         label="Chatbot version"
@@ -71,32 +67,151 @@ export default function TenantForm() {
         label="Custom domain (optional)"
         name="domain"
         placeholder="chat.acme.com"
-        hint="Leave blank to use the ALB DNS name. No https:// or trailing slash."
+        hint="Leave blank to use the auto-assigned URL. No https:// or trailing slash."
         error={errors.domain}
       />
 
-      <hr className="my-2 border-gray-200" />
-      <h2 className="text-sm font-semibold text-gray-700">
-        Documents &amp; LLM
-      </h2>
+      <hr className="border-gray-200" />
 
-      <Field
-        label="S3 documents bucket"
-        name="s3DocsBucket"
-        placeholder="acme-chatbot-docs"
-        hint="Bucket in the customer account the chatbot will read documents from."
-        required
-        minLength={3}
-        maxLength={63}
-        error={errors.s3DocsBucket}
-      />
-      <Field
-        label="S3 prefix (optional)"
-        name="s3DocsPrefix"
-        placeholder="knowledge-base/"
-        hint="Restrict the chatbot to documents under this prefix. No leading slash."
-        error={errors.s3DocsPrefix}
-      />
+      {/* AWS fields */}
+      {cloud === "aws" && (
+        <section className="space-y-5">
+          <h2 className="text-sm font-semibold text-gray-700">AWS configuration</h2>
+          <Field
+            label="Customer AWS account ID"
+            name="awsAccountId"
+            placeholder="123456789012"
+            required
+            pattern="\d{12}"
+            minLength={12}
+            maxLength={12}
+            error={errors.awsAccountId}
+          />
+          <Field
+            label="AWS region"
+            name="awsRegion"
+            placeholder="us-east-1"
+            defaultValue="us-east-1"
+            required
+            pattern="[a-z]{2}-[a-z]+-[0-9]"
+            title="Must be a valid AWS region, e.g. us-east-1"
+            error={errors.awsRegion}
+          />
+          <Field
+            label="Deployment role ARN"
+            name="deploymentRoleArn"
+            placeholder="arn:aws:iam::123456789012:role/ai-chatbot-platform-deployer"
+            hint="IAM role in the customer account the platform will assume to run Terraform."
+            required
+            error={errors.deploymentRoleArn}
+          />
+          <Field
+            label="S3 documents bucket"
+            name="s3DocsBucket"
+            placeholder="acme-chatbot-docs"
+            hint="Bucket in the customer account the chatbot reads documents from."
+            required
+            minLength={3}
+            maxLength={63}
+            error={errors.s3DocsBucket}
+          />
+          <Field
+            label="S3 prefix (optional)"
+            name="s3DocsPrefix"
+            placeholder="knowledge-base/"
+            hint="Restrict the chatbot to documents under this prefix. No leading slash."
+            error={errors.s3DocsPrefix}
+          />
+        </section>
+      )}
+
+      {/* Azure fields */}
+      {cloud === "azure" && (
+        <section className="space-y-5">
+          <h2 className="text-sm font-semibold text-gray-700">Azure configuration</h2>
+          <Field
+            label="Subscription ID"
+            name="azureSubscriptionId"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            hint="Customer's Azure subscription ID (UUID format)."
+            required
+            error={errors.azureSubscriptionId}
+          />
+          <Field
+            label="Azure AD tenant ID"
+            name="azureTenantId"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            hint="Azure Active Directory tenant ID for the customer's subscription."
+            required
+            error={errors.azureTenantId}
+          />
+          <Field
+            label="Service principal client ID"
+            name="azureClientId"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            hint="Application (client) ID of the service principal with Contributor access."
+            required
+            error={errors.azureClientId}
+          />
+          <Field
+            label="Service principal client secret"
+            name="azureClientSecret"
+            type="password"
+            placeholder="your-client-secret"
+            hint="Encrypted at rest in the platform database."
+            required
+            error={errors.azureClientSecret}
+          />
+          <Field
+            label="Resource group"
+            name="azureResourceGroup"
+            placeholder="acme-chatbot-rg"
+            hint="Existing resource group the service principal has Contributor access to."
+            required
+            error={errors.azureResourceGroup}
+          />
+          <Field
+            label="Azure region"
+            name="azureRegion"
+            placeholder="eastus"
+            defaultValue="eastus"
+            hint="Azure region for all resources (e.g. eastus, westeurope)."
+            required
+            error={errors.azureRegion}
+          />
+          <Field
+            label="Key Vault name"
+            name="azureKeyVaultName"
+            placeholder="acme-chatbot-kv"
+            hint="Existing Key Vault the service principal can write secrets to (3–24 chars)."
+            required
+            minLength={3}
+            maxLength={24}
+            error={errors.azureKeyVaultName}
+          />
+          <Field
+            label="Storage account name"
+            name="azureStorageAccount"
+            placeholder="acmechatbotdocs"
+            hint="Storage account the chatbot reads documents from (3–24 chars, alphanumeric)."
+            required
+            minLength={3}
+            maxLength={24}
+            error={errors.azureStorageAccount}
+          />
+          <Field
+            label="Storage container (optional)"
+            name="azureStorageContainer"
+            placeholder="knowledge-base"
+            hint="Restrict the chatbot to this blob container."
+            error={errors.azureStorageContainer}
+          />
+        </section>
+      )}
+
+      <hr className="border-gray-200" />
+      <h2 className="text-sm font-semibold text-gray-700">LLM</h2>
+
       <SelectField
         label="LLM provider"
         name="llmProvider"
@@ -112,7 +227,11 @@ export default function TenantForm() {
         name="llmApiKey"
         type="password"
         placeholder="sk-..."
-        hint="Encrypted at rest, written to the customer's AWS Secrets Manager at deploy."
+        hint={
+          cloud === "azure"
+            ? "Written to the customer's Azure Key Vault during onboarding."
+            : "Written to the customer's AWS Secrets Manager during onboarding."
+        }
         required
         minLength={10}
         error={errors.llmApiKey}
@@ -126,10 +245,7 @@ export default function TenantForm() {
         >
           {isPending ? "Deploying…" : "Create tenant & deploy"}
         </button>
-        <Link
-          href="/"
-          className="rounded-md border px-5 py-2 text-sm font-medium hover:bg-gray-50"
-        >
+        <Link href="/" className="rounded-md border px-5 py-2 text-sm font-medium hover:bg-gray-50">
           Cancel
         </Link>
       </div>
@@ -138,31 +254,12 @@ export default function TenantForm() {
 }
 
 function Field({
-  label,
-  name,
-  placeholder,
-  hint,
-  required,
-  defaultValue,
-  pattern,
-  title,
-  type,
-  minLength,
-  maxLength,
-  error,
+  label, name, placeholder, hint, required, defaultValue,
+  pattern, title, type, minLength, maxLength, error,
 }: {
-  label: string;
-  name: string;
-  placeholder?: string;
-  hint?: string;
-  required?: boolean;
-  defaultValue?: string;
-  pattern?: string;
-  title?: string;
-  type?: string;
-  minLength?: number;
-  maxLength?: number;
-  error?: string;
+  label: string; name: string; placeholder?: string; hint?: string;
+  required?: boolean; defaultValue?: string; pattern?: string; title?: string;
+  type?: string; minLength?: number; maxLength?: number; error?: string;
 }) {
   return (
     <label className="block">
@@ -192,19 +289,10 @@ function Field({
 }
 
 function SelectField({
-  label,
-  name,
-  options,
-  hint,
-  required,
-  error,
+  label, name, options, hint, required, error,
 }: {
-  label: string;
-  name: string;
-  options: { value: string; label: string }[];
-  hint?: string;
-  required?: boolean;
-  error?: string;
+  label: string; name: string; options: { value: string; label: string }[];
+  hint?: string; required?: boolean; error?: string;
 }) {
   return (
     <label className="block">
@@ -217,13 +305,9 @@ function SelectField({
           error ? "border-red-400" : ""
         }`}
       >
-        <option value="" disabled>
-          Select…
-        </option>
+        <option value="" disabled>Select…</option>
         {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
+          <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
       {error ? (

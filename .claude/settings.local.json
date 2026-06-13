@@ -5,7 +5,8 @@
       "Bash(npm install *)",
       "Bash(git check-ignore *)",
       "Bash(git commit -m ' *)",
-      "Bash(dir c:\\\\Users\\\\Kaltrina\\\\Desktop\\\\MLE\\\\ai-chatbot-platform)"
+      "Bash(dir c:\\\\Users\\\\Kaltrina\\\\Desktop\\\\MLE\\\\ai-chatbot-platform)",
+      "PowerShell(gh run list --workflow=deploy-tenant.yml --limit=5 2>&1)"
     ]
   }
 }

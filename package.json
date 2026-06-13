@@ -16,6 +16,8 @@
     "@auth/drizzle-adapter": "^1.11.2",
     "@aws-sdk/client-secrets-manager": "^3.1053.0",
     "@aws-sdk/client-sts": "^3.1053.0",
+    "@azure/identity": "^4.13.1",
+    "@azure/keyvault-secrets": "^4.11.2",
     "@neondatabase/serverless": "^1.1.0",
     "@octokit/rest": "^22.0.1",
     "drizzle-orm": "^0.45.2",

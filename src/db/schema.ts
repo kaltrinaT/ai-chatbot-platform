@@ -24,6 +24,8 @@ export const llmProviderEnum = pgEnum("llm_provider", [
   "anthropic",
 ]);
 
+export const cloudProviderEnum = pgEnum("cloud_provider", ["aws", "azure"]);
+
 export const tenants = pgTable("tenants", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -32,13 +34,27 @@ export const tenants = pgTable("tenants", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
 
-  awsAccountId: text("aws_account_id").notNull(),
-  awsRegion: text("aws_region").notNull().default("us-east-1"),
-  deploymentRoleArn: text("deployment_role_arn").notNull(),
+  cloudProvider: cloudProviderEnum("cloud_provider").notNull().default("aws"),
 
-  s3DocsBucket: text("s3_docs_bucket").notNull(),
+  // ── AWS ──────────────────────────────────────────────────────────────
+  awsAccountId: text("aws_account_id"),
+  awsRegion: text("aws_region"),
+  deploymentRoleArn: text("deployment_role_arn"),
+  s3DocsBucket: text("s3_docs_bucket"),
   s3DocsPrefix: text("s3_docs_prefix"),
 
+  // ── Azure ─────────────────────────────────────────────────────────────
+  azureSubscriptionId: text("azure_subscription_id"),
+  azureTenantId: text("azure_tenant_id"),
+  azureClientId: text("azure_client_id"),
+  azureClientSecretEncrypted: text("azure_client_secret_encrypted"),
+  azureResourceGroup: text("azure_resource_group"),
+  azureRegion: text("azure_region"),
+  azureStorageAccount: text("azure_storage_account"),
+  azureStorageContainer: text("azure_storage_container"),
+  azureKeyVaultName: text("azure_key_vault_name"),
+
+  // ── Shared ────────────────────────────────────────────────────────────
   llmProvider: llmProviderEnum("llm_provider").notNull(),
   llmApiKeyEncrypted: text("llm_api_key_encrypted").notNull(),
   llmSecretArn: text("llm_secret_arn"),
