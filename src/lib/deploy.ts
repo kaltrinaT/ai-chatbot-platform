@@ -28,10 +28,13 @@ export async function triggerDeployment({
       "PLATFORM_CHATBOT_IMAGE_URI is not set. Should be the source image URI in your ECR, without a tag."
     );
   }
-  if (!tenant.llmSecretArn) {
+  if (tenant.cloudProvider === "aws" && !tenant.llmSecretArn) {
     throw new Error(
       `Tenant ${tenant.id} has no llmSecretArn — the secret was not written during onboarding.`
     );
+  }
+  if (tenant.cloudProvider === "azure" && !tenant.llmApiKeyEncrypted) {
+    throw new Error(`Tenant ${tenant.id} has no encrypted LLM key.`);
   }
 
   const [deployment] = await db
@@ -90,7 +93,6 @@ function buildAwsInputs(
     deployment_role_arn: tenant.deploymentRoleArn!,
     chatbot_version: chatbotVersion,
     domain: tenant.domain ?? "",
-    s3_docs_bucket: tenant.s3DocsBucket!,
     s3_docs_prefix: tenant.s3DocsPrefix ?? "",
     llm_provider: tenant.llmProvider,
     llm_secret_arn: tenant.llmSecretArn!,
@@ -107,6 +109,9 @@ function buildAzureInputs(
   const clientSecret = tenant.azureClientSecretEncrypted
     ? decryptSecret(tenant.azureClientSecretEncrypted)
     : "";
+  const llmApiKey = tenant.llmApiKeyEncrypted
+    ? decryptSecret(tenant.llmApiKeyEncrypted)
+    : "";
 
   return {
     deployment_id: deploymentId,
@@ -116,10 +121,8 @@ function buildAzureInputs(
     azure_client_id: tenant.azureClientId!,
     azure_client_secret: clientSecret,
     azure_region: tenant.azureRegion ?? "eastus",
-    azure_storage_account: tenant.azureStorageAccount!,
-    azure_storage_container: tenant.azureStorageContainer ?? "",
     llm_provider: tenant.llmProvider,
-    llm_key_vault_uri: tenant.llmSecretArn!,
+    llm_api_key: llmApiKey,
     chatbot_version: chatbotVersion,
     domain: tenant.domain ?? "",
     source_ecr_image: `${imageBase}:${chatbotVersion}`,

@@ -50,22 +50,6 @@ variable "azure_region" {
   default     = "eastus"
 }
 
-variable "azure_storage_account" {
-  description = "Storage account name in the customer subscription the chatbot reads documents from."
-  type        = string
-
-  validation {
-    condition     = can(regex("^[a-z0-9]{3,24}$", var.azure_storage_account))
-    error_message = "azure_storage_account must be 3–24 lowercase alphanumeric characters."
-  }
-}
-
-variable "azure_storage_container" {
-  description = "Blob container name inside azure_storage_account. Empty string to allow access to all containers."
-  type        = string
-  default     = ""
-}
-
 variable "image_uri" {
   description = "Full ACR image URI including tag pushed by the workflow."
   type        = string

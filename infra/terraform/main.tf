@@ -167,6 +167,32 @@ resource "aws_cloudwatch_log_group" "this" {
 }
 
 # ──────────────────────────────────────────────────────────────────────
+# S3 — documents bucket created by the platform; client uploads docs here
+# ──────────────────────────────────────────────────────────────────────
+
+resource "aws_s3_bucket" "docs" {
+  bucket = "chatbot-${var.tenant_slug}-docs"
+  tags   = merge(local.common_tags, { Name = "${local.name}-docs" })
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "docs" {
+  bucket = aws_s3_bucket.docs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "docs" {
+  bucket                  = aws_s3_bucket.docs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# ──────────────────────────────────────────────────────────────────────
 # IAM
 # ──────────────────────────────────────────────────────────────────────
 
@@ -219,12 +245,12 @@ resource "aws_iam_role_policy" "task_s3_docs" {
       {
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
-        Resource = "arn:aws:s3:::${var.s3_docs_bucket}"
+        Resource = aws_s3_bucket.docs.arn
       },
       {
         Effect   = "Allow"
         Action   = ["s3:GetObject"]
-        Resource = "arn:aws:s3:::${var.s3_docs_bucket}/${var.s3_docs_prefix}*"
+        Resource = "${aws_s3_bucket.docs.arn}/${var.s3_docs_prefix}*"
       }
     ]
   })
@@ -257,7 +283,7 @@ resource "aws_ecs_task_definition" "this" {
       protocol      = "tcp"
     }]
     environment = [
-      { name = "S3_DOCS_BUCKET", value = var.s3_docs_bucket },
+      { name = "S3_DOCS_BUCKET", value = aws_s3_bucket.docs.bucket },
       { name = "S3_DOCS_PREFIX", value = var.s3_docs_prefix },
       { name = "LLM_PROVIDER", value = var.llm_provider },
       { name = "AWS_REGION", value = var.aws_region },

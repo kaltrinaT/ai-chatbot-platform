@@ -46,7 +46,7 @@ export default function TenantForm() {
         placeholder={cloud === "azure" ? "acme (max 18 chars for Azure)" : "acme"}
         hint={
           cloud === "azure"
-            ? "3–18 chars, lowercase letters, numbers, hyphens. Azure Key Vault name limit."
+            ? "3–18 chars, lowercase letters, numbers, hyphens. Limited by Azure Key Vault naming (created automatically)."
             : "3–32 chars, lowercase letters, numbers, hyphens."
         }
         required
@@ -106,20 +106,10 @@ export default function TenantForm() {
             error={errors.deploymentRoleArn}
           />
           <Field
-            label="S3 documents bucket"
-            name="s3DocsBucket"
-            placeholder="acme-chatbot-docs"
-            hint="Bucket in the customer account the chatbot reads documents from."
-            required
-            minLength={3}
-            maxLength={63}
-            error={errors.s3DocsBucket}
-          />
-          <Field
             label="S3 prefix (optional)"
             name="s3DocsPrefix"
             placeholder="knowledge-base/"
-            hint="Restrict the chatbot to documents under this prefix. No leading slash."
+            hint="Restrict the chatbot to documents under this prefix within the auto-created bucket. No leading slash."
             error={errors.s3DocsPrefix}
           />
         </section>
@@ -163,14 +153,6 @@ export default function TenantForm() {
             error={errors.azureClientSecret}
           />
           <Field
-            label="Resource group"
-            name="azureResourceGroup"
-            placeholder="acme-chatbot-rg"
-            hint="Existing resource group the service principal has Contributor access to."
-            required
-            error={errors.azureResourceGroup}
-          />
-          <Field
             label="Azure region"
             name="azureRegion"
             placeholder="eastus"
@@ -178,33 +160,6 @@ export default function TenantForm() {
             hint="Azure region for all resources (e.g. eastus, westeurope)."
             required
             error={errors.azureRegion}
-          />
-          <Field
-            label="Key Vault name"
-            name="azureKeyVaultName"
-            placeholder="acme-chatbot-kv"
-            hint="Existing Key Vault the service principal can write secrets to (3–24 chars)."
-            required
-            minLength={3}
-            maxLength={24}
-            error={errors.azureKeyVaultName}
-          />
-          <Field
-            label="Storage account name"
-            name="azureStorageAccount"
-            placeholder="acmechatbotdocs"
-            hint="Storage account the chatbot reads documents from (3–24 chars, alphanumeric)."
-            required
-            minLength={3}
-            maxLength={24}
-            error={errors.azureStorageAccount}
-          />
-          <Field
-            label="Storage container (optional)"
-            name="azureStorageContainer"
-            placeholder="knowledge-base"
-            hint="Restrict the chatbot to this blob container."
-            error={errors.azureStorageContainer}
           />
         </section>
       )}

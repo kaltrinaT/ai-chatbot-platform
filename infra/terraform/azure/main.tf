@@ -9,9 +9,10 @@ provider "azurerm" {
 data "azurerm_client_config" "current" {}
 
 locals {
-  name     = "chatbot-${var.tenant_slug}"
-  acr_name = substr(replace("chatbot${var.tenant_slug}", "-", ""), 0, 50)
-  kv_name  = "cb-${var.tenant_slug}-kv"
+  name         = "chatbot-${var.tenant_slug}"
+  acr_name     = substr(replace("chatbot${var.tenant_slug}", "-", ""), 0, 50)
+  kv_name      = "cb-${var.tenant_slug}-kv"
+  storage_name = substr(replace("chatbot${var.tenant_slug}", "-", ""), 0, 24)
 
   common_tags = {
     Project = "ai-chatbot-platform"
@@ -66,6 +67,25 @@ resource "azurerm_key_vault_secret" "llm_api_key" {
   name         = "llm-api-key"
   value        = var.llm_api_key
   key_vault_id = azurerm_key_vault.this.id
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# Storage Account — documents bucket created by the platform
+# ──────────────────────────────────────────────────────────────────────
+
+resource "azurerm_storage_account" "docs" {
+  name                     = local.storage_name
+  resource_group_name      = azurerm_resource_group.this.name
+  location                 = azurerm_resource_group.this.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  tags                     = local.common_tags
+}
+
+resource "azurerm_storage_container" "docs" {
+  name                  = "documents"
+  storage_account_id    = azurerm_storage_account.docs.id
+  container_access_type = "private"
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -140,11 +160,11 @@ resource "azurerm_container_app" "this" {
       }
       env {
         name  = "AZURE_STORAGE_ACCOUNT"
-        value = var.azure_storage_account
+        value = local.storage_name
       }
       env {
         name  = "AZURE_STORAGE_CONTAINER"
-        value = var.azure_storage_container
+        value = azurerm_storage_container.docs.name
       }
     }
   }

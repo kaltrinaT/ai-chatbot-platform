@@ -25,20 +25,13 @@ on:
         required: true
         type: string
         default: "eastus"
-      azure_storage_account:
-        required: true
-        type: string
-      azure_storage_container:
-        required: false
-        type: string
-        default: ""
       llm_provider:
         required: true
         type: string
-      llm_key_vault_uri:
+      llm_api_key:
         required: true
         type: string
-        description: "URI of the LLM API key secret in the customer's Key Vault"
+        description: "LLM API key — passed directly from the platform (masked in logs)"
       chatbot_version:
         required: true
         type: string
@@ -61,6 +54,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Mask sensitive inputs
+        run: |
+          echo "::add-mask::${{ inputs.llm_api_key }}"
+          echo "::add-mask::${{ inputs.azure_client_secret }}"
 
       # ─────────────────────────────────────────────────────────────
       # 1. Pull source image from the PLATFORM's ECR
@@ -124,19 +122,7 @@ jobs:
           echo "image_uri=$DEST_URI"    >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────────────────────
-      # 3. Retrieve LLM API key from customer Key Vault
-      # ─────────────────────────────────────────────────────────────
-      - name: Retrieve LLM API key from Key Vault
-        id: secret
-        run: |
-          LLM_API_KEY=$(az keyvault secret show \
-            --id "${{ inputs.llm_key_vault_uri }}" \
-            --query value -o tsv)
-          echo "::add-mask::$LLM_API_KEY"
-          echo "llm_api_key=$LLM_API_KEY" >> "$GITHUB_OUTPUT"
-
-      # ─────────────────────────────────────────────────────────────
-      # 4. Terraform apply
+      # 3. Terraform apply
       # ─────────────────────────────────────────────────────────────
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -162,10 +148,8 @@ jobs:
             -var "azure_client_secret=${{ inputs.azure_client_secret }}" \
             -var "azure_region=${{ inputs.azure_region }}" \
             -var "image_uri=${{ steps.acr.outputs.image_uri }}" \
-            -var "azure_storage_account=${{ inputs.azure_storage_account }}" \
-            -var "azure_storage_container=${{ inputs.azure_storage_container }}" \
             -var "llm_provider=${{ inputs.llm_provider }}" \
-            -var "llm_api_key=${{ steps.secret.outputs.llm_api_key }}" \
+            -var "llm_api_key=${{ inputs.llm_api_key }}" \
             -var "domain=${{ inputs.domain }}"
 
       - name: Read Terraform outputs

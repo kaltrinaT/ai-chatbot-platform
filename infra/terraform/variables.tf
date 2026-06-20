@@ -28,16 +28,6 @@ variable "image_uri" {
   }
 }
 
-variable "s3_docs_bucket" {
-  description = "Bucket the chatbot task reads documents from."
-  type        = string
-
-  validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.s3_docs_bucket)) && !can(regex("\\.\\.", var.s3_docs_bucket))
-    error_message = "s3_docs_bucket must be a valid S3 bucket name: 3–63 characters, lowercase alphanumeric, hyphens, and dots, no consecutive dots, no IP-address format."
-  }
-}
-
 variable "s3_docs_prefix" {
   description = "Optional prefix inside s3_docs_bucket. Empty string disables the prefix scope."
   type        = string
