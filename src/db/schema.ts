@@ -59,9 +59,6 @@ export const tenants = pgTable("tenants", {
   llmApiKeyEncrypted: text("llm_api_key_encrypted").notNull(),
   llmSecretArn: text("llm_secret_arn"),
 
-  pineconeApiKeyEncrypted: text("pinecone_api_key_encrypted").notNull(),
-  pineconeSecretArn: text("pinecone_secret_arn"),
-
   domain: text("domain"),
   chatbotVersion: text("chatbot_version").notNull().default("latest"),
 

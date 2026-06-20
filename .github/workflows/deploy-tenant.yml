@@ -35,9 +35,6 @@ on:
       llm_secret_arn:
         required: true
         type: string
-      pinecone_secret_arn:
-        required: true
-        type: string
       your_ecr_image:
         required: true
         type: string
@@ -55,7 +52,25 @@ jobs:
       - uses: actions/checkout@v4
 
       # ─────────────────────────────────────────────────────────────
-      # 1. Pull source image from the PLATFORM's ECR
+      # 1. Create tenant Pinecone index (idempotent — 409 = already exists)
+      # ─────────────────────────────────────────────────────────────
+      - name: Create Pinecone index
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST https://api.pinecone.io/indexes \
+            -H "Api-Key: ${{ secrets.PINECONE_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "name": "chatbot-${{ inputs.tenant_slug }}",
+              "dimension": 1536,
+              "metric": "cosine",
+              "spec": {"serverless": {"cloud": "aws", "region": "us-east-1"}}
+            }')
+          [[ "$STATUS" == "201" || "$STATUS" == "409" ]] || \
+            { echo "Pinecone index creation failed: HTTP $STATUS"; exit 1; }
+
+      # ─────────────────────────────────────────────────────────────
+      # 2. Pull source image from the PLATFORM's ECR
       # ─────────────────────────────────────────────────────────────
       - name: Configure AWS credentials (platform — for source ECR read)
         uses: aws-actions/configure-aws-credentials@v4
@@ -136,7 +151,7 @@ jobs:
             -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
             -var "llm_provider=${{ inputs.llm_provider }}" \
             -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
-            -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
+            -var "pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
             -var "domain=${{ inputs.domain }}"
 
       - name: Read Terraform outputs

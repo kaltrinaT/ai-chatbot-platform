@@ -181,6 +181,10 @@ resource "azurerm_container_app" "this" {
         name  = "AZURE_STORAGE_CONTAINER"
         value = azurerm_storage_container.docs.name
       }
+      env {
+        name  = "PINECONE_INDEX"
+        value = "chatbot-${var.tenant_slug}"
+      }
     }
   }
 

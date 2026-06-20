@@ -33,7 +33,6 @@ const SharedInput = z.object({
     errorMap: () => ({ message: "Select a provider" }),
   }),
   llmApiKey: z.string().min(10, "API key looks too short"),
-  pineconeApiKey: z.string().min(10, "API key looks too short"),
 });
 
 // ── AWS fields ────────────────────────────────────────────────────────
@@ -112,12 +111,10 @@ export async function createTenantAndDeploy(
   }
 
   const parsed = result.data;
-  const { llmApiKey, pineconeApiKey, ...tenantFields } = parsed;
+  const { llmApiKey, ...tenantFields } = parsed;
   const llmApiKeyEncrypted = encryptSecret(llmApiKey);
-  const pineconeApiKeyEncrypted = encryptSecret(pineconeApiKey);
 
   let llmSecretArn: string | null;
-  let pineconeSecretArn: string | null;
   let azureClientSecretEncrypted: string | undefined;
 
   if (parsed.cloudProvider === "aws") {
@@ -126,26 +123,17 @@ export async function createTenantAndDeploy(
       sessionName: `tenant-onboarding-${parsed.slug}`,
       region: parsed.awsRegion,
     });
-    [llmSecretArn, pineconeSecretArn] = await Promise.all([
-      writeLlmSecret({
-        credentials: creds,
-        region: parsed.awsRegion,
-        secretName: `${parsed.slug}/llm-api-key`,
-        secretValue: llmApiKey,
-      }),
-      writeLlmSecret({
-        credentials: creds,
-        region: parsed.awsRegion,
-        secretName: `${parsed.slug}/pinecone-api-key`,
-        secretValue: pineconeApiKey,
-      }),
-    ]);
+    llmSecretArn = await writeLlmSecret({
+      credentials: creds,
+      region: parsed.awsRegion,
+      secretName: `${parsed.slug}/llm-api-key`,
+      secretValue: llmApiKey,
+    });
   } else {
     azureClientSecretEncrypted = encryptSecret(parsed.azureClientSecret);
-    // Keys are passed directly to the workflow from the encrypted DB values;
-    // Terraform creates the Key Vault and stores them there during deploy.
+    // LLM key is passed directly to the workflow from the encrypted DB value;
+    // Terraform creates the Key Vault and stores it there during deploy.
     llmSecretArn = null;
-    pineconeSecretArn = null;
   }
 
   const insertValues =
@@ -159,8 +147,6 @@ export async function createTenantAndDeploy(
           llmProvider: tenantFields.llmProvider,
           llmApiKeyEncrypted,
           llmSecretArn,
-          pineconeApiKeyEncrypted,
-          pineconeSecretArn,
           ownerUserId: session.user.id,
           awsAccountId: parsed.awsAccountId,
           awsRegion: parsed.awsRegion,
@@ -176,8 +162,6 @@ export async function createTenantAndDeploy(
           llmProvider: tenantFields.llmProvider,
           llmApiKeyEncrypted,
           llmSecretArn,
-          pineconeApiKeyEncrypted,
-          pineconeSecretArn,
           ownerUserId: session.user.id,
           azureSubscriptionId: parsed.azureSubscriptionId,
           azureTenantId: parsed.azureTenantId,

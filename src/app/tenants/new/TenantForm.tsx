@@ -165,19 +165,6 @@ export default function TenantForm() {
       )}
 
       <hr className="border-gray-200" />
-      <h2 className="text-sm font-semibold text-gray-700">Pinecone</h2>
-      <Field
-        label="Pinecone API key"
-        name="pineconeApiKey"
-        type="password"
-        placeholder="pc-..."
-        hint="Used by the chatbot for vector search over your documents."
-        required
-        minLength={10}
-        error={errors.pineconeApiKey}
-      />
-
-      <hr className="border-gray-200" />
       <h2 className="text-sm font-semibold text-gray-700">LLM</h2>
 
       <SelectField

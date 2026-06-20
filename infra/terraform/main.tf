@@ -193,6 +193,22 @@ resource "aws_s3_bucket_public_access_block" "docs" {
 }
 
 # ──────────────────────────────────────────────────────────────────────
+# Secrets Manager — Pinecone key (platform-owned, written here so the
+# ECS execution role can inject it without a pre-existing ARN)
+# ──────────────────────────────────────────────────────────────────────
+
+resource "aws_secretsmanager_secret" "pinecone" {
+  name        = "${var.tenant_slug}/pinecone-api-key"
+  description = "Pinecone API key for tenant ${var.tenant_slug} (managed by ai-chatbot-platform)"
+  tags        = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "pinecone" {
+  secret_id     = aws_secretsmanager_secret.pinecone.id
+  secret_string = var.pinecone_api_key
+}
+
+# ──────────────────────────────────────────────────────────────────────
 # IAM
 # ──────────────────────────────────────────────────────────────────────
 
@@ -225,7 +241,7 @@ resource "aws_iam_role_policy" "execution_secret_read" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = [var.llm_secret_arn, var.pinecone_secret_arn]
+      Resource = [var.llm_secret_arn, aws_secretsmanager_secret.pinecone.arn]
     }]
   })
 }
@@ -283,15 +299,16 @@ resource "aws_ecs_task_definition" "this" {
       protocol      = "tcp"
     }]
     environment = [
-      { name = "S3_DOCS_BUCKET", value = aws_s3_bucket.docs.bucket },
-      { name = "S3_DOCS_PREFIX", value = var.s3_docs_prefix },
-      { name = "LLM_PROVIDER", value = var.llm_provider },
-      { name = "AWS_REGION", value = var.aws_region },
-      { name = "PORT", value = tostring(var.container_port) }
+      { name = "S3_DOCS_BUCKET",  value = aws_s3_bucket.docs.bucket },
+      { name = "S3_DOCS_PREFIX",  value = var.s3_docs_prefix },
+      { name = "LLM_PROVIDER",    value = var.llm_provider },
+      { name = "AWS_REGION",      value = var.aws_region },
+      { name = "PORT",            value = tostring(var.container_port) },
+      { name = "PINECONE_INDEX",  value = "chatbot-${var.tenant_slug}" }
     ]
     secrets = [
-      { name = "LLM_API_KEY",     valueFrom = var.llm_secret_arn },
-      { name = "PINECONE_API_KEY", valueFrom = var.pinecone_secret_arn }
+      { name = "LLM_API_KEY",      valueFrom = var.llm_secret_arn },
+      { name = "PINECONE_API_KEY", valueFrom = aws_secretsmanager_secret.pinecone.arn }
     ]
     logConfiguration = {
       logDriver = "awslogs"
