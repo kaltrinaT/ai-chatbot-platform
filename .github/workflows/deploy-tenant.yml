@@ -25,9 +25,6 @@ on:
         required: false
         type: string
         default: ""
-      s3_docs_bucket:
-        required: true
-        type: string
       s3_docs_prefix:
         required: false
         type: string
@@ -133,7 +130,6 @@ jobs:
             -var "tenant_slug=${{ inputs.tenant_slug }}" \
             -var "aws_region=${{ inputs.aws_region }}" \
             -var "image_uri=${{ steps.client_image.outputs.uri }}" \
-            -var "s3_docs_bucket=${{ inputs.s3_docs_bucket }}" \
             -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
             -var "llm_provider=${{ inputs.llm_provider }}" \
             -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \

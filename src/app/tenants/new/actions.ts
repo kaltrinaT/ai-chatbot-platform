@@ -8,7 +8,6 @@ import { tenants } from "@/db/schema";
 import { triggerDeployment } from "@/lib/deploy";
 import { encryptSecret } from "@/lib/crypto";
 import { assumeTenantRole, writeLlmSecret } from "@/lib/aws";
-import { writeAzureKeyVaultSecret } from "@/lib/azure";
 
 // ── Shared fields ─────────────────────────────────────────────────────
 const SharedInput = z.object({
@@ -46,14 +45,6 @@ const AwsInput = SharedInput.extend({
   deploymentRoleArn: z
     .string()
     .regex(/^arn:aws:iam::\d{12}:role\/.+$/, "Must be a valid IAM role ARN"),
-  s3DocsBucket: z
-    .string()
-    .min(3, "Must be at least 3 characters")
-    .max(63, "Must be 63 characters or fewer")
-    .regex(
-      /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/,
-      "Lowercase letters, numbers, hyphens, and dots only"
-    ),
   s3DocsPrefix: z
     .string()
     .refine((v) => !v.startsWith("/"), "Must not start with a leading slash")
@@ -69,32 +60,10 @@ const AzureInput = SharedInput.extend({
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       "Must be a valid UUID"
     ),
-  azureTenantId: z
-    .string()
-    .regex(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      "Must be a valid UUID"
-    ),
-  azureClientId: z
-    .string()
-    .regex(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      "Must be a valid UUID"
-    ),
+  azureTenantId: z.string().min(1, "Required"),
+  azureClientId: z.string().min(1, "Required"),
   azureClientSecret: z.string().min(1, "Required"),
-  azureResourceGroup: z.string().min(1, "Required").max(90),
   azureRegion: z.string().min(1, "Required"),
-  azureStorageAccount: z
-    .string()
-    .min(3, "Must be at least 3 characters")
-    .max(24, "Must be 24 characters or fewer")
-    .regex(/^[a-z0-9]+$/, "Lowercase alphanumeric only"),
-  azureStorageContainer: z.string().optional(),
-  azureKeyVaultName: z
-    .string()
-    .min(3, "Must be at least 3 characters")
-    .max(24, "Must be 24 characters or fewer")
-    .regex(/^[a-zA-Z][a-zA-Z0-9-]*$/, "Must start with a letter, alphanumeric and hyphens only"),
 });
 
 const TenantInput = z.discriminatedUnion("cloudProvider", [AwsInput, AzureInput]);
@@ -120,18 +89,13 @@ export async function createTenantAndDeploy(
     awsAccountId: formData.get("awsAccountId"),
     awsRegion: formData.get("awsRegion"),
     deploymentRoleArn: formData.get("deploymentRoleArn"),
-    s3DocsBucket: formData.get("s3DocsBucket"),
     s3DocsPrefix: (formData.get("s3DocsPrefix") as string) || undefined,
     // Azure
     azureSubscriptionId: formData.get("azureSubscriptionId"),
     azureTenantId: formData.get("azureTenantId"),
     azureClientId: formData.get("azureClientId"),
     azureClientSecret: formData.get("azureClientSecret"),
-    azureResourceGroup: formData.get("azureResourceGroup"),
     azureRegion: formData.get("azureRegion"),
-    azureStorageAccount: formData.get("azureStorageAccount"),
-    azureStorageContainer: (formData.get("azureStorageContainer") as string) || undefined,
-    azureKeyVaultName: formData.get("azureKeyVaultName"),
   };
 
   const result = TenantInput.safeParse(raw);
@@ -149,7 +113,7 @@ export async function createTenantAndDeploy(
   const { llmApiKey, ...tenantFields } = parsed;
   const llmApiKeyEncrypted = encryptSecret(llmApiKey);
 
-  let llmSecretArn: string;
+  let llmSecretArn: string | null;
   let azureClientSecretEncrypted: string | undefined;
 
   if (parsed.cloudProvider === "aws") {
@@ -166,17 +130,9 @@ export async function createTenantAndDeploy(
     });
   } else {
     azureClientSecretEncrypted = encryptSecret(parsed.azureClientSecret);
-    llmSecretArn = await writeAzureKeyVaultSecret({
-      credentials: {
-        tenantId: parsed.azureTenantId,
-        clientId: parsed.azureClientId,
-        clientSecret: parsed.azureClientSecret,
-        subscriptionId: parsed.azureSubscriptionId,
-      },
-      keyVaultName: parsed.azureKeyVaultName,
-      secretName: "llm-api-key",
-      secretValue: llmApiKey,
-    });
+    // LLM key is passed directly to the workflow from the encrypted DB value;
+    // Terraform creates the Key Vault and stores it there during deploy.
+    llmSecretArn = null;
   }
 
   const insertValues =
@@ -194,7 +150,6 @@ export async function createTenantAndDeploy(
           awsAccountId: parsed.awsAccountId,
           awsRegion: parsed.awsRegion,
           deploymentRoleArn: parsed.deploymentRoleArn,
-          s3DocsBucket: parsed.s3DocsBucket,
           s3DocsPrefix: parsed.s3DocsPrefix,
         }
       : {
@@ -211,11 +166,7 @@ export async function createTenantAndDeploy(
           azureTenantId: parsed.azureTenantId,
           azureClientId: parsed.azureClientId,
           azureClientSecretEncrypted,
-          azureResourceGroup: parsed.azureResourceGroup,
           azureRegion: parsed.azureRegion,
-          azureStorageAccount: parsed.azureStorageAccount,
-          azureStorageContainer: parsed.azureStorageContainer,
-          azureKeyVaultName: parsed.azureKeyVaultName,
         };
 
   const [tenant] = await db.insert(tenants).values(insertValues).returning();
