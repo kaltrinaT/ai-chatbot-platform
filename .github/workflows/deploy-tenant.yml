@@ -35,6 +35,9 @@ on:
       llm_secret_arn:
         required: true
         type: string
+      pinecone_secret_arn:
+        required: true
+        type: string
       your_ecr_image:
         required: true
         type: string
@@ -133,6 +136,7 @@ jobs:
             -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
             -var "llm_provider=${{ inputs.llm_provider }}" \
             -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
+            -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
             -var "domain=${{ inputs.domain }}"
 
       - name: Read Terraform outputs

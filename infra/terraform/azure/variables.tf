@@ -71,6 +71,12 @@ variable "llm_api_key" {
   sensitive   = true
 }
 
+variable "pinecone_api_key" {
+  description = "Pinecone API key — stored in Key Vault by Terraform during deploy."
+  type        = string
+  sensitive   = true
+}
+
 variable "domain" {
   description = "Optional custom hostname. Empty string = use Container Apps FQDN."
   type        = string

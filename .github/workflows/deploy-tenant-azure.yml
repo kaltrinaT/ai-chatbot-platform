@@ -32,6 +32,10 @@ on:
         required: true
         type: string
         description: "LLM API key — passed directly from the platform (masked in logs)"
+      pinecone_api_key:
+        required: true
+        type: string
+        description: "Pinecone API key — passed directly from the platform (masked in logs)"
       chatbot_version:
         required: true
         type: string
@@ -58,6 +62,7 @@ jobs:
       - name: Mask sensitive inputs
         run: |
           echo "::add-mask::${{ inputs.llm_api_key }}"
+          echo "::add-mask::${{ inputs.pinecone_api_key }}"
           echo "::add-mask::${{ inputs.azure_client_secret }}"
 
       # ─────────────────────────────────────────────────────────────
@@ -150,6 +155,7 @@ jobs:
             -var "image_uri=${{ steps.acr.outputs.image_uri }}" \
             -var "llm_provider=${{ inputs.llm_provider }}" \
             -var "llm_api_key=${{ inputs.llm_api_key }}" \
+            -var "pinecone_api_key=${{ inputs.pinecone_api_key }}" \
             -var "domain=${{ inputs.domain }}"
 
       - name: Read Terraform outputs

@@ -49,6 +49,16 @@ variable "llm_provider" {
   }
 }
 
+variable "pinecone_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the Pinecone API key."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:secretsmanager:[a-z]{2}-[a-z]+-[0-9]:[0-9]{12}:secret:.+$", var.pinecone_secret_arn))
+    error_message = "pinecone_secret_arn must be a valid Secrets Manager ARN."
+  }
+}
+
 variable "llm_secret_arn" {
   description = "ARN of the Secrets Manager secret holding the LLM API key. Pre-created by the platform during onboarding."
   type        = string

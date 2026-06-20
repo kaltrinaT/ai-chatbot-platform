@@ -69,6 +69,12 @@ resource "azurerm_key_vault_secret" "llm_api_key" {
   key_vault_id = azurerm_key_vault.this.id
 }
 
+resource "azurerm_key_vault_secret" "pinecone_api_key" {
+  name         = "pinecone-api-key"
+  value        = var.pinecone_api_key
+  key_vault_id = azurerm_key_vault.this.id
+}
+
 # ──────────────────────────────────────────────────────────────────────
 # Storage Account — documents bucket created by the platform
 # ──────────────────────────────────────────────────────────────────────
@@ -136,6 +142,11 @@ resource "azurerm_container_app" "this" {
     value = var.llm_api_key
   }
 
+  secret {
+    name  = "pinecone-api-key"
+    value = var.pinecone_api_key
+  }
+
   template {
     min_replicas = 1
     max_replicas = 3
@@ -157,6 +168,10 @@ resource "azurerm_container_app" "this" {
       env {
         name        = "LLM_API_KEY"
         secret_name = "llm-api-key"
+      }
+      env {
+        name        = "PINECONE_API_KEY"
+        secret_name = "pinecone-api-key"
       }
       env {
         name  = "AZURE_STORAGE_ACCOUNT"

@@ -218,14 +218,14 @@ resource "aws_iam_role_policy_attachment" "execution_managed" {
 }
 
 resource "aws_iam_role_policy" "execution_secret_read" {
-  name = "read-llm-secret"
+  name = "read-secrets"
   role = aws_iam_role.execution.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = var.llm_secret_arn
+      Resource = [var.llm_secret_arn, var.pinecone_secret_arn]
     }]
   })
 }
@@ -290,7 +290,8 @@ resource "aws_ecs_task_definition" "this" {
       { name = "PORT", value = tostring(var.container_port) }
     ]
     secrets = [
-      { name = "LLM_API_KEY", valueFrom = var.llm_secret_arn }
+      { name = "LLM_API_KEY",     valueFrom = var.llm_secret_arn },
+      { name = "PINECONE_API_KEY", valueFrom = var.pinecone_secret_arn }
     ]
     logConfiguration = {
       logDriver = "awslogs"

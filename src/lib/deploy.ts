@@ -33,8 +33,16 @@ export async function triggerDeployment({
       `Tenant ${tenant.id} has no llmSecretArn — the secret was not written during onboarding.`
     );
   }
+  if (tenant.cloudProvider === "aws" && !tenant.pineconeSecretArn) {
+    throw new Error(
+      `Tenant ${tenant.id} has no pineconeSecretArn — the secret was not written during onboarding.`
+    );
+  }
   if (tenant.cloudProvider === "azure" && !tenant.llmApiKeyEncrypted) {
     throw new Error(`Tenant ${tenant.id} has no encrypted LLM key.`);
+  }
+  if (tenant.cloudProvider === "azure" && !tenant.pineconeApiKeyEncrypted) {
+    throw new Error(`Tenant ${tenant.id} has no encrypted Pinecone key.`);
   }
 
   const [deployment] = await db
@@ -96,6 +104,7 @@ function buildAwsInputs(
     s3_docs_prefix: tenant.s3DocsPrefix ?? "",
     llm_provider: tenant.llmProvider,
     llm_secret_arn: tenant.llmSecretArn!,
+    pinecone_secret_arn: tenant.pineconeSecretArn!,
     your_ecr_image: `${imageBase}:${chatbotVersion}`,
   };
 }
@@ -112,6 +121,9 @@ function buildAzureInputs(
   const llmApiKey = tenant.llmApiKeyEncrypted
     ? decryptSecret(tenant.llmApiKeyEncrypted)
     : "";
+  const pineconeApiKey = tenant.pineconeApiKeyEncrypted
+    ? decryptSecret(tenant.pineconeApiKeyEncrypted)
+    : "";
 
   return {
     deployment_id: deploymentId,
@@ -123,6 +135,7 @@ function buildAzureInputs(
     azure_region: tenant.azureRegion ?? "eastus",
     llm_provider: tenant.llmProvider,
     llm_api_key: llmApiKey,
+    pinecone_api_key: pineconeApiKey,
     chatbot_version: chatbotVersion,
     domain: tenant.domain ?? "",
     source_ecr_image: `${imageBase}:${chatbotVersion}`,
