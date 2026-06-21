@@ -89,7 +89,7 @@ variable "container_port" {
 
 variable "task_cpu" {
   type    = number
-  default = 256
+  default = 1024
 
   validation {
     condition     = contains([256, 512, 1024, 2048, 4096], var.task_cpu)
@@ -99,7 +99,7 @@ variable "task_cpu" {
 
 variable "task_memory" {
   type    = number
-  default = 512
+  default = 2048
 
   validation {
     condition     = var.task_memory >= 512 && var.task_memory <= 30720 && var.task_memory % 512 == 0

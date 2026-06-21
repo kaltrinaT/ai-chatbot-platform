@@ -6,6 +6,25 @@ A SaaS control plane for deploying AI chatbots into customer cloud accounts (AWS
 
 ---
 
+## Control Plane / Data Plane Boundary
+
+**This platform is a control plane only.** It deploys and monitors infrastructure. It has no access to the data plane.
+
+The platform does **not** see, store, or transmit:
+- Chat queries or answers
+- Customer documents or embeddings
+- Pinecone index contents
+- CloudWatch or Log Analytics logs from the chatbot
+- Any runtime traffic passing through the chatbot
+
+All of that lives exclusively inside the customer's cloud account. The only information that flows back to the platform is deployment lifecycle data: whether Terraform succeeded or failed, and the resulting chatbot URL.
+
+**This boundary is intentional and must be preserved.** Do not add endpoints that receive chatbot queries, answers, or documents. Do not add cross-account IAM roles or Azure delegated access for reading customer logs. Customers retain full ownership and privacy of their data.
+
+If a customer wants query analytics or conversation logging, that is their own concern — they can ship their own tooling into their cloud account.
+
+---
+
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)

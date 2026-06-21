@@ -1,5 +1,32 @@
 # Architecture
 
+## Control Plane / Data Plane Boundary
+
+This platform is a **control plane only**. It deploys and monitors infrastructure. It has no access to the data plane.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     CONTROL PLANE (this platform)                   │
+│                                                                     │
+│  Knows: tenant config, deployment status, chatbot URL               │
+│  Does not know: queries, answers, documents, embeddings, logs       │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 │ deploy + status callback only
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                  DATA PLANE (customer cloud account)                │
+│                                                                     │
+│  Chatbot runtime, S3/blob documents, Pinecone index, LLM calls,     │
+│  CloudWatch/Log Analytics, user queries and answers                 │
+│                                                                     │
+│  ← platform never reads or receives any of this →                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+The only information that crosses from data plane to control plane is deployment lifecycle data: success/failure status and the resulting chatbot URL. Do not add any endpoint, IAM role, or delegated access that would give the platform visibility into runtime traffic, documents, or logs.
+
+---
+
 ## System Overview
 
 ```
