@@ -170,6 +170,14 @@ resource "azurerm_container_app" "this" {
         secret_name = "llm-api-key"
       }
       env {
+        name        = "OPENAI_API_KEY"
+        secret_name = "llm-api-key"
+      }
+      env {
+        name        = "ANTHROPIC_API_KEY"
+        secret_name = "llm-api-key"
+      }
+      env {
         name        = "PINECONE_API_KEY"
         secret_name = "pinecone-api-key"
       }

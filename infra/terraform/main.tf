@@ -308,6 +308,8 @@ resource "aws_ecs_task_definition" "this" {
     ]
     secrets = [
       { name = "LLM_API_KEY",      valueFrom = var.llm_secret_arn },
+      { name = "OPENAI_API_KEY",   valueFrom = var.llm_secret_arn },
+      { name = "ANTHROPIC_API_KEY", valueFrom = var.llm_secret_arn },
       { name = "PINECONE_API_KEY", valueFrom = aws_secretsmanager_secret.pinecone.arn }
     ]
     logConfiguration = {
