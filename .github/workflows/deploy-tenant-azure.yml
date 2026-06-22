@@ -61,24 +61,6 @@ jobs:
           echo "::add-mask::${{ inputs.azure_client_secret }}"
 
       # ─────────────────────────────────────────────────────────────
-      # 1. Create tenant Pinecone index (idempotent — 409 = already exists)
-      # ─────────────────────────────────────────────────────────────
-      - name: Create Pinecone index
-        run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST https://api.pinecone.io/indexes \
-            -H "Api-Key: ${{ secrets.PINECONE_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "name": "chatbot-${{ inputs.tenant_slug }}",
-              "dimension": 1536,
-              "metric": "cosine",
-              "spec": {"serverless": {"cloud": "aws", "region": "us-east-1"}}
-            }')
-          [[ "$STATUS" == "201" || "$STATUS" == "409" ]] || \
-            { echo "Pinecone index creation failed: HTTP $STATUS"; exit 1; }
-
-      # ─────────────────────────────────────────────────────────────
       # 2. Pull source image from the PLATFORM's ECR
       # ─────────────────────────────────────────────────────────────
       - name: Configure AWS credentials (pull source image from platform ECR)
