@@ -299,12 +299,14 @@ resource "aws_ecs_task_definition" "this" {
       protocol      = "tcp"
     }]
     environment = [
-      { name = "S3_DOCS_BUCKET",  value = aws_s3_bucket.docs.bucket },
-      { name = "S3_DOCS_PREFIX",  value = var.s3_docs_prefix },
-      { name = "LLM_PROVIDER",    value = var.llm_provider },
-      { name = "AWS_REGION",      value = var.aws_region },
-      { name = "PORT",            value = tostring(var.container_port) },
-      { name = "PINECONE_INDEX",  value = "chatbot-${var.tenant_slug}" }
+      { name = "S3_DOCS_BUCKET",   value = aws_s3_bucket.docs.bucket },
+      { name = "S3_DOCS_PREFIX",   value = var.s3_docs_prefix },
+      { name = "LLM_PROVIDER",     value = var.llm_provider },
+      { name = "AWS_REGION",       value = var.aws_region },
+      { name = "PORT",             value = tostring(var.container_port) },
+      { name = "PINECONE_INDEX",   value = "chatbot-${var.tenant_slug}" },
+      { name = "OPENAI_BASE_URL",  value = "https://api.openai.com/v1" },
+      { name = "OPENAI_API_BASE",  value = "https://api.openai.com/v1" }
     ]
     secrets = [
       { name = "LLM_API_KEY",      valueFrom = var.llm_secret_arn },
