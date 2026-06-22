@@ -22,6 +22,20 @@ locals {
     Project = "ai-chatbot-platform"
     Tenant  = var.tenant_slug
   }
+
+  llm_base_url = {
+    openai     = "https://api.openai.com/v1"
+    anthropic  = "https://api.anthropic.com/v1"
+    openrouter = "https://openrouter.ai/api/v1"
+  }[var.llm_provider]
+
+  llm_default_model = {
+    openai     = "gpt-4o-mini"
+    anthropic  = "claude-3-5-haiku-20241022"
+    openrouter = "google/gemma-2-9b-it:free"
+  }[var.llm_provider]
+
+  llm_model = var.llm_model != "" ? var.llm_model : local.llm_default_model
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -134,7 +148,7 @@ resource "aws_lb_target_group" "this" {
   vpc_id      = aws_vpc.this.id
 
   health_check {
-    path                = "/"
+    path                = "/api/health"
     matcher             = "200-399"
     healthy_threshold   = 2
     unhealthy_threshold = 3
@@ -305,8 +319,9 @@ resource "aws_ecs_task_definition" "this" {
       { name = "AWS_REGION",       value = var.aws_region },
       { name = "PORT",             value = tostring(var.container_port) },
       { name = "PINECONE_INDEX",   value = "chatbot-${var.tenant_slug}" },
-      { name = "OPENAI_BASE_URL",  value = "https://api.openai.com/v1" },
-      { name = "OPENAI_API_BASE",  value = "https://api.openai.com/v1" }
+      { name = "OPENAI_BASE_URL",  value = local.llm_base_url },
+      { name = "OPENAI_API_BASE",  value = local.llm_base_url },
+      { name = "LLM_MODEL",        value = local.llm_model }
     ]
     secrets = [
       { name = "LLM_API_KEY",      valueFrom = var.llm_secret_arn },

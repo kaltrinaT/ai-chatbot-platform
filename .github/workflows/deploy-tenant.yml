@@ -35,6 +35,10 @@ on:
       llm_secret_arn:
         required: true
         type: string
+      llm_model:
+        required: false
+        type: string
+        default: ""
       your_ecr_image:
         required: true
         type: string
@@ -133,6 +137,7 @@ jobs:
             -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
             -var "llm_provider=${{ inputs.llm_provider }}" \
             -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
+            -var "llm_model=${{ inputs.llm_model }}" \
             -var "pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
             -var "domain=${{ inputs.domain }}"
 

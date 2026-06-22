@@ -15,6 +15,13 @@
       "when": 1780767739169,
       "tag": "0001_mute_the_fallen",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782157478081,
+      "tag": "0002_unusual_wrecking_crew",
+      "breakpoints": true
     }
   ]
 }

@@ -22,6 +22,7 @@ export const deploymentStatusEnum = pgEnum("deployment_status", [
 export const llmProviderEnum = pgEnum("llm_provider", [
   "openai",
   "anthropic",
+  "openrouter",
 ]);
 
 export const cloudProviderEnum = pgEnum("cloud_provider", ["aws", "azure"]);
@@ -58,6 +59,8 @@ export const tenants = pgTable("tenants", {
   llmProvider: llmProviderEnum("llm_provider").notNull(),
   llmApiKeyEncrypted: text("llm_api_key_encrypted").notNull(),
   llmSecretArn: text("llm_secret_arn"),
+  llmModel: text("llm_model"),
+  llmBaseUrl: text("llm_base_url"),
 
   domain: text("domain"),
   chatbotVersion: text("chatbot_version").notNull().default("latest"),

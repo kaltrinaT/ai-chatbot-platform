@@ -95,6 +95,7 @@ function buildAwsInputs(
     s3_docs_prefix: tenant.s3DocsPrefix ?? "",
     llm_provider: tenant.llmProvider,
     llm_secret_arn: tenant.llmSecretArn!,
+    llm_model: tenant.llmModel ?? "",
     your_ecr_image: `${imageBase}:${chatbotVersion}`,
   };
 }

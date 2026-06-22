@@ -173,6 +173,7 @@ export default function TenantForm() {
         options={[
           { value: "openai", label: "OpenAI" },
           { value: "anthropic", label: "Anthropic" },
+          { value: "openrouter", label: "OpenRouter (free tier available)" },
         ]}
         required
         error={errors.llmProvider}
@@ -190,6 +191,13 @@ export default function TenantForm() {
         required
         minLength={10}
         error={errors.llmApiKey}
+      />
+      <Field
+        label="LLM model (optional)"
+        name="llmModel"
+        placeholder="e.g. gpt-4o-mini · claude-3-5-haiku-20241022 · google/gemma-2-9b-it:free"
+        hint="Leave blank to use the default model for the selected provider."
+        error={errors.llmModel}
       />
 
       <div className="flex gap-3 pt-2">

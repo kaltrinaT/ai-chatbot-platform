@@ -29,10 +29,11 @@ const SharedInput = z.object({
       "Must be a valid hostname (e.g. chat.example.com) — no https:// or trailing slash"
     )
     .optional(),
-  llmProvider: z.enum(["openai", "anthropic"], {
-    errorMap: () => ({ message: "Select a provider" }),
+  llmProvider: z.enum(["openai", "anthropic", "openrouter"], {
+    message: "Select a provider",
   }),
   llmApiKey: z.string().min(10, "API key looks too short"),
+  llmModel: z.string().optional(),
 });
 
 // ── AWS fields ────────────────────────────────────────────────────────
@@ -85,6 +86,7 @@ export async function createTenantAndDeploy(
     domain: (formData.get("domain") as string) || undefined,
     llmProvider: formData.get("llmProvider"),
     llmApiKey: formData.get("llmApiKey"),
+    llmModel: (formData.get("llmModel") as string) || undefined,
     pineconeApiKey: formData.get("pineconeApiKey"),
     // AWS
     awsAccountId: formData.get("awsAccountId"),
@@ -147,6 +149,7 @@ export async function createTenantAndDeploy(
           llmProvider: tenantFields.llmProvider,
           llmApiKeyEncrypted,
           llmSecretArn,
+          llmModel: tenantFields.llmModel ?? null,
           ownerUserId: session.user.id,
           awsAccountId: parsed.awsAccountId,
           awsRegion: parsed.awsRegion,
@@ -162,6 +165,7 @@ export async function createTenantAndDeploy(
           llmProvider: tenantFields.llmProvider,
           llmApiKeyEncrypted,
           llmSecretArn,
+          llmModel: tenantFields.llmModel ?? null,
           ownerUserId: session.user.id,
           azureSubscriptionId: parsed.azureSubscriptionId,
           azureTenantId: parsed.azureTenantId,

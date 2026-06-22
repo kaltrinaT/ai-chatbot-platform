@@ -40,13 +40,19 @@ variable "s3_docs_prefix" {
 }
 
 variable "llm_provider" {
-  description = "openai | anthropic — the chatbot reads this to pick its API client."
+  description = "openai | anthropic | openrouter — the chatbot reads this to pick its API client."
   type        = string
 
   validation {
-    condition     = contains(["openai", "anthropic"], var.llm_provider)
-    error_message = "llm_provider must be either \"openai\" or \"anthropic\"."
+    condition     = contains(["openai", "anthropic", "openrouter"], var.llm_provider)
+    error_message = "llm_provider must be \"openai\", \"anthropic\", or \"openrouter\"."
   }
+}
+
+variable "llm_model" {
+  description = "Model name passed to the chatbot. Empty string uses the container default per provider."
+  type        = string
+  default     = ""
 }
 
 variable "pinecone_api_key" {
