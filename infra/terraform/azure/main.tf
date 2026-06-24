@@ -90,7 +90,7 @@ resource "azurerm_storage_account" "docs" {
 
 resource "azurerm_storage_container" "docs" {
   name                  = "documents"
-  storage_account_id    = azurerm_storage_account.docs.id
+  storage_account_name  = azurerm_storage_account.docs.name
   container_access_type = "private"
 }
 
@@ -103,7 +103,7 @@ resource "azurerm_log_analytics_workspace" "this" {
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   sku                 = "PerGB2018"
-  retention_in_days   = 14
+  retention_in_days   = 30
   tags                = local.common_tags
 }
 
