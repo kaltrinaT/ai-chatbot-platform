@@ -151,7 +151,7 @@ VPC  10.20.0.0/16
 │
 ├── Application Load Balancer
 │   └── Listener :80 → Target Group (IP mode, port 8000)
-│         └── Health check GET /  matcher 200-399
+│         └── Health check GET /api/health  matcher 200-399
 │
 ├── ECS Cluster
 │   └── Service (desired 1, Fargate, public IP)
@@ -165,8 +165,11 @@ VPC  10.20.0.0/16
 │           └── Container: chatbot
 │               ├── image: {customer-ecr}/{slug}/chatbot:{version}
 │               ├── env:   S3_DOCS_BUCKET, S3_DOCS_PREFIX,
-│               │          LLM_PROVIDER, AWS_REGION, PORT
-│               └── secret: LLM_API_KEY ← Secrets Manager
+│               │          LLM_PROVIDER, AWS_REGION, PORT,
+│               │          OPENAI_BASE_URL, OPENAI_API_BASE,
+│               │          LLM_MODEL, PINECONE_INDEX
+│               └── secret: LLM_API_KEY, OPENAI_API_KEY,
+│                           ANTHROPIC_API_KEY ← Secrets Manager
 │
 ├── S3 Bucket: chatbot-{slug}-docs
 │   ├── AES-256 SSE
@@ -306,7 +309,8 @@ tenants ────────────────────────
   │  s3DocsPrefix                   azureClientSecretEncrypted   │
   │  llmSecretArn                   azureRegion                  │
   │                                                              │
-  │  shared: llmProvider, llmApiKeyEncrypted,                    │
+  │  shared: llmProvider (openai|anthropic|openrouter),           │
+  │          llmApiKeyEncrypted, llmModel, llmBaseUrl,           │
   │          chatbotVersion, domain, albDnsName, chatbotUrl      │
   │                                                              │
   │ tenantId                                                     │

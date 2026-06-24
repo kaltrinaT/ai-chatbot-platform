@@ -109,7 +109,8 @@ Managed by Drizzle ORM, running on Neon Postgres.
 | `cloudProvider` | enum | `aws` \| `azure` |
 | `chatbotVersion` | text | Git/image tag deployed |
 | `domain` | text | Optional custom domain |
-| `llmProvider` | enum | `openai` \| `anthropic` |
+| `llmProvider` | enum | `openai` \| `anthropic` \| `openrouter` |
+| `llmModel` | text | Optional model override; defaults per provider |
 | `llmApiKeyEncrypted` | text | AES-256-GCM encrypted |
 | `albDnsName` | text | Populated by workflow callback (AWS) |
 | `chatbotUrl` | text | Populated by workflow callback |
@@ -223,13 +224,13 @@ Defined in `infra/terraform/main.tf`. Everything is created in the **customer's*
 
 ### Load Balancer
 - Application Load Balancer (HTTP, port 80)
-- Target group: IP mode, container port 8000, health check on `/`
+- Target group: IP mode, container port 8000, health check on `/api/health`
 
 ### Compute
 - ECS Fargate cluster + service (desired count: 1)
 - Task defaults: 256 CPU units, 512 MB memory
-- Container environment: `S3_DOCS_BUCKET`, `S3_DOCS_PREFIX`, `LLM_PROVIDER`, `AWS_REGION`, `PORT`
-- LLM key injected as a secret from Secrets Manager (not an env var)
+- Container environment: `S3_DOCS_BUCKET`, `S3_DOCS_PREFIX`, `LLM_PROVIDER`, `AWS_REGION`, `PORT`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, `PINECONE_INDEX`
+- LLM key injected as secrets from Secrets Manager: `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
 
 ### Storage
 - S3 bucket: `chatbot-{tenant_slug}-docs`

@@ -101,15 +101,16 @@ jobs:
           az group create --name "$RG_NAME" --location "${{ inputs.azure_region }}" --output none || true
 
           # Create ACR if not exists
-          az acr create \
-            --name "$ACR_NAME" \
-            --resource-group "$RG_NAME" \
-            --sku Basic \
-            --admin-enabled true \
-            --location "${{ inputs.azure_region }}" \
-            --output none 2>/dev/null || true
+          if ! az acr show --name "$ACR_NAME" --resource-group "$RG_NAME" --output none 2>/dev/null; then
+            az acr create \
+              --name "$ACR_NAME" \
+              --resource-group "$RG_NAME" \
+              --sku Basic \
+              --admin-enabled true \
+              --location "${{ inputs.azure_region }}"
+          fi
 
-          ACR_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
+          ACR_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RG_NAME" --query loginServer -o tsv)
           ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
 
           docker login "$ACR_SERVER" --username "$ACR_NAME" --password "$ACR_PASSWORD"
