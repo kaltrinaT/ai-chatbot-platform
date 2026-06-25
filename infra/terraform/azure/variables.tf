@@ -56,12 +56,12 @@ variable "image_uri" {
 }
 
 variable "llm_provider" {
-  description = "openai | anthropic"
+  description = "openai | anthropic | openrouter"
   type        = string
 
   validation {
-    condition     = contains(["openai", "anthropic"], var.llm_provider)
-    error_message = "llm_provider must be \"openai\" or \"anthropic\"."
+    condition     = contains(["openai", "anthropic", "openrouter"], var.llm_provider)
+    error_message = "llm_provider must be \"openai\", \"anthropic\", or \"openrouter\"."
   }
 }
 
