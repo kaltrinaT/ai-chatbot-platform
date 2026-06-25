@@ -138,6 +138,30 @@ jobs:
             -backend-config="key=tenants/azure/${{ inputs.tenant_slug }}.tfstate" \
             -backend-config="encrypt=true"
 
+      - name: Import pre-existing resource group if needed
+        working-directory: infra/terraform/azure
+        env:
+          ARM_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          ARM_TENANT_ID: ${{ inputs.azure_tenant_id }}
+          ARM_CLIENT_ID: ${{ inputs.azure_client_id }}
+          ARM_CLIENT_SECRET: ${{ inputs.azure_client_secret }}
+        run: |
+          RG_ID="/subscriptions/${{ inputs.azure_subscription_id }}/resourceGroups/chatbot-${{ inputs.tenant_slug }}"
+          if az group show --name "chatbot-${{ inputs.tenant_slug }}" --output none 2>/dev/null; then
+            terraform import \
+              -var "tenant_slug=${{ inputs.tenant_slug }}" \
+              -var "azure_subscription_id=${{ inputs.azure_subscription_id }}" \
+              -var "azure_tenant_id=${{ inputs.azure_tenant_id }}" \
+              -var "azure_client_id=${{ inputs.azure_client_id }}" \
+              -var "azure_client_secret=${{ inputs.azure_client_secret }}" \
+              -var "azure_region=${{ inputs.azure_region }}" \
+              -var "image_uri=placeholder" \
+              -var "llm_provider=${{ inputs.llm_provider }}" \
+              -var "llm_api_key=placeholder" \
+              -var "pinecone_api_key=placeholder" \
+              azurerm_resource_group.this "$RG_ID" 2>/dev/null || true
+          fi
+
       - name: Terraform apply
         working-directory: infra/terraform/azure
         run: |
