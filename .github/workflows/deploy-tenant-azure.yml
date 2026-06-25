@@ -138,7 +138,7 @@ jobs:
             -backend-config="key=tenants/azure/${{ inputs.tenant_slug }}.tfstate" \
             -backend-config="encrypt=true"
 
-      - name: Import pre-existing resource group if needed
+      - name: Import pre-existing resources into Terraform state
         working-directory: infra/terraform/azure
         env:
           ARM_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
@@ -146,20 +146,21 @@ jobs:
           ARM_CLIENT_ID: ${{ inputs.azure_client_id }}
           ARM_CLIENT_SECRET: ${{ inputs.azure_client_secret }}
         run: |
-          RG_ID="/subscriptions/${{ inputs.azure_subscription_id }}/resourceGroups/chatbot-${{ inputs.tenant_slug }}"
-          if az group show --name "chatbot-${{ inputs.tenant_slug }}" --output none 2>/dev/null; then
-            terraform import \
-              -var "tenant_slug=${{ inputs.tenant_slug }}" \
-              -var "azure_subscription_id=${{ inputs.azure_subscription_id }}" \
-              -var "azure_tenant_id=${{ inputs.azure_tenant_id }}" \
-              -var "azure_client_id=${{ inputs.azure_client_id }}" \
-              -var "azure_client_secret=${{ inputs.azure_client_secret }}" \
-              -var "azure_region=${{ inputs.azure_region }}" \
-              -var "image_uri=placeholder" \
-              -var "llm_provider=${{ inputs.llm_provider }}" \
-              -var "llm_api_key=placeholder" \
-              -var "pinecone_api_key=placeholder" \
-              azurerm_resource_group.this "$RG_ID" 2>/dev/null || true
+          SUB="${{ inputs.azure_subscription_id }}"
+          SLUG="${{ inputs.tenant_slug }}"
+          ACR_NAME="chatbot$(echo "$SLUG" | tr -d '-' | cut -c1-44)"
+          TF_VARS="-var tenant_slug=$SLUG -var azure_subscription_id=$SUB -var azure_tenant_id=${{ inputs.azure_tenant_id }} -var azure_client_id=${{ inputs.azure_client_id }} -var azure_client_secret=${{ inputs.azure_client_secret }} -var azure_region=${{ inputs.azure_region }} -var image_uri=placeholder -var llm_provider=${{ inputs.llm_provider }} -var llm_api_key=placeholder -var pinecone_api_key=placeholder"
+
+          # Resource group
+          if az group show --name "chatbot-$SLUG" --output none 2>/dev/null; then
+            terraform import $TF_VARS azurerm_resource_group.this \
+              "/subscriptions/$SUB/resourceGroups/chatbot-$SLUG" 2>/dev/null || true
+          fi
+
+          # ACR — always exists because the workflow creates it before Terraform
+          if az acr show --name "$ACR_NAME" --resource-group "chatbot-$SLUG" --output none 2>/dev/null; then
+            terraform import $TF_VARS azurerm_container_registry.this \
+              "/subscriptions/$SUB/resourceGroups/chatbot-$SLUG/providers/Microsoft.ContainerRegistry/registries/$ACR_NAME" 2>/dev/null || true
           fi
 
       - name: Terraform apply
