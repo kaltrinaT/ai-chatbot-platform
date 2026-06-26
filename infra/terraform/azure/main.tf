@@ -218,11 +218,28 @@ resource "azurerm_container_app" "this" {
         value = var.llm_provider == "openrouter" ? "https://openrouter.ai/api/v1" : ""
       }
     }
+
+    # ── Frontend: chat UI + nginx ──
+    # Container Apps has no path-based ingress routing, so the frontend's
+    # nginx proxies /api to the backend over localhost (same app, shared
+    # network namespace) while serving the SPA for everything else.
+    container {
+      name   = "frontend"
+      image  = var.frontend_image_uri
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name  = "BACKEND_PORT"
+        value = tostring(var.container_port)
+      }
+    }
   }
 
+  # Public ingress targets the frontend; it proxies /api to the backend.
   ingress {
     external_enabled = true
-    target_port      = var.container_port
+    target_port      = var.frontend_port
 
     traffic_weight {
       percentage      = 100

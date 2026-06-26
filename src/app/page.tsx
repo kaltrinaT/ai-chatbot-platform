@@ -33,6 +33,16 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex gap-3">
+          {process.env.DEMO_CHATBOT_URL && (
+            <a
+              href={process.env.DEMO_CHATBOT_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+            >
+              Demo chatbot ↗
+            </a>
+          )}
           <Link
             href="/tenants/new"
             className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"

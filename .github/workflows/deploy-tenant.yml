@@ -42,7 +42,11 @@ on:
       your_ecr_image:
         required: true
         type: string
-        description: "Source image URI in the platform's ECR (with tag)"
+        description: "Source backend image URI in the platform's ECR (with tag)"
+      your_frontend_ecr_image:
+        required: true
+        type: string
+        description: "Source frontend (chat UI) image URI in the platform's ECR (with tag)"
 
 jobs:
   deploy:
@@ -65,12 +69,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.aws_region }}
 
-      - name: Pull source image
+      - name: Pull source images (backend + frontend)
         run: |
           SOURCE_REGISTRY=$(echo "${{ inputs.your_ecr_image }}" | cut -d/ -f1)
           aws ecr get-login-password --region ${{ inputs.aws_region }} \
             | docker login --username AWS --password-stdin "$SOURCE_REGISTRY"
           docker pull "${{ inputs.your_ecr_image }}"
+          docker pull "${{ inputs.your_frontend_ecr_image }}"
 
       # ─────────────────────────────────────────────────────────────
       # 2. Assume client deployment role, push image to client ECR
@@ -86,25 +91,37 @@ jobs:
           role-duration-seconds: 3600
           role-skip-session-tagging: true
 
-      - name: Replicate image to client ECR
+      - name: Replicate images to client ECR
         id: client_image
         run: |
-          REPO_NAME="${{ inputs.tenant_slug }}/chatbot"
-          aws ecr describe-repositories --repository-names "$REPO_NAME" \
-            --region ${{ inputs.aws_region }} \
-            || aws ecr create-repository --repository-name "$REPO_NAME" \
-                 --region ${{ inputs.aws_region }} \
-                 --image-scanning-configuration scanOnPush=true
-
           CLIENT_REGISTRY="${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com"
-          CLIENT_URI="$CLIENT_REGISTRY/$REPO_NAME:${{ inputs.chatbot_version }}"
-
           aws ecr get-login-password --region ${{ inputs.aws_region }} \
             | docker login --username AWS --password-stdin "$CLIENT_REGISTRY"
-          docker tag "${{ inputs.your_ecr_image }}" "$CLIENT_URI"
-          docker push "$CLIENT_URI"
 
-          echo "uri=$CLIENT_URI" >> "$GITHUB_OUTPUT"
+          # Backend
+          BACKEND_REPO="${{ inputs.tenant_slug }}/chatbot"
+          aws ecr describe-repositories --repository-names "$BACKEND_REPO" \
+            --region ${{ inputs.aws_region }} \
+            || aws ecr create-repository --repository-name "$BACKEND_REPO" \
+                 --region ${{ inputs.aws_region }} \
+                 --image-scanning-configuration scanOnPush=true
+          BACKEND_URI="$CLIENT_REGISTRY/$BACKEND_REPO:${{ inputs.chatbot_version }}"
+          docker tag "${{ inputs.your_ecr_image }}" "$BACKEND_URI"
+          docker push "$BACKEND_URI"
+
+          # Frontend (chat UI)
+          FRONTEND_REPO="${{ inputs.tenant_slug }}/chatbot-frontend"
+          aws ecr describe-repositories --repository-names "$FRONTEND_REPO" \
+            --region ${{ inputs.aws_region }} \
+            || aws ecr create-repository --repository-name "$FRONTEND_REPO" \
+                 --region ${{ inputs.aws_region }} \
+                 --image-scanning-configuration scanOnPush=true
+          FRONTEND_URI="$CLIENT_REGISTRY/$FRONTEND_REPO:${{ inputs.chatbot_version }}"
+          docker tag "${{ inputs.your_frontend_ecr_image }}" "$FRONTEND_URI"
+          docker push "$FRONTEND_URI"
+
+          echo "uri=$BACKEND_URI" >> "$GITHUB_OUTPUT"
+          echo "frontend_uri=$FRONTEND_URI" >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────────────────────
       # 3. Terraform apply
@@ -134,6 +151,7 @@ jobs:
             -var "tenant_slug=${{ inputs.tenant_slug }}" \
             -var "aws_region=${{ inputs.aws_region }}" \
             -var "image_uri=${{ steps.client_image.outputs.uri }}" \
+            -var "frontend_image_uri=${{ steps.client_image.outputs.frontend_uri }}" \
             -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
             -var "llm_provider=${{ inputs.llm_provider }}" \
             -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \

@@ -28,6 +28,14 @@ export async function triggerDeployment({
       "PLATFORM_CHATBOT_IMAGE_URI is not set. Should be the source image URI in your ECR, without a tag."
     );
   }
+
+  // The chat UI image (AWS replicates this prebuilt image like the backend).
+  const frontendImageBase = process.env.PLATFORM_FRONTEND_IMAGE_URI;
+  if (tenant.cloudProvider === "aws" && !frontendImageBase) {
+    throw new Error(
+      "PLATFORM_FRONTEND_IMAGE_URI is not set. Should be the source chat-UI image URI in your ECR, without a tag."
+    );
+  }
   if (tenant.cloudProvider === "aws" && !tenant.llmSecretArn) {
     throw new Error(
       `Tenant ${tenant.id} has no llmSecretArn — the secret was not written during onboarding.`
@@ -51,7 +59,7 @@ export async function triggerDeployment({
   const inputs =
     tenant.cloudProvider === "azure"
       ? buildAzureInputs(tenant, deployment.id, chatbotVersion, imageBase)
-      : buildAwsInputs(tenant, deployment.id, chatbotVersion, imageBase);
+      : buildAwsInputs(tenant, deployment.id, chatbotVersion, imageBase, frontendImageBase!);
 
   try {
     await octokit.actions.createWorkflowDispatch({
@@ -82,7 +90,8 @@ function buildAwsInputs(
   tenant: Awaited<ReturnType<typeof db.select>>["0"] & { cloudProvider: string },
   deploymentId: string,
   chatbotVersion: string,
-  imageBase: string
+  imageBase: string,
+  frontendImageBase: string
 ): Record<string, string> {
   return {
     deployment_id: deploymentId,
@@ -97,6 +106,7 @@ function buildAwsInputs(
     llm_secret_arn: tenant.llmSecretArn!,
     llm_model: tenant.llmModel ?? "",
     your_ecr_image: `${imageBase}:${chatbotVersion}`,
+    your_frontend_ecr_image: `${frontendImageBase}:${chatbotVersion}`,
   };
 }
 

@@ -107,12 +107,21 @@ resource "aws_security_group" "alb" {
 
 resource "aws_security_group" "task" {
   name        = "${local.name}-task"
-  description = "Fargate task: container port from ALB only, all egress"
+  description = "Fargate tasks: backend + frontend ports from ALB only, all egress"
   vpc_id      = aws_vpc.this.id
 
+  # Backend container port (ALB /api/* rule forwards here).
   ingress {
     from_port       = var.container_port
     to_port         = var.container_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  # Frontend container port (ALB default action forwards here).
+  ingress {
+    from_port       = var.frontend_port
+    to_port         = var.frontend_port
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
@@ -140,6 +149,7 @@ resource "aws_lb" "this" {
   tags               = local.common_tags
 }
 
+# Backend target group — receives only /api/* via the listener rule below.
 resource "aws_lb_target_group" "this" {
   name        = local.name
   port        = var.container_port
@@ -159,14 +169,52 @@ resource "aws_lb_target_group" "this" {
   tags = local.common_tags
 }
 
+# Frontend target group — serves the chat UI (everything that isn't /api/*).
+resource "aws_lb_target_group" "frontend" {
+  name        = "${local.name}-ui"
+  port        = var.frontend_port
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.this.id
+
+  health_check {
+    path                = "/"
+    matcher             = "200-399"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    interval            = 30
+    timeout             = 5
+  }
+
+  tags = local.common_tags
+}
+
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
 
+  # Default: serve the frontend UI.
   default_action {
     type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend.arn
+  }
+}
+
+# API traffic is routed to the backend service.
+resource "aws_lb_listener_rule" "backend_api" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 10
+
+  action {
+    type             = "forward"
     target_group_arn = aws_lb_target_group.this.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
   }
 }
 
@@ -359,6 +407,64 @@ resource "aws_ecs_service" "this" {
     target_group_arn = aws_lb_target_group.this.arn
     container_name   = "chatbot"
     container_port   = var.container_port
+  }
+
+  depends_on = [aws_lb_listener_rule.backend_api]
+
+  tags = local.common_tags
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# Frontend (chat UI) — its own task definition + service, fronted by the
+# same ALB. The listener default action sends all non-/api/* traffic here.
+# ──────────────────────────────────────────────────────────────────────
+
+resource "aws_ecs_task_definition" "frontend" {
+  family                   = "${local.name}-frontend"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = var.frontend_cpu
+  memory                   = var.frontend_memory
+  execution_role_arn       = aws_iam_role.execution.arn
+
+  container_definitions = jsonencode([{
+    name      = "frontend"
+    image     = var.frontend_image_uri
+    essential = true
+    portMappings = [{
+      containerPort = var.frontend_port
+      protocol      = "tcp"
+    }]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.this.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "frontend"
+      }
+    }
+  }])
+
+  tags = local.common_tags
+}
+
+resource "aws_ecs_service" "frontend" {
+  name            = "${local.name}-frontend"
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.frontend.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = aws_subnet.public[*].id
+    security_groups  = [aws_security_group.task.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.frontend.arn
+    container_name   = "frontend"
+    container_port   = var.frontend_port
   }
 
   depends_on = [aws_lb_listener.http]

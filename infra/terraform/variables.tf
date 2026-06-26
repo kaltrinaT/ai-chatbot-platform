@@ -19,13 +19,39 @@ variable "aws_region" {
 }
 
 variable "image_uri" {
-  description = "Full ECR image URI INCLUDING tag (the client-account ECR URI after the workflow pushes it)."
+  description = "Full ECR image URI INCLUDING tag for the backend (the client-account ECR URI after the workflow pushes it)."
   type        = string
 
   validation {
     condition     = can(regex("^[0-9]{12}\\.dkr\\.ecr\\.[a-z]{2}-[a-z]+-[0-9]\\.amazonaws\\.com/.+:.+$", var.image_uri))
     error_message = "image_uri must be a full ECR URI with a tag, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/repo/name:tag."
   }
+}
+
+variable "frontend_image_uri" {
+  description = "Full ECR image URI INCLUDING tag for the chat UI (client-account ECR URI after the workflow pushes it)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}\\.dkr\\.ecr\\.[a-z]{2}-[a-z]+-[0-9]\\.amazonaws\\.com/.+:.+$", var.frontend_image_uri))
+    error_message = "frontend_image_uri must be a full ECR URI with a tag."
+  }
+}
+
+variable "frontend_port" {
+  description = "Port the frontend (nginx) container listens on."
+  type        = number
+  default     = 80
+}
+
+variable "frontend_cpu" {
+  type    = number
+  default = 256
+}
+
+variable "frontend_memory" {
+  type    = number
+  default = 512
 }
 
 variable "s3_docs_prefix" {

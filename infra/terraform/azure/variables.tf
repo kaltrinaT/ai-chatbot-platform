@@ -51,8 +51,19 @@ variable "azure_region" {
 }
 
 variable "image_uri" {
-  description = "Full ACR image URI including tag pushed by the workflow."
+  description = "Full ACR image URI including tag for the backend, pushed by the workflow."
   type        = string
+}
+
+variable "frontend_image_uri" {
+  description = "Full ACR image URI including tag for the chat UI, pushed by the workflow."
+  type        = string
+}
+
+variable "frontend_port" {
+  description = "Port the frontend (nginx) container listens on; the Container App ingress targets this."
+  type        = number
+  default     = 80
 }
 
 variable "llm_provider" {

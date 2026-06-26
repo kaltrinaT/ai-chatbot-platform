@@ -47,8 +47,10 @@ jobs:
           SLUG="${{ inputs.tenant_slug }}"
           ACR_NAME=$(echo "chatbot${SLUG}" | tr -d '-' | cut -c1-50)
           IMAGE_URI="${ACR_NAME}.azurecr.io/chatbot-backend:${{ inputs.image_tag }}"
+          FRONTEND_URI="${ACR_NAME}.azurecr.io/chatbot-frontend:${{ inputs.image_tag }}"
           echo "acr_name=${ACR_NAME}" >> "$GITHUB_OUTPUT"
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "frontend_uri=${FRONTEND_URI}" >> "$GITHUB_OUTPUT"
 
       - name: Azure login
         uses: azure/login@v2
@@ -86,7 +88,8 @@ jobs:
             -var="llm_provider=${{ inputs.llm_provider }}" \
             -var="llm_api_key=${{ secrets.LLM_API_KEY }}" \
             -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
-            -var="image_uri=placeholder"
+            -var="image_uri=placeholder" \
+            -var="frontend_image_uri=placeholder"
 
       - name: Log in to ACR
         run: az acr login --name ${{ steps.names.outputs.acr_name }}
@@ -99,6 +102,15 @@ jobs:
           tags: ${{ steps.names.outputs.image_uri }}
           cache-from: type=registry,ref=${{ steps.names.outputs.acr_name }}.azurecr.io/chatbot-backend:cache
           cache-to: type=registry,ref=${{ steps.names.outputs.acr_name }}.azurecr.io/chatbot-backend:cache,mode=max
+
+      - name: Build and push frontend (chat UI) image
+        uses: docker/build-push-action@v5
+        with:
+          context: ai-chatbot/ai-frontend
+          push: true
+          tags: ${{ steps.names.outputs.frontend_uri }}
+          cache-from: type=registry,ref=${{ steps.names.outputs.acr_name }}.azurecr.io/chatbot-frontend:cache
+          cache-to: type=registry,ref=${{ steps.names.outputs.acr_name }}.azurecr.io/chatbot-frontend:cache,mode=max
 
       - name: "Terraform apply — full deploy"
         working-directory: ${{ env.TF_DIR }}
@@ -113,7 +125,8 @@ jobs:
             -var="llm_provider=${{ inputs.llm_provider }}" \
             -var="llm_api_key=${{ secrets.LLM_API_KEY }}" \
             -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
-            -var="image_uri=${{ steps.names.outputs.image_uri }}"
+            -var="image_uri=${{ steps.names.outputs.image_uri }}" \
+            -var="frontend_image_uri=${{ steps.names.outputs.frontend_uri }}"
 
       - name: Print chatbot URL
         working-directory: ${{ env.TF_DIR }}

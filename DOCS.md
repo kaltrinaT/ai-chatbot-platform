@@ -187,9 +187,9 @@ Managed by Drizzle ORM, running on Neon Postgres.
 - `PLATFORM_WEBHOOK_SECRET`
 
 **Workflow steps:**
-1. Pull chatbot image from platform ECR (platform credentials)
+1. Pull **backend** and **frontend (chat UI)** images from platform ECR (platform credentials)
 2. AssumeRole into customer account (3600s, `role-skip-session-tagging: true`)
-3. Create ECR repo in customer account if absent; tag and push image
+3. Create ECR repos in customer account if absent (`{slug}/chatbot`, `{slug}/chatbot-frontend`); tag and push both images
 4. `terraform init` with S3 backend (`tenants/{slug}.tfstate`)
 5. `terraform apply -auto-approve` — provisions all infra
 6. Read outputs: `alb_dns_name`, `chatbot_url`
@@ -200,14 +200,16 @@ Managed by Drizzle ORM, running on Neon Postgres.
 **Same GitHub repo secrets as AWS, plus no extra Azure secrets** — all credentials are passed as workflow inputs from the platform.
 
 **Workflow steps:**
-1. Mask `llm_api_key` and `azure_client_secret` inputs in logs
-2. Pull chatbot image from platform ECR
-3. Azure login via service principal
-4. Create resource group + ACR if absent; push image to ACR
-5. `terraform init` with S3 backend (`tenants/azure/{slug}.tfstate`)
+1. Check out the platform repo and the `ai-chatbot` repo (backend + frontend source)
+2. Azure login via service principal
+3. `terraform apply` (bootstrap) — creates resource group + ACR
+4. Build and push **backend** (`ai-chatbot/ai-backend`) and **frontend** (`ai-chatbot/ai-frontend`) images to the ACR
+5. `terraform init` with S3 backend (`azure/tenants/{slug}/terraform.tfstate`)
 6. `terraform apply` — provisions infra, writes LLM key to Key Vault
 7. Read outputs: `chatbot_url`, `container_app_fqdn`
 8. POST callback to platform
+
+> Note: Azure builds both images from source (matching the existing per-tenant flow), whereas AWS replicates prebuilt images from the platform ECR.
 
 ---
 
@@ -223,14 +225,17 @@ Defined in `infra/terraform/main.tf`. Everything is created in the **customer's*
 > Note: Tasks run with public IPs in public subnets to avoid NAT Gateway cost. Suitable for MVP; revisit for production with private subnets + VPC endpoints.
 
 ### Load Balancer
-- Application Load Balancer (HTTP, port 80)
-- Target group: IP mode, container port 8000, health check on `/api/health`
+- Application Load Balancer (HTTP, port 80) with path-based routing:
+  - **Default action** → frontend target group (IP mode, port 80, health check on `/`)
+  - **Rule `/api/*`** (priority 10) → backend target group (IP mode, port 8000, health check on `/api/health`)
+- A user hits one URL (`chatbot_url`); the ALB serves the UI from `/` and routes API calls to the backend, so the frontend needs no API proxy.
 
 ### Compute
-- ECS Fargate cluster + service (desired count: 1)
-- Task defaults: 256 CPU units, 512 MB memory
-- Container environment: `S3_DOCS_BUCKET`, `S3_DOCS_PREFIX`, `LLM_PROVIDER`, `AWS_REGION`, `PORT`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, `PINECONE_INDEX`
-- LLM key injected as secrets from Secrets Manager: `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+Two ECS Fargate services in one cluster (each desired count: 1):
+- **Backend** (`chatbot-{slug}`) — container `chatbot`, image `{slug}/chatbot:{version}`
+  - Environment: `S3_DOCS_BUCKET`, `S3_DOCS_PREFIX`, `LLM_PROVIDER`, `AWS_REGION`, `PORT`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, `PINECONE_INDEX`
+  - LLM key injected as secrets from Secrets Manager: `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+- **Frontend** (`chatbot-{slug}-frontend`) — container `frontend` (nginx :80), image `{slug}/chatbot-frontend:{version}`; defaults 256 CPU units / 512 MB
 
 ### Storage
 - S3 bucket: `chatbot-{tenant_slug}-docs`
@@ -251,13 +256,16 @@ Defined in `infra/terraform/main.tf`. Everything is created in the **customer's*
 |---|---|---|
 | `tenant_slug` | yes | 3–32 chars, lowercase alphanumeric + hyphens |
 | `aws_region` | yes | e.g. `us-east-1` |
-| `image_uri` | yes | Full ECR URI with tag in customer account |
+| `image_uri` | yes | Full backend ECR URI with tag in customer account |
+| `frontend_image_uri` | yes | Full frontend (chat UI) ECR URI with tag in customer account |
 | `llm_provider` | yes | `openai` or `anthropic` |
 | `llm_secret_arn` | yes | Secrets Manager ARN (written by platform during onboarding) |
 | `s3_docs_prefix` | no | Optional prefix scope within docs bucket |
 | `domain` | no | Custom hostname |
-| `container_port` | no | Default: 8000 |
-| `task_cpu` / `task_memory` | no | Fargate sizing |
+| `container_port` | no | Backend port, default: 8000 |
+| `frontend_port` | no | Frontend port, default: 80 |
+| `task_cpu` / `task_memory` | no | Backend Fargate sizing |
+| `frontend_cpu` / `frontend_memory` | no | Frontend Fargate sizing (default 256 / 512) |
 
 ---
 
@@ -276,13 +284,14 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 | Blob container | `documents` | Private access |
 | Log Analytics Workspace | `chatbot-{slug}-logs` | 14-day retention |
 | Container App Environment | `chatbot-{slug}-env` | Linked to Log Analytics |
-| Container App | `chatbot-{slug}` | Single revision mode |
+| Container App | `chatbot-{slug}` | Single revision mode; two containers (backend + frontend) |
 
 ### Container App config
 - Min 1 replica, max 3 (autoscaling)
-- External ingress on target port 8000
-- Environment variables: `PORT`, `LLM_PROVIDER`, `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`
-- LLM key mounted as a secret from Key Vault
+- **Two containers in one app** (Container Apps has no path-based ingress routing, so both share localhost):
+  - `chatbot` (backend, :8000) — env `PORT`, `LLM_PROVIDER`, `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`; LLM key mounted as a secret from Key Vault
+  - `frontend` (chat UI, nginx :80) — env `BACKEND_PORT`; nginx serves the SPA and proxies `/api` → `localhost:8000`
+- External ingress on **target port 80** → frontend container
 
 ### Terraform variables
 
@@ -291,11 +300,13 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 | `tenant_slug` | yes | Max 18 chars (Key Vault naming limit) |
 | `subscription_id`, `tenant_id`, `client_id`, `client_secret` | yes | Customer service principal |
 | `azure_region` | yes | e.g. `eastus` |
-| `image_uri` | yes | Full ACR image URI with tag |
+| `image_uri` | yes | Full backend ACR image URI with tag |
+| `frontend_image_uri` | yes | Full frontend (chat UI) ACR image URI with tag |
 | `llm_provider` | yes | `openai` or `anthropic` |
 | `llm_api_key` | yes | Plain text; Terraform writes to Key Vault |
 | `domain` | no | Custom hostname |
-| `container_port` | no | Default: 8000 |
+| `container_port` | no | Backend port, default: 8000 |
+| `frontend_port` | no | Frontend port, default: 80 |
 
 ---
 
@@ -356,9 +367,11 @@ PLATFORM_ENCRYPTION_KEY=        # openssl rand -hex 32
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 
-# ── Chatbot image ─────────────────────────────────────────────────────
-PLATFORM_CHATBOT_IMAGE_URI=     # ECR URI without tag, e.g.:
+# ── Chatbot images (AWS replicates these prebuilt images per tenant) ──
+PLATFORM_CHATBOT_IMAGE_URI=     # backend ECR URI without tag, e.g.:
                                 # 123456789012.dkr.ecr.us-east-1.amazonaws.com/chatbot
+PLATFORM_FRONTEND_IMAGE_URI=    # frontend (chat UI) ECR URI without tag, e.g.:
+                                # 123456789012.dkr.ecr.us-east-1.amazonaws.com/chatbot-frontend
 ```
 
 ---
@@ -367,8 +380,9 @@ PLATFORM_CHATBOT_IMAGE_URI=     # ECR URI without tag, e.g.:
 
 | Aspect | AWS | Azure |
 |---|---|---|
-| Compute | ECS Fargate | Container Apps |
-| Image registry | Customer ECR (replicated from platform ECR) | Customer ACR |
+| Compute | ECS Fargate (2 services: backend + frontend) | Container Apps (1 app, 2 containers) |
+| UI routing | ALB path routing: `/api/*` → backend, `/` → frontend | nginx in frontend proxies `/api` → backend over localhost |
+| Image source | Replicated prebuilt from platform ECR (backend + frontend) | Built from `ai-chatbot` source (backend + frontend) and pushed to ACR |
 | LLM secret store | Secrets Manager (pre-created during onboarding) | Key Vault (created by Terraform during deploy) |
 | LLM key flow | Written by platform → ARN stored → injected by ECS execution role | Encrypted in DB → passed to Terraform → written to Key Vault |
 | Docs storage | S3 bucket `chatbot-{slug}-docs` | Blob container `documents` in Storage Account |
@@ -412,12 +426,12 @@ src/
 
 infra/
   terraform/
-    main.tf                             # AWS: VPC, ALB, ECS, S3, IAM
-    variables.tf                        # AWS input variables
+    main.tf                             # AWS: VPC, ALB (path routing), ECS backend + frontend services, S3, IAM
+    variables.tf                        # AWS input variables (incl. frontend_image_uri)
     outputs.tf                          # alb_dns_name, chatbot_url
     azure/
-      main.tf                           # Azure: resource group, ACR, Key Vault, Container App
-      variables.tf                      # Azure input variables
+      main.tf                           # Azure: resource group, ACR, Key Vault, Container App (backend + frontend containers)
+      variables.tf                      # Azure input variables (incl. frontend_image_uri)
       outputs.tf                        # chatbot_url, container_app_fqdn, key_vault_name
 
 .github/

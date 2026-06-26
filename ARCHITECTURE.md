@@ -146,30 +146,39 @@ VPC  10.20.0.0/16
 │   └── ingress 0.0.0.0/0 → port 80
 │
 ├── Security Group: task
-│   └── ingress alb-sg → container_port (8000)
+│   └── ingress alb-sg → frontend_port (80)  + container_port (8000)
 │       egress  all
 │
 ├── Application Load Balancer
-│   └── Listener :80 → Target Group (IP mode, port 8000)
-│         └── Health check GET /api/health  matcher 200-399
+│   └── Listener :80
+│         ├── default action        → Frontend Target Group (IP, port 80)
+│         │     └── Health check GET /  matcher 200-399
+│         └── rule /api/*  (prio 10) → Backend  Target Group (IP, port 8000)
+│               └── Health check GET /api/health  matcher 200-399
 │
 ├── ECS Cluster
-│   └── Service (desired 1, Fargate, public IP)
-│       └── Task Definition
-│           ├── Execution Role
-│           │   ├── AmazonECSTaskExecutionRolePolicy
-│           │   └── secretsmanager:GetSecretValue → LLM secret ARN
-│           ├── Task Role
-│           │   ├── s3:ListBucket → docs bucket
-│           │   └── s3:GetObject  → docs bucket/{prefix}*
-│           └── Container: chatbot
-│               ├── image: {customer-ecr}/{slug}/chatbot:{version}
-│               ├── env:   S3_DOCS_BUCKET, S3_DOCS_PREFIX,
-│               │          LLM_PROVIDER, AWS_REGION, PORT,
-│               │          OPENAI_BASE_URL, OPENAI_API_BASE,
-│               │          LLM_MODEL, PINECONE_INDEX
-│               └── secret: LLM_API_KEY, OPENAI_API_KEY,
-│                           ANTHROPIC_API_KEY ← Secrets Manager
+│   ├── Backend Service (desired 1, Fargate, public IP)
+│   │   └── Task Definition  (chatbot-{slug})
+│   │       ├── Execution Role
+│   │       │   ├── AmazonECSTaskExecutionRolePolicy
+│   │       │   └── secretsmanager:GetSecretValue → LLM secret ARN
+│   │       ├── Task Role
+│   │       │   ├── s3:ListBucket → docs bucket
+│   │       │   └── s3:GetObject  → docs bucket/{prefix}*
+│   │       └── Container: chatbot
+│   │           ├── image: {customer-ecr}/{slug}/chatbot:{version}
+│   │           ├── env:   S3_DOCS_BUCKET, S3_DOCS_PREFIX,
+│   │           │          LLM_PROVIDER, AWS_REGION, PORT,
+│   │           │          OPENAI_BASE_URL, OPENAI_API_BASE,
+│   │           │          LLM_MODEL, PINECONE_INDEX
+│   │           └── secret: LLM_API_KEY, OPENAI_API_KEY,
+│   │                       ANTHROPIC_API_KEY ← Secrets Manager
+│   │
+│   └── Frontend Service (desired 1, Fargate, public IP)
+│       └── Task Definition  (chatbot-{slug}-frontend)
+│           ├── Execution Role (shared) — pulls image from customer ECR
+│           └── Container: frontend  (chat UI, nginx :80)
+│               └── image: {customer-ecr}/{slug}/chatbot-frontend:{version}
 │
 ├── S3 Bucket: chatbot-{slug}-docs
 │   ├── AES-256 SSE
@@ -193,7 +202,8 @@ CUSTOMER AZURE SUBSCRIPTION
 Resource Group: chatbot-{slug}
 │
 ├── Container Registry: chatbot{slug}acr  (Basic SKU, admin enabled)
-│   └── image: chatbot{slug}acr.azurecr.io/chatbot:{version}
+│   ├── image: chatbot{slug}acr.azurecr.io/chatbot-backend:{version}
+│   └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
 │
 ├── Key Vault: cb-{slug}-kv  (Standard SKU)
 │   └── secret: llm-api-key  ← written by Terraform during apply
@@ -206,13 +216,18 @@ Resource Group: chatbot-{slug}
 ├── Container Apps Environment: chatbot-{slug}-env
 │   └── linked to Log Analytics
 │
-└── Container App: chatbot-{slug}
+└── Container App: chatbot-{slug}   (no path-based ingress routing, so both
+    │                                containers run in one app and share localhost)
     ├── Revision mode: Single
-    ├── Ingress: external, target port 8000
+    ├── Ingress: external, target port 80  → frontend container
     ├── Scaling: min 1 replica, max 3
-    ├── env:    PORT, LLM_PROVIDER,
-    │           AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_CONTAINER
-    └── secret: LLM_API_KEY ← Key Vault reference
+    ├── Container: chatbot   (backend, :8000)
+    │   ├── env:    PORT, LLM_PROVIDER,
+    │   │           AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_CONTAINER
+    │   └── secret: LLM_API_KEY ← Key Vault reference
+    └── Container: frontend  (chat UI, nginx :80)
+        ├── env: BACKEND_PORT (nginx proxies /api → localhost:8000)
+        └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
 
 Terraform state: s3://{TF_STATE_BUCKET}/tenants/azure/{slug}.tfstate
 ```
