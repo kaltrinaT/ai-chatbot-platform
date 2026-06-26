@@ -88,6 +88,12 @@ variable "domain" {
   }
 }
 
+variable "pinecone_environment" {
+  description = "Pinecone serverless region — must match the region of the index (e.g. us-east-1)."
+  type        = string
+  default     = "us-east-1"
+}
+
 variable "container_port" {
   description = "Port the chatbot container listens on."
   type        = number

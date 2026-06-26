@@ -1,223 +1,124 @@
-name: Deploy tenant chatbot (Azure)
+name: Deploy Tenant (Azure)
 
 on:
   workflow_dispatch:
     inputs:
-      deployment_id:
-        required: true
-        type: string
       tenant_slug:
+        description: "Tenant identifier (3-18 chars, lowercase, hyphens ok — e.g. acme-corp)"
         required: true
-        type: string
-      azure_subscription_id:
-        required: true
-        type: string
-      azure_tenant_id:
-        required: true
-        type: string
-      azure_client_id:
-        required: true
-        type: string
-      azure_client_secret:
-        required: true
-        type: string
-      azure_region:
-        required: true
-        type: string
-        default: "eastus"
       llm_provider:
+        description: "LLM provider"
         required: true
-        type: string
-      llm_api_key:
+        default: openrouter
+        type: choice
+        options: [openrouter, openai, anthropic]
+      azure_region:
+        description: "Azure region (must be allowed by your subscription policy)"
         required: true
-        type: string
-        description: "LLM API key — passed directly from the platform (masked in logs)"
-      chatbot_version:
-        required: true
-        type: string
-      domain:
+        default: eastus
+      image_tag:
+        description: "Docker image tag to deploy"
         required: false
-        type: string
-        default: ""
-      source_ecr_image:
-        required: true
-        type: string
-        description: "Source image URI in the platform's ECR (with tag)"
+        default: latest
+
+env:
+  TF_DIR: infra/terraform/azure
+  BACKEND_REPO: ${{ github.repository_owner }}/ai-chatbot
 
 jobs:
   deploy:
+    name: Deploy chatbot-${{ inputs.tenant_slug }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        shell: bash
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
 
-      - name: Mask sensitive inputs
-        run: |
-          echo "::add-mask::${{ inputs.llm_api_key }}"
-          echo "::add-mask::${{ inputs.azure_client_secret }}"
-
-      # ─────────────────────────────────────────────────────────────
-      # 2. Pull source image from the PLATFORM's ECR
-      # ─────────────────────────────────────────────────────────────
-      - name: Configure AWS credentials (pull source image from platform ECR)
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout backend repo
+        uses: actions/checkout@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          repository: ${{ env.BACKEND_REPO }}
+          path: ai-chatbot
+          token: ${{ secrets.BACKEND_REPO_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Pull source image from ECR
+      - name: Compute resource names
+        id: names
         run: |
-          SOURCE_REGISTRY=$(echo "${{ inputs.source_ecr_image }}" | cut -d/ -f1)
-          aws ecr get-login-password --region us-east-1 \
-            | docker login --username AWS --password-stdin "$SOURCE_REGISTRY"
-          docker pull "${{ inputs.source_ecr_image }}"
+          SLUG="${{ inputs.tenant_slug }}"
+          ACR_NAME=$(echo "chatbot${SLUG}" | tr -d '-' | cut -c1-50)
+          IMAGE_URI="${ACR_NAME}.azurecr.io/chatbot-backend:${{ inputs.image_tag }}"
+          echo "acr_name=${ACR_NAME}" >> "$GITHUB_OUTPUT"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
 
-      # ─────────────────────────────────────────────────────────────
-      # 2. Login to Azure, push image to tenant ACR
-      # ─────────────────────────────────────────────────────────────
       - name: Azure login
         uses: azure/login@v2
         with:
-          creds: >-
-            {
-              "clientId": "${{ inputs.azure_client_id }}",
-              "clientSecret": "${{ inputs.azure_client_secret }}",
-              "subscriptionId": "${{ inputs.azure_subscription_id }}",
-              "tenantId": "${{ inputs.azure_tenant_id }}"
-            }
+          creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
 
-      - name: Create ACR if not exists and push image
-        id: acr
-        run: |
-          ACR_NAME="chatbot$(echo "${{ inputs.tenant_slug }}" | tr -d '-' | cut -c1-44)"
-          RG_NAME="chatbot-${{ inputs.tenant_slug }}"
-
-          # Create resource group if not exists
-          az group create --name "$RG_NAME" --location "${{ inputs.azure_region }}" --output none || true
-
-          # Create ACR if not exists
-          if ! az acr show --name "$ACR_NAME" --resource-group "$RG_NAME" --output none 2>/dev/null; then
-            az acr create \
-              --name "$ACR_NAME" \
-              --resource-group "$RG_NAME" \
-              --sku Basic \
-              --admin-enabled true \
-              --location "${{ inputs.azure_region }}"
-          fi
-
-          ACR_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RG_NAME" --query loginServer -o tsv)
-          ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
-
-          docker login "$ACR_SERVER" --username "$ACR_NAME" --password "$ACR_PASSWORD"
-
-          DEST_URI="$ACR_SERVER/chatbot:${{ inputs.chatbot_version }}"
-          docker tag "${{ inputs.source_ecr_image }}" "$DEST_URI"
-          docker push "$DEST_URI"
-
-          echo "acr_server=$ACR_SERVER" >> "$GITHUB_OUTPUT"
-          echo "image_uri=$DEST_URI"    >> "$GITHUB_OUTPUT"
-
-      # ─────────────────────────────────────────────────────────────
-      # 3. Terraform apply
-      # ─────────────────────────────────────────────────────────────
-      - uses: hashicorp/setup-terraform@v3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: "~1.6"
 
       - name: Terraform init
-        working-directory: infra/terraform/azure
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="region=${{ secrets.TF_STATE_REGION }}" \
-            -backend-config="key=tenants/azure/${{ inputs.tenant_slug }}.tfstate" \
-            -backend-config="encrypt=true"
+            -backend-config="key=azure/tenants/${{ inputs.tenant_slug }}/terraform.tfstate" \
+            -backend-config="region=${{ secrets.TF_STATE_REGION }}"
 
-      - name: Import pre-existing resources into Terraform state
-        working-directory: infra/terraform/azure
-        env:
-          ARM_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
-          ARM_TENANT_ID: ${{ inputs.azure_tenant_id }}
-          ARM_CLIENT_ID: ${{ inputs.azure_client_id }}
-          ARM_CLIENT_SECRET: ${{ inputs.azure_client_secret }}
-        run: |
-          SUB="${{ inputs.azure_subscription_id }}"
-          SLUG="${{ inputs.tenant_slug }}"
-          ACR_NAME="chatbot$(echo "$SLUG" | tr -d '-' | cut -c1-44)"
-          TF_VARS="-var tenant_slug=$SLUG -var azure_subscription_id=$SUB -var azure_tenant_id=${{ inputs.azure_tenant_id }} -var azure_client_id=${{ inputs.azure_client_id }} -var azure_client_secret=${{ inputs.azure_client_secret }} -var azure_region=${{ inputs.azure_region }} -var image_uri=placeholder -var llm_provider=${{ inputs.llm_provider }} -var llm_api_key=placeholder -var pinecone_api_key=placeholder"
-
-          # Resource group
-          if az group show --name "chatbot-$SLUG" --output none 2>/dev/null; then
-            terraform import $TF_VARS azurerm_resource_group.this \
-              "/subscriptions/$SUB/resourceGroups/chatbot-$SLUG" 2>/dev/null || true
-          fi
-
-          # ACR — always exists because the workflow creates it before Terraform
-          if az acr show --name "$ACR_NAME" --resource-group "chatbot-$SLUG" --output none 2>/dev/null; then
-            terraform import $TF_VARS azurerm_container_registry.this \
-              "/subscriptions/$SUB/resourceGroups/chatbot-$SLUG/providers/Microsoft.ContainerRegistry/registries/$ACR_NAME" 2>/dev/null || true
-          fi
-
-      - name: Terraform apply
-        working-directory: infra/terraform/azure
+      - name: "Terraform apply — bootstrap ACR"
+        working-directory: ${{ env.TF_DIR }}
         run: |
           terraform apply -auto-approve \
-            -var "tenant_slug=${{ inputs.tenant_slug }}" \
-            -var "azure_subscription_id=${{ inputs.azure_subscription_id }}" \
-            -var "azure_tenant_id=${{ inputs.azure_tenant_id }}" \
-            -var "azure_client_id=${{ inputs.azure_client_id }}" \
-            -var "azure_client_secret=${{ inputs.azure_client_secret }}" \
-            -var "azure_region=${{ inputs.azure_region }}" \
-            -var "image_uri=${{ steps.acr.outputs.image_uri }}" \
-            -var "llm_provider=${{ inputs.llm_provider }}" \
-            -var "llm_api_key=${{ inputs.llm_api_key }}" \
-            -var "pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
-            -var "domain=${{ inputs.domain }}"
+            -target=azurerm_resource_group.this \
+            -target=azurerm_container_registry.this \
+            -var="tenant_slug=${{ inputs.tenant_slug }}" \
+            -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+            -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}" \
+            -var="azure_client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
+            -var="azure_region=${{ inputs.azure_region }}" \
+            -var="llm_provider=${{ inputs.llm_provider }}" \
+            -var="llm_api_key=${{ secrets.LLM_API_KEY }}" \
+            -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+            -var="image_uri=placeholder"
 
-      - name: Read Terraform outputs
-        id: tf
-        working-directory: infra/terraform/azure
-        run: |
-          echo "chatbot_url=$(terraform output -raw chatbot_url)"             >> "$GITHUB_OUTPUT"
-          echo "container_app_fqdn=$(terraform output -raw container_app_fqdn)" >> "$GITHUB_OUTPUT"
+      - name: Log in to ACR
+        run: az acr login --name ${{ steps.names.outputs.acr_name }}
 
-      # ─────────────────────────────────────────────────────────────
-      # 5. Callback to platform
-      # ─────────────────────────────────────────────────────────────
-      - name: Notify platform — success
-        if: success()
-        run: |
-          curl -sS -X POST \
-            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
-            -H "content-type: application/json" \
-            -d @- \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
-          {
-            "status": "succeeded",
-            "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
-            "albDnsName": "${{ steps.tf.outputs.container_app_fqdn }}",
-            "githubRunId": "${{ github.run_id }}",
-            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          }
-          EOF
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ai-chatbot/ai-backend
+          push: true
+          tags: ${{ steps.names.outputs.image_uri }}
+          cache-from: type=registry,ref=${{ steps.names.outputs.acr_name }}.azurecr.io/chatbot-backend:cache
+          cache-to: type=registry,ref=${{ steps.names.outputs.acr_name }}.azurecr.io/chatbot-backend:cache,mode=max
 
-      - name: Notify platform — failure
-        if: failure()
+      - name: "Terraform apply — full deploy"
+        working-directory: ${{ env.TF_DIR }}
         run: |
-          curl -sS -X POST \
-            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
-            -H "content-type: application/json" \
-            -d @- \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
-          {
-            "status": "failed",
-            "errorMessage": "Workflow run ${{ github.run_id }} failed; see GitHub Actions logs.",
-            "githubRunId": "${{ github.run_id }}",
-            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          }
-          EOF
+          terraform apply -auto-approve \
+            -var="tenant_slug=${{ inputs.tenant_slug }}" \
+            -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+            -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}" \
+            -var="azure_client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
+            -var="azure_region=${{ inputs.azure_region }}" \
+            -var="llm_provider=${{ inputs.llm_provider }}" \
+            -var="llm_api_key=${{ secrets.LLM_API_KEY }}" \
+            -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+            -var="image_uri=${{ steps.names.outputs.image_uri }}"
+
+      - name: Print chatbot URL
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          URL=$(terraform output -raw chatbot_url)
+          echo "### Deployment complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Chatbot URL:** ${URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed to: ${URL}"

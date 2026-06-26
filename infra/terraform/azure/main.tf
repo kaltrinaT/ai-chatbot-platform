@@ -207,7 +207,15 @@ resource "azurerm_container_app" "this" {
       }
       env {
         name  = "PINECONE_INDEX"
-        value = "chatbot-${var.tenant_slug}"
+        value = "chatbot-shared"
+      }
+      env {
+        name  = "PINECONE_ENVIRONMENT"
+        value = var.pinecone_environment
+      }
+      env {
+        name  = "OPENAI_BASE_URL"
+        value = var.llm_provider == "openrouter" ? "https://openrouter.ai/api/v1" : ""
       }
     }
   }

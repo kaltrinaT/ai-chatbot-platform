@@ -318,7 +318,7 @@ resource "aws_ecs_task_definition" "this" {
       { name = "LLM_PROVIDER",     value = var.llm_provider },
       { name = "AWS_REGION",       value = var.aws_region },
       { name = "PORT",             value = tostring(var.container_port) },
-      { name = "PINECONE_INDEX",   value = "chatbot-${var.tenant_slug}" },
+      { name = "PINECONE_INDEX",   value = "chatbot-shared" },
       { name = "OPENAI_BASE_URL",  value = local.llm_base_url },
       { name = "OPENAI_API_BASE",  value = local.llm_base_url },
       { name = "LLM_MODEL",        value = local.llm_model }
