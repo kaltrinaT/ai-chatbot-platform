@@ -32,7 +32,7 @@ locals {
   llm_default_model = {
     openai     = "gpt-4o-mini"
     anthropic  = "claude-3-5-haiku-20241022"
-    openrouter = "google/gemma-2-9b-it:free"
+    openrouter = "meta-llama/llama-3.3-70b-instruct:free"
   }[var.llm_provider]
 
   llm_model = var.llm_model != "" ? var.llm_model : local.llm_default_model

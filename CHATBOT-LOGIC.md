@@ -61,7 +61,7 @@ The container reads `OPENAI_BASE_URL` to determine which API endpoint to call. T
 |---|---|---|
 | `openai` | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | `anthropic` | `https://api.anthropic.com/v1` | `claude-3-5-haiku-20241022` |
-| `openrouter` | `https://openrouter.ai/api/v1` | `google/gemma-2-9b-it:free` |
+| `openrouter` | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct:free` |
 
 All three providers are called using the **OpenAI Python SDK** with a custom `base_url`. The `LLM_MODEL` env var overrides the default.
 

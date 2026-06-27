@@ -76,6 +76,12 @@ variable "llm_provider" {
   }
 }
 
+variable "llm_model" {
+  description = "Model name passed to the chatbot. Empty string uses the default model for the provider."
+  type        = string
+  default     = ""
+}
+
 variable "llm_api_key" {
   description = "LLM API key retrieved from Key Vault by the workflow."
   type        = string

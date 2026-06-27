@@ -19,6 +19,20 @@ locals {
     Project = "ai-chatbot-platform"
     Tenant  = var.tenant_slug
   }
+
+  llm_base_url = {
+    openai     = "https://api.openai.com/v1"
+    anthropic  = "https://api.anthropic.com/v1"
+    openrouter = "https://openrouter.ai/api/v1"
+  }[var.llm_provider]
+
+  llm_default_model = {
+    openai     = "gpt-4o-mini"
+    anthropic  = "claude-3-5-haiku-20241022"
+    openrouter = "meta-llama/llama-3.3-70b-instruct:free"
+  }[var.llm_provider]
+
+  llm_model = var.llm_model != "" ? var.llm_model : local.llm_default_model
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -215,7 +229,15 @@ resource "azurerm_container_app" "this" {
       }
       env {
         name  = "OPENAI_BASE_URL"
-        value = var.llm_provider == "openrouter" ? "https://openrouter.ai/api/v1" : ""
+        value = local.llm_base_url
+      }
+      env {
+        name  = "OPENAI_API_BASE"
+        value = local.llm_base_url
+      }
+      env {
+        name  = "LLM_MODEL"
+        value = local.llm_model
       }
     }
 

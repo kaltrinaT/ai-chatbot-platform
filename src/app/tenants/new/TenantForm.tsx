@@ -195,7 +195,7 @@ export default function TenantForm() {
       <Field
         label="LLM model (optional)"
         name="llmModel"
-        placeholder="e.g. gpt-4o-mini · claude-3-5-haiku-20241022 · google/gemma-2-9b-it:free"
+        placeholder="e.g. gpt-4o-mini · claude-3-5-haiku-20241022 · meta-llama/llama-3.3-70b-instruct:free"
         hint="Leave blank to use the default model for the selected provider."
         error={errors.llmModel}
       />
