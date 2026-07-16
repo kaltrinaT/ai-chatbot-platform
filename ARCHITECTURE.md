@@ -170,9 +170,10 @@ VPC  10.20.0.0/16
 │   │           ├── env:   S3_DOCS_BUCKET, S3_DOCS_PREFIX,
 │   │           │          LLM_PROVIDER, AWS_REGION, PORT,
 │   │           │          OPENAI_BASE_URL, OPENAI_API_BASE,
-│   │           │          LLM_MODEL, PINECONE_INDEX
+│   │           │          LLM_MODEL, PINECONE_INDEX (=chatbot-shared)
 │   │           └── secret: LLM_API_KEY, OPENAI_API_KEY,
-│   │                       ANTHROPIC_API_KEY ← Secrets Manager
+│   │                       ANTHROPIC_API_KEY ← LLM secret,
+│   │                       PINECONE_API_KEY  ← Pinecone secret
 │   │
 │   └── Frontend Service (desired 1, Fargate, public IP)
 │       └── Task Definition  (chatbot-{slug}-frontend)
@@ -186,6 +187,10 @@ VPC  10.20.0.0/16
 │
 ├── Secrets Manager: {slug}/llm-api-key
 │   └── written by platform during onboarding (AssumeRole)
+│
+├── Secrets Manager: {slug}/pinecone-api-key
+│   └── written by Terraform from the pinecone_api_key var
+│       (platform-wide PINECONE_API_KEY GitHub secret)
 │
 └── CloudWatch Log Group: /ecs/chatbot-{slug}  (14-day retention)
 
@@ -206,12 +211,14 @@ Resource Group: chatbot-{slug}
 │   └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
 │
 ├── Key Vault: cb-{slug}-kv  (Standard SKU)
-│   └── secret: llm-api-key  ← written by Terraform during apply
+│   ├── secret: llm-api-key       ← written by Terraform during apply
+│   ├── secret: pinecone-api-key  ← written by Terraform during apply
+│   └── secret: storage-key       ← storage account primary access key
 │
 ├── Storage Account: chatbot{slug}  (hyphens stripped, max 24 chars)
 │   └── Blob container: documents  (private)
 │
-├── Log Analytics Workspace: chatbot-{slug}-logs  (14-day retention)
+├── Log Analytics Workspace: chatbot-{slug}-logs  (30-day retention)
 │
 ├── Container Apps Environment: chatbot-{slug}-env
 │   └── linked to Log Analytics
@@ -221,15 +228,20 @@ Resource Group: chatbot-{slug}
     ├── Revision mode: Single
     ├── Ingress: external, target port 80  → frontend container
     ├── Scaling: min 1 replica, max 3
-    ├── Container: chatbot   (backend, :8000)
-    │   ├── env:    PORT, LLM_PROVIDER,
-    │   │           AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_CONTAINER
-    │   └── secret: LLM_API_KEY ← Key Vault reference
-    └── Container: frontend  (chat UI, nginx :80)
+    ├── App secrets: acr-password, llm-api-key, pinecone-api-key, storage-key
+    ├── Container: chatbot   (backend, 0.5 vCPU / 1 Gi, :8000)
+    │   ├── env:    PORT, LLM_PROVIDER, AZURE_STORAGE_ACCOUNT,
+    │   │           AZURE_STORAGE_CONTAINER, PINECONE_INDEX (=chatbot-shared),
+    │   │           PINECONE_ENVIRONMENT, OPENAI_BASE_URL,
+    │   │           OPENAI_API_BASE, LLM_MODEL
+    │   └── secret: LLM_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY ← llm-api-key,
+    │               PINECONE_API_KEY ← pinecone-api-key,
+    │               AZURE_STORAGE_KEY ← storage-key
+    └── Container: frontend  (chat UI, nginx :80, 0.25 vCPU / 0.5 Gi)
         ├── env: BACKEND_PORT (nginx proxies /api → localhost:8000)
         └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
 
-Terraform state: s3://{TF_STATE_BUCKET}/tenants/azure/{slug}.tfstate
+Terraform state: s3://{TF_STATE_BUCKET}/azure/tenants/{slug}/terraform.tfstate
 ```
 
 ---
@@ -321,12 +333,17 @@ tenants ────────────────────────
   │  awsAccountId                   azureSubscriptionId          │
   │  awsRegion                      azureTenantId                │
   │  deploymentRoleArn              azureClientId                │
-  │  s3DocsPrefix                   azureClientSecretEncrypted   │
+  │  s3DocsBucket                   azureClientSecretEncrypted   │
+  │  s3DocsPrefix                   azureResourceGroup           │
   │  llmSecretArn                   azureRegion                  │
+  │                                 azureStorageAccount          │
+  │                                 azureStorageContainer        │
+  │                                 azureKeyVaultName            │
   │                                                              │
   │  shared: llmProvider (openai|anthropic|openrouter),           │
   │          llmApiKeyEncrypted, llmModel, llmBaseUrl,           │
-  │          chatbotVersion, domain, albDnsName, chatbotUrl      │
+  │          chatbotVersion, domain, albDnsName, chatbotUrl,     │
+  │          config (jsonb)                                      │
   │                                                              │
   │ tenantId                                                     │
   ▼                                                              │

@@ -18,7 +18,7 @@ if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
 
 const authOptions = {
   providers,
-  session: { strategy: "database" },
+  session: { strategy: "database" as const },
   pages: { signIn: "/signin" },
   secret: authSecret,
 };

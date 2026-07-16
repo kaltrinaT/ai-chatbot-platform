@@ -1,4 +1,7 @@
 name: Deploy tenant chatbot
+# The deployment ID in the run name lets the platform find this run by
+# display_title if the "run started" callback below never arrives.
+run-name: "Deploy ${{ inputs.tenant_slug }} [${{ inputs.deployment_id }}]"
 
 on:
   workflow_dispatch:
@@ -57,6 +60,24 @@ jobs:
         shell: bash
 
     steps:
+      # Report the run ID to the platform immediately so the tenant page can
+      # poll live progress. Best-effort: a platform outage must not fail the
+      # customer's deploy.
+      - name: Notify platform — run started
+        continue-on-error: true
+        run: |
+          curl -sS --max-time 15 -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "running",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+
       - uses: actions/checkout@v4
 
       # ─────────────────────────────────────────────────────────────

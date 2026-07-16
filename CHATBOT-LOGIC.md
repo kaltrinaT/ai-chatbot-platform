@@ -1,5 +1,7 @@
 # Chatbot Backend — Logic & Flow
 
+> **Scope:** This documents the external `ai-chatbot/ai-backend` repository, which is **not** part of this platform repo. Backend-internal details (endpoints, embedding model, chunking) can only be verified against that repo. The runtime **environment variables** below, however, are set by this repo's Terraform and are authoritative.
+
 The chatbot backend is a Python FastAPI service (`ai-chatbot/ai-backend`). It implements a Retrieval-Augmented Generation (RAG) pipeline: it retrieves relevant document chunks from Pinecone, then sends them as context to an LLM to generate an answer.
 
 ---
@@ -107,11 +109,11 @@ POST /api/index  { tenant_id, bucket, prefix }
 
 ## Pinecone Index
 
-- **Index name**: read from `PINECONE_INDEX` env var (set to `chatbot-{tenant_slug}` by Terraform), falling back to `PINECONE_INDEX_NAME`, then `chatbot-index`
+- **Index name**: read from `PINECONE_INDEX` env var — set to the **shared** value `chatbot-shared` by Terraform (AWS and Azure both hardcode this). All tenants share one index; there is no per-tenant index.
 - **Dimension**: 384 (matches `all-MiniLM-L6-v2` output)
 - **Metric**: cosine
-- **Tenant isolation**: metadata filter `{"tenant": {"$eq": tenant_id}}` on every query — all tenants can share one index
-- Index is created automatically on first startup if it doesn't exist
+- **Tenant isolation**: metadata filter `{"tenant": {"$eq": tenant_id}}` on every query — all tenants share the one `chatbot-shared` index, separated only by this filter
+- **Pinecone key**: platform-wide — sourced from the `PINECONE_API_KEY` GitHub secret (not collected per tenant in the onboarding form)
 
 ---
 
@@ -138,7 +140,7 @@ POST /api/index  { tenant_id, bucket, prefix }
 | `OPENAI_API_BASE` | Terraform env | LLM API endpoint (legacy alias) |
 | `LLM_MODEL` | Terraform env | Model name override |
 | `LLM_PROVIDER` | Terraform env | Provider name (`openai`/`anthropic`/`openrouter`) |
-| `PINECONE_INDEX` | Terraform env | Pinecone index name (`chatbot-{slug}`) |
+| `PINECONE_INDEX` | Terraform env | Pinecone index name (shared: `chatbot-shared`) |
 | `S3_DOCS_BUCKET` | Terraform env | S3 bucket for tenant documents |
 | `S3_DOCS_PREFIX` | Terraform env | Optional key prefix within bucket |
 | `AWS_REGION` | Terraform env | Region for S3 SDK |

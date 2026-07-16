@@ -1,8 +1,8 @@
-import { Octokit } from "@octokit/rest";
 import { db } from "@/db";
 import { deployments, tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { decryptSecret } from "@/lib/crypto";
+import { getChatbotRepo, getDeployWorkflowId, getOctokit } from "@/lib/github";
 
 type TriggerInput = {
   tenantId: string;
@@ -18,8 +18,7 @@ export async function triggerDeployment({
   const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
   if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
 
-  const owner = process.env.CHATBOT_REPO_OWNER!;
-  const repo = process.env.CHATBOT_REPO_NAME!;
+  const { owner, repo } = getChatbotRepo();
   const ref = process.env.CHATBOT_DEPLOY_REF ?? "main";
 
   const imageBase = process.env.PLATFORM_CHATBOT_IMAGE_URI;
@@ -49,12 +48,12 @@ export async function triggerDeployment({
     .values({ tenantId, chatbotVersion, triggeredByUserId, status: "pending" })
     .returning();
 
-  const octokit = new Octokit({ auth: process.env.GITHUB_PAT! });
+  const octokit = getOctokit();
 
   const workflowId =
     tenant.cloudProvider === "azure"
       ? "deploy-tenant-azure.yml"
-      : (process.env.CHATBOT_DEPLOY_WORKFLOW ?? "deploy-tenant.yml");
+      : getDeployWorkflowId();
 
   const inputs =
     tenant.cloudProvider === "azure"

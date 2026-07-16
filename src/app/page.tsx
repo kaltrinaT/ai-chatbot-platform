@@ -73,7 +73,7 @@ export default async function DashboardPage() {
           </p>
         ) : (
           <ul className="divide-y rounded border">
-            {myTenants.map((t) => (
+            {myTenants.map((t: typeof tenants.$inferSelect) => (
               <li key={t.id} className="flex items-center justify-between p-4">
                 <div>
                   <div className="font-medium">{t.name}</div>
@@ -99,7 +99,7 @@ export default async function DashboardPage() {
           <p className="text-sm text-gray-500">No deployments yet.</p>
         ) : (
           <ul className="divide-y rounded border">
-            {recentDeploys.map((d) => (
+            {recentDeploys.map((d: typeof deployments.$inferSelect) => (
               <li key={d.id} className="flex items-center justify-between p-4 text-sm">
                 <div>
                   <span className="font-mono text-xs text-gray-500">{d.id.slice(0, 8)}</span>
