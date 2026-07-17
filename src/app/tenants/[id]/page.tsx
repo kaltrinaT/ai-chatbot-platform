@@ -6,6 +6,7 @@ import { tenants, deployments } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import RedeployButton from "./RedeployButton";
 import DeploymentProgress from "./DeploymentProgress";
+import CostEstimateCard from "./CostEstimateCard";
 
 export default async function TenantDetailPage({
   params,
@@ -182,6 +183,8 @@ export default async function TenantDetailPage({
           </>
         )}
       </dl>
+
+      <CostEstimateCard provider={tenant.cloudProvider} slug={tenant.slug} />
 
       <h2 className="mt-8 mb-3 text-lg font-medium">Deployments</h2>
       {tenantDeploys.length === 0 ? (

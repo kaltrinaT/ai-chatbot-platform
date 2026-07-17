@@ -472,6 +472,8 @@ All infrastructure runs in the **client's** cloud account. The platform itself i
 
 Prices shown are for **us-east-1 (AWS)** and **East US (Azure)**. Other regions vary by up to ~20%. All figures assume 730 hours/month (one full month, 24/7).
 
+These estimates also surface **in-product** (computed in `src/lib/pricing.ts`): a per-resource breakdown card on each tenant detail page and a live preview on the onboarding form. For **actual** per-tenant spend, every resource Terraform creates is tagged `Tenant = {slug}` (and `Project = ai-chatbot-platform`): on AWS, activate the tag under Billing → Cost allocation tags and filter Cost Explorer by it; on Azure, group by the tag in Cost Management → Cost analysis. This keeps cost reporting entirely inside the client's account — the platform never reads their billing data.
+
 ---
 
 ### AWS Cost per Tenant
@@ -514,17 +516,19 @@ Set `task_cpu = 512`, `task_memory = 1024`, `frontend_cpu = 512`, `frontend_memo
 
 Azure Container Apps (Consumption plan) bills per second of active CPU and memory. With `min_replicas = 1` the app is always-on and billed continuously. Each subscription gets a monthly free tier of 180,000 vCPU-seconds and 360,000 GiB-seconds — only significant if you have very few tenants.
 
-#### Default sizing (0.5 vCPU / 1 Gi per container — 2 containers per app)
+#### Default sizing (backend 0.5 vCPU / 1 Gi; frontend 0.25 vCPU / 0.5 Gi)
 
 | Resource | Details | Monthly est. |
 |---|---|---|
-| **Container App — backend** | 0.5 vCPU, 1 Gi, always-on | ~$38 |
-| **Container App — frontend** | 0.5 vCPU, 1 Gi, always-on | ~$38 |
+| **Container App — backend** | 0.5 vCPU, 1 Gi, always-on | ~$39 |
+| **Container App — frontend** | 0.25 vCPU, 0.5 Gi, always-on | ~$20 |
 | **Container Registry (Basic)** | Image storage | ~$5 |
 | **Key Vault (Standard)** | Secret ops | ~$0.50 |
 | **Storage Account (LRS)** | Docs storage + transactions | ~$1–5 |
 | **Log Analytics Workspace** | 30-day retention, 5 GB/month free | ~$0–5 |
-| **Total (idle / light traffic)** | | **~$83–92/month** |
+| **Total (idle / light traffic)** | | **~$66–75/month** |
+
+> These figures match the sizing `infra/terraform/azure/main.tf` actually deploys (an earlier revision of this table assumed two 0.5 vCPU / 1 Gi containers, ~$83–92/month).
 
 > Azure Container Apps is more expensive than AWS Fargate at idle because each container is billed individually with no equivalent of Fargate's combined task pricing. The cost advantage of Azure shows at high burst traffic where autoscaling kicks in (1–3 replicas).
 

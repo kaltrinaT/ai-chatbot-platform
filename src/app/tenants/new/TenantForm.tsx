@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { createTenantAndDeploy, type FormState } from "./actions";
+import { estimateMonthlyCost } from "@/lib/pricing";
 
 export default function TenantForm() {
   const [state, formAction, isPending] = useActionState(createTenantAndDeploy, null);
@@ -39,10 +40,18 @@ export default function TenantForm() {
       <hr className="border-gray-200" />
 
       {/* Shared fields */}
-      <Field label="Tenant name" name="name" placeholder="Acme Corp" required error={errors.name} />
+      <Field
+        label="Tenant name"
+        name="name"
+        placeholder="Acme Corp"
+        required
+        error={errors.name}
+        tooltip="The customer's display name — shown on the platform dashboard only, never used in cloud resource names."
+      />
       <Field
         label="Slug"
         name="slug"
+        tooltip="You choose this: a short unique ID baked into every cloud resource name (bucket, cluster, vault). Agree it with the customer — it cannot be changed after creation."
         placeholder={cloud === "azure" ? "acme (max 18 chars for Azure)" : "acme"}
         hint={
           cloud === "azure"
@@ -62,6 +71,7 @@ export default function TenantForm() {
         defaultValue="latest"
         hint="Git tag / image tag of the chatbot release to deploy."
         error={errors.chatbotVersion}
+        tooltip="An image tag from the platform's chatbot releases (platform ECR). Use “latest” unless you were told to pin a specific release."
       />
       <Field
         label="Custom domain (optional)"
@@ -69,6 +79,7 @@ export default function TenantForm() {
         placeholder="chat.acme.com"
         hint="Leave blank to use the auto-assigned URL. No https:// or trailing slash."
         error={errors.domain}
+        tooltip="Provided by the customer's DNS admin. After the first deploy they point a CNAME from this hostname to the chatbot URL shown on the tenant page."
       />
 
       <hr className="border-gray-200" />
@@ -86,6 +97,7 @@ export default function TenantForm() {
             minLength={12}
             maxLength={12}
             error={errors.awsAccountId}
+            tooltip="The customer finds their 12-digit account ID in the AWS Console account menu (top-right, under their name), or by running: aws sts get-caller-identity"
           />
           <Field
             label="AWS region"
@@ -96,6 +108,7 @@ export default function TenantForm() {
             pattern="[a-z]{2}-[a-z]+-[0-9]"
             title="Must be a valid AWS region, e.g. us-east-1"
             error={errors.awsRegion}
+            tooltip="Pick the region closest to the customer's users. The full list is in the AWS Console region selector (top-right), e.g. us-east-1, eu-central-1."
           />
           <Field
             label="Deployment role ARN"
@@ -104,6 +117,7 @@ export default function TenantForm() {
             hint="IAM role in the customer account the platform will assume to run Terraform."
             required
             error={errors.deploymentRoleArn}
+            tooltip="The customer creates this: AWS Console → IAM → Roles → Create role, trusting the platform's AWS account, then copies the ARN from the role's summary page (arn:aws:iam::<account>:role/…)."
           />
           <Field
             label="S3 prefix (optional)"
@@ -111,6 +125,7 @@ export default function TenantForm() {
             placeholder="knowledge-base/"
             hint="Restrict the chatbot to documents under this prefix within the auto-created bucket. No leading slash."
             error={errors.s3DocsPrefix}
+            tooltip="A folder path inside the docs bucket the platform creates, e.g. docs/. Ask the customer where they plan to upload their knowledge-base files; leave blank to use the bucket root."
           />
         </section>
       )}
@@ -126,6 +141,7 @@ export default function TenantForm() {
             hint="Customer's Azure subscription ID (UUID format)."
             required
             error={errors.azureSubscriptionId}
+            tooltip="The customer finds it in Azure Portal → Subscriptions, or by running: az account show --query id"
           />
           <Field
             label="Azure AD tenant ID"
@@ -134,6 +150,7 @@ export default function TenantForm() {
             hint="Azure Active Directory tenant ID for the customer's subscription."
             required
             error={errors.azureTenantId}
+            tooltip="Azure Portal → Microsoft Entra ID → Overview → Tenant ID, or: az account show --query tenantId"
           />
           <Field
             label="Service principal client ID"
@@ -142,6 +159,7 @@ export default function TenantForm() {
             hint="Application (client) ID of the service principal with Contributor access."
             required
             error={errors.azureClientId}
+            tooltip="Azure Portal → App registrations → the customer's deploy app → Application (client) ID on the overview page. The app needs Contributor on the subscription."
           />
           <Field
             label="Service principal client secret"
@@ -151,6 +169,7 @@ export default function TenantForm() {
             hint="Encrypted at rest in the platform database."
             required
             error={errors.azureClientSecret}
+            tooltip="App registrations → the app → Certificates & secrets → New client secret. The customer must copy the Value column immediately — Azure shows it only once."
           />
           <Field
             label="Azure region"
@@ -160,6 +179,7 @@ export default function TenantForm() {
             hint="Azure region for all resources (e.g. eastus, westeurope)."
             required
             error={errors.azureRegion}
+            tooltip="Pick the region closest to the customer's users. List them with: az account list-locations -o table"
           />
         </section>
       )}
@@ -177,6 +197,7 @@ export default function TenantForm() {
         ]}
         required
         error={errors.llmProvider}
+        tooltip="Whichever vendor issued the API key below — the chatbot calls this provider for answers."
       />
       <Field
         label="LLM API key"
@@ -191,6 +212,7 @@ export default function TenantForm() {
         required
         minLength={10}
         error={errors.llmApiKey}
+        tooltip="Created in the provider's dashboard: OpenAI — platform.openai.com → API keys · Anthropic — console.anthropic.com → API keys · OpenRouter — openrouter.ai → Keys."
       />
       <Field
         label="LLM model (optional)"
@@ -198,7 +220,10 @@ export default function TenantForm() {
         placeholder="e.g. gpt-4o-mini · claude-3-5-haiku-20241022 · meta-llama/llama-3.3-70b-instruct:free"
         hint="Leave blank to use the default model for the selected provider."
         error={errors.llmModel}
+        tooltip="A model ID from the selected provider's model documentation. Leave blank to use the platform's default model for that provider."
       />
+
+      <CostPreview cloud={cloud} />
 
       <div className="flex gap-3 pt-2">
         <button
@@ -216,17 +241,74 @@ export default function TenantForm() {
   );
 }
 
+function CostPreview({ cloud }: { cloud: "aws" | "azure" }) {
+  const est = estimateMonthlyCost(cloud);
+  const top = [...est.lines].sort((a, b) => b.highUsd - a.highUsd).slice(0, 3);
+  return (
+    <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+      <div className="flex items-baseline justify-between text-sm">
+        <span className="font-medium">Estimated infrastructure cost</span>
+        <span className="font-semibold">
+          ~${est.totalLow}–{est.totalHigh}
+          <span className="ml-1 text-xs font-normal text-gray-500">/ month</span>
+        </span>
+      </div>
+      <ul className="mt-2 space-y-0.5 text-xs text-gray-600">
+        {top.map((l) => (
+          <li key={l.label} className="flex justify-between">
+            <span>{l.label}</span>
+            <span className="font-mono">
+              {l.lowUsd === l.highUsd ? `$${l.highUsd}` : `$${l.lowUsd}–${l.highUsd}`}
+            </span>
+          </li>
+        ))}
+        <li className="text-gray-400">+ storage, secrets, logs…</li>
+      </ul>
+      <p className="mt-2 text-xs text-gray-500">
+        Billed to the customer&apos;s {cloud === "azure" ? "Azure subscription" : "AWS account"} at{" "}
+        {cloud === "azure" ? "East US" : "us-east-1"} list prices (±20% by region). Pinecone and LLM
+        API usage are billed separately. A full breakdown appears on the tenant page.
+      </p>
+    </div>
+  );
+}
+
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <span
+        tabIndex={0}
+        role="img"
+        aria-label={text}
+        className="flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-gray-300 text-[10px] font-semibold leading-none text-gray-400 hover:border-gray-400 hover:text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-400"
+      >
+        i
+      </span>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-6 z-10 w-64 -translate-x-1/2 rounded bg-gray-900 px-2 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
 function Field({
   label, name, placeholder, hint, required, defaultValue,
-  pattern, title, type, minLength, maxLength, error,
+  pattern, title, type, minLength, maxLength, error, tooltip,
 }: {
   label: string; name: string; placeholder?: string; hint?: string;
   required?: boolean; defaultValue?: string; pattern?: string; title?: string;
   type?: string; minLength?: number; maxLength?: number; error?: string;
+  tooltip?: string;
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium">{label}</span>
+      <span className="flex items-center gap-1 text-sm font-medium">
+        {label}
+        {tooltip && <InfoTip text={tooltip} />}
+      </span>
       <input
         name={name}
         type={type ?? "text"}
@@ -252,14 +334,17 @@ function Field({
 }
 
 function SelectField({
-  label, name, options, hint, required, error,
+  label, name, options, hint, required, error, tooltip,
 }: {
   label: string; name: string; options: { value: string; label: string }[];
-  hint?: string; required?: boolean; error?: string;
+  hint?: string; required?: boolean; error?: string; tooltip?: string;
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium">{label}</span>
+      <span className="flex items-center gap-1 text-sm font-medium">
+        {label}
+        {tooltip && <InfoTip text={tooltip} />}
+      </span>
       <select
         name={name}
         required={required}
