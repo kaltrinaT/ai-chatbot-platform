@@ -184,7 +184,11 @@ export default async function TenantDetailPage({
         )}
       </dl>
 
-      <CostEstimateCard provider={tenant.cloudProvider} slug={tenant.slug} />
+      <CostEstimateCard
+        provider={tenant.cloudProvider}
+        slug={tenant.slug}
+        vectorStore={tenant.vectorStore}
+      />
 
       <h2 className="mt-8 mb-3 text-lg font-medium">Deployments</h2>
       {tenantDeploys.length === 0 ? (

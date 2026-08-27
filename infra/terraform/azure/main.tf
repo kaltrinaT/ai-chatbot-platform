@@ -1,10 +1,14 @@
 provider "azurerm" {
   features {}
-  subscription_id             = var.azure_subscription_id
-  tenant_id                   = var.azure_tenant_id
-  client_id                   = var.azure_client_id
-  client_secret               = var.azure_client_secret
-  skip_provider_registration  = true
+  subscription_id            = var.azure_subscription_id
+  tenant_id                  = var.azure_tenant_id
+  client_id                  = var.azure_client_id
+  client_secret              = var.azure_client_secret
+  skip_provider_registration = true
+}
+
+provider "pinecone" {
+  api_key = var.pinecone_api_key
 }
 
 data "azurerm_client_config" "current" {}
@@ -33,6 +37,11 @@ locals {
   }[var.llm_provider]
 
   llm_model = var.llm_model != "" ? var.llm_model : local.llm_default_model
+
+  use_pinecone = var.vector_store == "pinecone"
+  use_pgvector = var.vector_store == "pgvector"
+
+  pg_name = substr("${local.name}-pg", 0, 63)
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -85,6 +94,8 @@ resource "azurerm_key_vault_secret" "llm_api_key" {
 }
 
 resource "azurerm_key_vault_secret" "pinecone_api_key" {
+  count = local.use_pinecone ? 1 : 0
+
   name         = "pinecone-api-key"
   value        = var.pinecone_api_key
   key_vault_id = azurerm_key_vault.this.id
@@ -93,6 +104,116 @@ resource "azurerm_key_vault_secret" "pinecone_api_key" {
 resource "azurerm_key_vault_secret" "storage_key" {
   name         = "storage-key"
   value        = azurerm_storage_account.docs.primary_access_key
+  key_vault_id = azurerm_key_vault.this.id
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# Vector store — exactly one of the two blocks below is created, chosen by
+# var.vector_store.
+#
+#   "pinecone" — a dedicated index in the CUSTOMER's own Pinecone project.
+#                Cheaper and nothing to operate, but embeddings leave the
+#                customer's subscription.
+#   "pgvector" — Azure Database for PostgreSQL Flexible Server with the
+#                pgvector extension. Embeddings never leave the customer's
+#                subscription, at the cost of a managed database.
+# ──────────────────────────────────────────────────────────────────────
+
+resource "pinecone_index" "this" {
+  count = local.use_pinecone ? 1 : 0
+
+  name      = local.name
+  dimension = 384 # must match the all-MiniLM-L6-v2 embedding output
+  metric    = "cosine"
+
+  # Pinecone serverless is hosted on AWS/GCP/Azure independently of where the
+  # tenant's own infrastructure runs; the customer's project decides billing.
+  spec = {
+    serverless = {
+      cloud  = "aws"
+      region = var.pinecone_environment
+    }
+  }
+
+  # Offboarding a tenant is `terraform destroy`; the index must go with it.
+  deletion_protection = "disabled"
+}
+
+resource "random_password" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  length = 32
+  # The value is embedded in a connection URL, so avoid characters that would
+  # need percent-encoding.
+  special = false
+}
+
+resource "azurerm_postgresql_flexible_server" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  name                = local.pg_name
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+
+  version                = "16"
+  sku_name               = var.vector_db_sku
+  storage_mb             = var.vector_db_storage_mb
+  administrator_login    = "chatbot"
+  administrator_password = random_password.vectors[0].result
+
+  backup_retention_days        = 7
+  geo_redundant_backup_enabled = false
+  zone                         = "1"
+
+  # Container Apps without VNet integration egress from rotating Azure IPs, so
+  # the server keeps public networking and is fenced by the firewall rule
+  # below rather than by private endpoints. See SECURITY.md.
+  public_network_access_enabled = true
+
+  tags = local.common_tags
+}
+
+# pgvector must be allow-listed at the server level before the backend can run
+# CREATE EXTENSION vector.
+resource "azurerm_postgresql_flexible_server_configuration" "vectors_extensions" {
+  count = local.use_pgvector ? 1 : 0
+
+  name      = "azure.extensions"
+  server_id = azurerm_postgresql_flexible_server.vectors[0].id
+  value     = "VECTOR"
+}
+
+resource "azurerm_postgresql_flexible_server_database" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  name      = "vectors"
+  server_id = azurerm_postgresql_flexible_server.vectors[0].id
+  charset   = "UTF8"
+  collation = "en_US.utf8"
+}
+
+# 0.0.0.0 is the special "allow other Azure services" rule — it does NOT open
+# the server to the public internet.
+resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
+  count = local.use_pgvector ? 1 : 0
+
+  name             = "allow-azure-services"
+  server_id        = azurerm_postgresql_flexible_server.vectors[0].id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
+}
+
+resource "azurerm_key_vault_secret" "vector_db_url" {
+  count = local.use_pgvector ? 1 : 0
+
+  name = "vector-db-url"
+  value = format(
+    "postgresql://%s:%s@%s/%s?sslmode=require",
+    azurerm_postgresql_flexible_server.vectors[0].administrator_login,
+    random_password.vectors[0].result,
+    azurerm_postgresql_flexible_server.vectors[0].fqdn,
+    azurerm_postgresql_flexible_server_database.vectors[0].name,
+  )
   key_vault_id = azurerm_key_vault.this.id
 }
 
@@ -163,9 +284,20 @@ resource "azurerm_container_app" "this" {
     value = var.llm_api_key
   }
 
-  secret {
-    name  = "pinecone-api-key"
-    value = var.pinecone_api_key
+  dynamic "secret" {
+    for_each = local.use_pinecone ? [1] : []
+    content {
+      name  = "pinecone-api-key"
+      value = var.pinecone_api_key
+    }
+  }
+
+  dynamic "secret" {
+    for_each = local.use_pgvector ? [1] : []
+    content {
+      name  = "vector-db-url"
+      value = azurerm_key_vault_secret.vector_db_url[0].value
+    }
   }
 
   secret {
@@ -204,10 +336,6 @@ resource "azurerm_container_app" "this" {
         secret_name = "llm-api-key"
       }
       env {
-        name        = "PINECONE_API_KEY"
-        secret_name = "pinecone-api-key"
-      }
-      env {
         name  = "AZURE_STORAGE_ACCOUNT"
         value = local.storage_name
       }
@@ -220,13 +348,61 @@ resource "azurerm_container_app" "this" {
         secret_name = "storage-key"
       }
       env {
-        name  = "PINECONE_INDEX"
-        value = "chatbot-shared"
+        name  = "VECTOR_STORE"
+        value = var.vector_store
       }
-      env {
-        name  = "PINECONE_ENVIRONMENT"
-        value = var.pinecone_environment
+
+      dynamic "env" {
+        for_each = local.use_pinecone ? [1] : []
+        content {
+          name        = "PINECONE_API_KEY"
+          secret_name = "pinecone-api-key"
+        }
       }
+      dynamic "env" {
+        for_each = local.use_pinecone ? [1] : []
+        content {
+          name  = "PINECONE_INDEX"
+          value = pinecone_index.this[0].name
+        }
+      }
+      dynamic "env" {
+        for_each = local.use_pinecone ? [1] : []
+        content {
+          name  = "PINECONE_ENVIRONMENT"
+          value = var.pinecone_environment
+        }
+      }
+
+      dynamic "env" {
+        for_each = local.use_pgvector ? [1] : []
+        content {
+          name        = "DATABASE_URL"
+          secret_name = "vector-db-url"
+        }
+      }
+      dynamic "env" {
+        for_each = local.use_pgvector ? [1] : []
+        content {
+          name        = "PGVECTOR_URL"
+          secret_name = "vector-db-url"
+        }
+      }
+      dynamic "env" {
+        for_each = local.use_pgvector ? [1] : []
+        content {
+          name  = "PGVECTOR_TABLE"
+          value = "embeddings"
+        }
+      }
+      dynamic "env" {
+        for_each = local.use_pgvector ? [1] : []
+        content {
+          name  = "PGVECTOR_DIMENSION"
+          value = "384"
+        }
+      }
+
       env {
         name  = "OPENAI_BASE_URL"
         value = local.llm_base_url

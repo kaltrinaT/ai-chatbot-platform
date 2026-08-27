@@ -5,9 +5,26 @@ import Link from "next/link";
 import { createTenantAndDeploy, type FormState } from "./actions";
 import { estimateMonthlyCost } from "@/lib/pricing";
 
+const VECTOR_STORE_OPTIONS = [
+  {
+    value: "pinecone" as const,
+    label: "Customer-owned Pinecone",
+    detail: () => "Managed service — the customer supplies their own API key",
+  },
+  {
+    value: "pgvector" as const,
+    label: "Vector store in the customer's cloud",
+    detail: (cloud: "aws" | "azure") =>
+      cloud === "azure"
+        ? "Azure Database for PostgreSQL + pgvector"
+        : "RDS PostgreSQL + pgvector",
+  },
+];
+
 export default function TenantForm() {
   const [state, formAction, isPending] = useActionState(createTenantAndDeploy, null);
   const [cloud, setCloud] = useState<"aws" | "azure">("aws");
+  const [vectorStore, setVectorStore] = useState<"pinecone" | "pgvector">("pinecone");
   const errors = state?.errors ?? {};
 
   return (
@@ -223,7 +240,61 @@ export default function TenantForm() {
         tooltip="A model ID from the selected provider's model documentation. Leave blank to use the platform's default model for that provider."
       />
 
-      <CostPreview cloud={cloud} />
+      <hr className="border-gray-200" />
+      <h2 className="text-sm font-semibold text-gray-700">Vector store</h2>
+
+      <div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {VECTOR_STORE_OPTIONS.map((o) => (
+            <label
+              key={o.value}
+              className={`cursor-pointer rounded-md border p-3 text-sm ${
+                vectorStore === o.value
+                  ? "border-black bg-gray-50"
+                  : "border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              <input
+                type="radio"
+                name="vectorStore"
+                value={o.value}
+                checked={vectorStore === o.value}
+                onChange={() => setVectorStore(o.value)}
+                className="sr-only"
+              />
+              <span className="block font-medium">{o.label}</span>
+              <span className="mt-1 block text-xs text-gray-500">{o.detail(cloud)}</span>
+            </label>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          {vectorStore === "pinecone"
+            ? "Embeddings live in the customer's own Pinecone project. Lower cost and nothing to operate, but document embeddings leave their cloud account."
+            : `Embeddings stay inside the customer's ${
+                cloud === "azure" ? "Azure subscription" : "AWS account"
+              } alongside their documents. Stronger data residency; adds a managed database to the monthly bill.`}
+        </p>
+      </div>
+
+      {vectorStore === "pinecone" && (
+        <Field
+          label="Pinecone API key"
+          name="pineconeApiKey"
+          type="password"
+          placeholder="pcsk_..."
+          hint={
+            cloud === "azure"
+              ? "The customer's own key. Written to their Azure Key Vault during deploy."
+              : "The customer's own key. Written to their AWS Secrets Manager during onboarding."
+          }
+          required
+          minLength={10}
+          error={errors.pineconeApiKey}
+          tooltip="The customer creates this in their own Pinecone account: app.pinecone.io → API keys. The platform provisions one index per tenant inside that project."
+        />
+      )}
+
+      <CostPreview cloud={cloud} vectorStore={vectorStore} />
 
       <div className="flex gap-3 pt-2">
         <button
@@ -241,8 +312,14 @@ export default function TenantForm() {
   );
 }
 
-function CostPreview({ cloud }: { cloud: "aws" | "azure" }) {
-  const est = estimateMonthlyCost(cloud);
+function CostPreview({
+  cloud,
+  vectorStore,
+}: {
+  cloud: "aws" | "azure";
+  vectorStore: "pinecone" | "pgvector";
+}) {
+  const est = estimateMonthlyCost(cloud, vectorStore);
   const top = [...est.lines].sort((a, b) => b.highUsd - a.highUsd).slice(0, 3);
   return (
     <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
@@ -266,8 +343,11 @@ function CostPreview({ cloud }: { cloud: "aws" | "azure" }) {
       </ul>
       <p className="mt-2 text-xs text-gray-500">
         Billed to the customer&apos;s {cloud === "azure" ? "Azure subscription" : "AWS account"} at{" "}
-        {cloud === "azure" ? "East US" : "us-east-1"} list prices (±20% by region). Pinecone and LLM
-        API usage are billed separately. A full breakdown appears on the tenant page.
+        {cloud === "azure" ? "East US" : "us-east-1"} list prices (±20% by region).{" "}
+        {vectorStore === "pinecone"
+          ? "Pinecone and LLM API usage are billed separately."
+          : "LLM API usage is billed separately; the vector store is included above."}{" "}
+        A full breakdown appears on the tenant page.
       </p>
     </div>
   );

@@ -12,12 +12,13 @@ A SaaS control plane for deploying AI chatbots into customer cloud accounts (AWS
 
 The platform does **not** see, store, or transmit:
 - Chat queries or answers
-- Customer documents or embeddings
-- Pinecone index contents
+- Customer source documents
 - CloudWatch or Log Analytics logs from the chatbot
 - Any runtime traffic passing through the chatbot
 
 All of that lives exclusively inside the customer's cloud account. The only information that flows back to the platform is deployment lifecycle data: whether Terraform succeeded or failed, and the resulting chatbot URL.
+
+**Vector storage is a per-tenant choice.** Tenants either bring their own Pinecone project (dedicated index `chatbot-{slug}`, key supplied at onboarding) or have a PostgreSQL + pgvector database provisioned inside their own cloud account. Neither option leaves the platform holding standing access to embeddings. See "Configurable vector store" in `ARCHITECTURE.md`.
 
 **This boundary is intentional and must be preserved.** Do not add endpoints that receive chatbot queries, answers, or documents. Do not add cross-account IAM roles or Azure delegated access for reading customer logs. Customers retain full ownership and privacy of their data.
 
@@ -114,6 +115,9 @@ Managed by Drizzle ORM, running on Neon Postgres.
 | `llmModel` | text | Optional model override; defaults per provider |
 | `llmBaseUrl` | text | Optional LLM API base URL override |
 | `llmApiKeyEncrypted` | text | AES-256-GCM encrypted |
+| `vectorStore` | enum | `pinecone` \| `pgvector`; default `pinecone` |
+| `pineconeApiKeyEncrypted` | text | Customer's own Pinecone key, AES-256-GCM encrypted; null for pgvector |
+| `pineconeSecretArn` | text | AWS only — ARN of the customer-account Pinecone secret |
 | `albDnsName` | text | Populated by workflow callback (AWS) |
 | `chatbotUrl` | text | Populated by workflow callback |
 | `config` | jsonb | Free-form extra config; defaults to `{}` |
@@ -149,22 +153,26 @@ Managed by Drizzle ORM, running on Neon Postgres.
 
 ```
 1. Operator fills /tenants/new form
-   → Required for all: name, slug, chatbot version, LLM provider, LLM API key
+   → Required for all: name, slug, chatbot version, LLM provider, LLM API key,
+     vector store (Pinecone | customer-cloud pgvector)
+   → Pinecone only: the customer's own Pinecone API key
    → AWS extra: AWS account ID, region, deployment role ARN, optional S3 prefix
    → Azure extra: subscription ID, tenant ID, client ID, client secret, region
 
 2. Server action (actions.ts) validates with Zod
+   (the Pinecone key is required iff vectorStore = "pinecone")
 
-3. Encrypt LLM API key (AES-256-GCM) for DB storage
+3. Encrypt LLM API key — and the Pinecone key, if any — for DB storage
 
 4a. AWS path:
     → AssumeRole into customer account (15-min session)
     → Write LLM secret to customer's Secrets Manager: {slug}/llm-api-key
-    → Store returned ARN in tenant record
+    → If Pinecone: also write {slug}/pinecone-api-key
+    → Store returned ARNs in tenant record
 
 4b. Azure path:
     → Encrypt Azure client secret for DB storage
-    → LLM key is NOT written now — Terraform does it during deploy
+    → LLM and Pinecone keys are NOT written now — Terraform does it during deploy
 
 5. Insert tenant record
 
@@ -190,40 +198,52 @@ Managed by Drizzle ORM, running on Neon Postgres.
 - `TF_STATE_BUCKET`, `TF_STATE_REGION` (S3 backend for Terraform state)
 - `PLATFORM_BASE_URL` (e.g. `https://platform.example.com`)
 - `PLATFORM_WEBHOOK_SECRET`
-- `PINECONE_API_KEY` (platform-wide Pinecone key; passed to Terraform as a `-var`)
 
 **Workflow steps:**
 1. Pull **backend** and **frontend (chat UI)** images from platform ECR (platform credentials)
 2. AssumeRole into customer account (3600s, `role-skip-session-tagging: true`)
 3. Create ECR repos in customer account if absent (`{slug}/chatbot`, `{slug}/chatbot-frontend`); tag and push both images
 4. `terraform init` with S3 backend (`tenants/{slug}.tfstate`)
-5. `terraform apply -auto-approve` — provisions all infra
+5. For Pinecone tenants: read the customer's Pinecone key back from **their** Secrets Manager under the assumed role and `::add-mask::` it, so Terraform can create the index without the key ever being a workflow input
+6. `terraform apply -auto-approve` — provisions all infra
 6. Read outputs: `alb_dns_name`, `chatbot_url`
 7. POST to `/api/deployments/{id}/status` with status + URLs + GitHub run details
 
 ### Azure — `.github/workflows/deploy-tenant-azure.yml`
 
-**Workflow inputs (`workflow_dispatch`):** `tenant_slug`, `llm_provider` (choice), `azure_region`, `image_tag`. Everything else comes from **GitHub repo secrets**, not workflow inputs.
+**Workflow inputs (`workflow_dispatch`):** fully per-tenant, dispatched by `buildAzureInputs` in [`src/lib/deploy.ts`](src/lib/deploy.ts). Because GitHub allows at most 10 `workflow_dispatch` inputs, non-secret settings travel packed in one JSON input:
+
+| Input | Contents |
+|---|---|
+| `deployment_id` | Platform deployment row UUID (status callbacks post to it) |
+| `tenant_slug` | Tenant identifier |
+| `config` | JSON: `azure_subscription_id`, `azure_tenant_id`, `azure_client_id`, `azure_region`, `llm_provider`, `llm_model`, `chatbot_version`, `domain`, `vector_store` — parsed by the workflow's "Parse tenant config" step (keep key names in sync with `buildAzureInputs`) |
+| `azure_client_secret` | Customer service-principal secret (decrypted from the tenant record) |
+| `llm_api_key` | Tenant LLM key (decrypted; Terraform writes it to the customer's Key Vault) |
+| `pinecone_api_key` | Customer's own Pinecone key (decrypted); empty when `vector_store` is `pgvector` |
+
+Secret-valued inputs are `::add-mask::`ed as the first step so they cannot appear in step logs. (Dispatch inputs are still visible to anyone with read access to the private repo's runs — same trust boundary as the repo secrets they replaced.)
 
 **Required GitHub repo secrets:**
-- `AZURE_SUBSCRIPTION_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` (the deploy service principal)
-- `LLM_API_KEY`, `PINECONE_API_KEY`
 - `TF_STATE_BUCKET`, `TF_STATE_REGION` (S3 backend), `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (to reach the S3 state backend)
+- `PLATFORM_BASE_URL`, `PLATFORM_WEBHOOK_SECRET` (status callbacks)
 - `BACKEND_REPO_PAT` (optional — to check out the `ai-chatbot` source repo)
 
+The `AZURE_*`, `LLM_API_KEY`, and `PINECONE_API_KEY` repo secrets are no longer used — Azure login, Key Vault contents, and vector storage are all per-tenant now.
+
 **Workflow steps:**
-1. Check out the platform repo and the `{owner}/ai-chatbot` repo (backend + frontend source)
-2. Compute resource names (ACR name, image URIs)
-3. Azure login via service principal (from secrets)
-4. `terraform init` with S3 backend (`azure/tenants/{slug}/terraform.tfstate`)
-5. `terraform apply` (bootstrap, `-target` RG + ACR) with placeholder image URIs
-6. `az acr login`, then build and push **backend** (`ai-chatbot/ai-backend`) and **frontend** (`ai-chatbot/ai-frontend`) images to the ACR
-7. `terraform apply` (full) — provisions infra, writes LLM + Pinecone keys to Key Vault
-8. Print `chatbot_url` to the job summary
+1. Mask secret inputs; POST `status: running` + run ID/URL to `/api/deployments/{id}/status` (best-effort — powers the live-progress panel)
+2. Parse the `config` JSON into step outputs (jq)
+3. Check out the platform repo and the `{owner}/ai-chatbot` repo (backend + frontend source)
+4. Compute resource names (ACR name, image URIs tagged with `chatbot_version`)
+5. Azure login into the **customer's subscription** with the per-tenant service principal
+6. `terraform init` with S3 backend (`azure/tenants/{slug}/terraform.tfstate`)
+7. `terraform apply` (bootstrap, `-target` RG + ACR) with placeholder image URIs
+8. `az acr login`, then build and push **backend** (`ai-chatbot/ai-backend`) and **frontend** (`ai-chatbot/ai-frontend`) images to the ACR
+9. `terraform apply` (full) — provisions infra and writes the LLM key plus either the customer's Pinecone key or the generated pgvector connection URL to Key Vault (secrets passed via `TF_VAR_*` env, not argv)
+10. Read `chatbot_url` + `container_app_fqdn` outputs; POST `status: succeeded` with them (or `status: failed` on any failure) back to the platform
 
 > **Note:** Azure builds both images from source, whereas AWS replicates prebuilt images from the platform ECR.
-
-> ⚠️ **Known inconsistency (code, not docs):** The platform's `buildAzureInputs` in [`src/lib/deploy.ts`](src/lib/deploy.ts) dispatches per-tenant inputs (`azure_subscription_id`, `azure_client_secret`, `llm_api_key`, `deployment_id`, `source_ecr_image`, …) that this workflow does **not** declare, and the workflow does **not** POST a status callback. As written, a platform-triggered Azure deployment would fail on unrecognized inputs and would never update the deployment record. Either the workflow or `deploy.ts` needs to be reconciled; this doc describes the workflow as it currently exists.
 
 ---
 
@@ -247,8 +267,8 @@ Defined in `infra/terraform/main.tf`. Everything is created in the **customer's*
 ### Compute
 Two ECS Fargate services in one cluster (each desired count: 1):
 - **Backend** (`chatbot-{slug}`) — container `chatbot`, image `{slug}/chatbot:{version}`; defaults 1024 CPU units / 2048 MB
-  - Environment: `S3_DOCS_BUCKET`, `S3_DOCS_PREFIX`, `LLM_PROVIDER`, `AWS_REGION`, `PORT`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, `PINECONE_INDEX` (hardcoded to `chatbot-shared` — one shared index across tenants, isolated by metadata filter)
-  - Secrets injected from Secrets Manager: `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (all → LLM secret), `PINECONE_API_KEY` (→ Pinecone secret)
+  - Environment: `S3_DOCS_BUCKET`, `S3_DOCS_PREFIX`, `LLM_PROVIDER`, `AWS_REGION`, `PORT`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, `VECTOR_STORE`, plus either `PINECONE_INDEX` (`chatbot-{slug}`) or `PGVECTOR_TABLE` / `PGVECTOR_DIMENSION`
+  - Secrets injected from Secrets Manager: `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (all → LLM secret), plus either `PINECONE_API_KEY` (→ the customer's Pinecone secret) or `DATABASE_URL` / `PGVECTOR_URL` (→ the vector-db-url secret)
 - **Frontend** (`chatbot-{slug}-frontend`) — container `frontend` (nginx :80), image `{slug}/chatbot-frontend:{version}`; defaults 256 CPU units / 512 MB
 
 ### Storage
@@ -257,12 +277,23 @@ Two ECS Fargate services in one cluster (each desired count: 1):
   - All public access blocked
   - Bucket name is set in `S3_DOCS_BUCKET` env var at container startup
 
+### Vector store
+Selected per tenant by `vector_store`; exactly one of the following is created.
+
+**`pinecone`** — Pinecone serverless index `chatbot-{slug}` in the **customer's own** Pinecone project, created by Terraform (`pinecone_index.this`), dimension 384 / cosine, destroyed with the tenant (`deletion_protection = "disabled"`).
+
+**`pgvector`** — RDS PostgreSQL 16 `chatbot-{slug}-vectors` inside the tenant's VPC:
+- `db.t4g.micro`, 32 GB gp3, `storage_encrypted = true`, 7-day backups
+- `publicly_accessible = false`; security group admits port 5432 from the chatbot task SG only
+- Connection URL (with a Terraform-generated password) stored at `{slug}/vector-db-url` and injected as `DATABASE_URL`
+
 ### Secrets Manager
 - **LLM key**: `{slug}/llm-api-key` — written by the platform during onboarding (see below)
-- **Pinecone key**: `{slug}/pinecone-api-key` — created by Terraform from the `pinecone_api_key` var (sourced from the platform-wide `PINECONE_API_KEY` GitHub secret)
+- **Pinecone key** *(vector_store = pinecone)*: `{slug}/pinecone-api-key` — the customer's own key, written by the platform during onboarding via AssumeRole (same path as the LLM key)
+- **Vector DB URL** *(vector_store = pgvector)*: `{slug}/vector-db-url` — created by Terraform, holds the full Postgres connection URL including a generated password
 
 ### IAM
-- **Execution role**: `AmazonECSTaskExecutionRolePolicy` + `secretsmanager:GetSecretValue` on **both** the LLM secret and the Pinecone secret
+- **Execution role**: `AmazonECSTaskExecutionRolePolicy` + `secretsmanager:GetSecretValue` on the LLM secret plus whichever vector-store secret the tenant uses
 - **Task role**: `s3:ListBucket` on docs bucket, `s3:GetObject` on `{bucket}/{prefix}*`
 
 ### CloudWatch
@@ -278,8 +309,13 @@ Two ECS Fargate services in one cluster (each desired count: 1):
 | `frontend_image_uri` | yes | Full frontend (chat UI) ECR URI with tag in customer account |
 | `llm_provider` | yes | `openai`, `anthropic`, or `openrouter` |
 | `llm_secret_arn` | yes | Secrets Manager ARN (written by platform during onboarding) |
-| `pinecone_api_key` | yes | Pinecone API key (sensitive); Terraform writes it to Secrets Manager |
 | `llm_model` | no | Model override; empty string uses the per-provider default |
+| `vector_store` | no | `pinecone` or `pgvector`; default `pinecone` |
+| `pinecone_api_key` | no | Customer's Pinecone key (sensitive), read from their Secrets Manager by the workflow; only used to create the index |
+| `pinecone_secret_arn` | no | ARN of the customer's Pinecone key secret, injected into the container |
+| `pinecone_environment` | no | Pinecone serverless region for the tenant's index; default `us-east-1`. **Never set by the platform** — see Known Limitation #6 in SECURITY.md |
+| `vector_db_instance_class` | no | RDS class for pgvector; default `db.t4g.micro` |
+| `vector_db_storage_gb` | no | RDS storage for pgvector; default `32` |
 | `s3_docs_prefix` | no | Optional prefix scope within docs bucket |
 | `domain` | no | Custom hostname |
 | `container_port` | no | Backend port, default: 8000 |
@@ -299,7 +335,8 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 |---|---|---|
 | Resource Group | `chatbot-{slug}` | Container for all resources |
 | Container Registry | `chatbot{slug}acr` | Basic SKU, admin enabled (name: hyphens stripped, 50-char max) |
-| Key Vault | `cb-{slug}-kv` | Standard SKU; stores `llm-api-key`, `pinecone-api-key`, and `storage-key` (all written by Terraform) |
+| Key Vault | `cb-{slug}-kv` | Standard SKU; stores `llm-api-key`, `storage-key`, and either `pinecone-api-key` or `vector-db-url` (all written by Terraform) |
+| PostgreSQL Flexible Server | `chatbot-{slug}-pg` | Only when `vector_store = pgvector`; B1ms / 32 GB / PG 16, `azure.extensions = VECTOR`, database `vectors` |
 | Storage Account | `chatbot{slug}` | Hyphens removed; 24-char max enforced |
 | Blob container | `documents` | Private access |
 | Log Analytics Workspace | `chatbot-{slug}-logs` | 30-day retention (PerGB2018 SKU) |
@@ -308,9 +345,9 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 
 ### Container App config
 - Min 1 replica, max 3 (autoscaling)
-- Container App secrets: `acr-password`, `llm-api-key`, `pinecone-api-key`, `storage-key`
+- Container App secrets: `acr-password`, `llm-api-key`, `storage-key`, plus `pinecone-api-key` or `vector-db-url` depending on `vector_store`
 - **Two containers in one app** (Container Apps has no path-based ingress routing, so both share localhost):
-  - `chatbot` (backend, 0.5 vCPU / 1 Gi) — env `PORT`, `LLM_PROVIDER`, `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`, `PINECONE_INDEX` (`chatbot-shared`), `PINECONE_ENVIRONMENT`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`; secret-backed env `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (← `llm-api-key`), `PINECONE_API_KEY` (← `pinecone-api-key`), `AZURE_STORAGE_KEY` (← `storage-key`)
+  - `chatbot` (backend, 0.5 vCPU / 1 Gi) — env `PORT`, `LLM_PROVIDER`, `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`, `VECTOR_STORE`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, plus `PINECONE_INDEX` / `PINECONE_ENVIRONMENT` or `PGVECTOR_TABLE` / `PGVECTOR_DIMENSION`; secret-backed env `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (← `llm-api-key`), `AZURE_STORAGE_KEY` (← `storage-key`), plus `PINECONE_API_KEY` (← `pinecone-api-key`) or `DATABASE_URL` / `PGVECTOR_URL` (← `vector-db-url`)
   - `frontend` (chat UI, nginx :80, 0.25 vCPU / 0.5 Gi) — env `BACKEND_PORT`; nginx serves the SPA and proxies `/api` → `localhost:8000`
 - External ingress on **target port 80** → frontend container
 
@@ -325,8 +362,11 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 | `frontend_image_uri` | yes | Full frontend (chat UI) ACR image URI with tag |
 | `llm_provider` | yes | `openai`, `anthropic`, or `openrouter` |
 | `llm_api_key` | yes | Plain text (sensitive); Terraform writes to Key Vault |
-| `pinecone_api_key` | yes | Pinecone API key (sensitive); Terraform writes to Key Vault |
-| `pinecone_environment` | no | Pinecone serverless region; default `us-east-1` |
+| `vector_store` | no | `pinecone` or `pgvector`; default `pinecone` |
+| `pinecone_api_key` | no | Customer's Pinecone key (sensitive); Terraform writes it to Key Vault and uses it to provision the tenant's index |
+| `pinecone_environment` | no | Pinecone serverless region for the tenant's index; default `us-east-1`. **Never set by the platform** — see Known Limitation #6 in SECURITY.md |
+| `vector_db_sku` | no | Flexible Server SKU for pgvector; default `B_Standard_B1ms` |
+| `vector_db_storage_mb` | no | Flexible Server storage for pgvector; default `32768` |
 | `llm_model` | no | Model override; empty string uses the per-provider default |
 | `domain` | no | Custom hostname |
 | `container_port` | no | Backend port, default: 8000 |
@@ -341,7 +381,7 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 **AWS:**
 1. Received from form
 2. Platform calls `assumeTenantRole` → assumes customer's IAM role
-3. `writeLlmSecret` stores key in customer's Secrets Manager as `{slug}/llm-api-key`
+3. `writeTenantSecret` stores key in customer's Secrets Manager as `{slug}/llm-api-key` (and `{slug}/pinecone-api-key` for Pinecone tenants)
 4. ARN stored in `tenants.llmSecretArn`
 5. ECS execution role reads it at task startup — key never touches platform disk after onboarding
 
@@ -443,7 +483,7 @@ src/
     index.ts                            # Drizzle + Neon setup
     schema.ts                           # All table definitions and relations
   lib/
-    aws.ts                              # AssumeRole, writeLlmSecret
+    aws.ts                              # AssumeRole, writeTenantSecret
     azure.ts                            # writeAzureKeyVaultSecret
     crypto.ts                           # AES-256-GCM encrypt/decrypt
     deploy.ts                           # triggerDeployment, buildAwsInputs, buildAzureInputs
@@ -486,15 +526,17 @@ These estimates also surface **in-product** (computed in `src/lib/pricing.ts`): 
 | **ECS Fargate — frontend** | 0.25 vCPU, 0.5 GB, 1 replica | ~$9 |
 | **Application Load Balancer** | Fixed hourly + LCU charges | ~$18–22 |
 | **ECR** | 2 repos, ~500 MB images | ~$1 |
-| **Secrets Manager** | 2 secrets (LLM key + Pinecone key) | ~$0.80 |
+| **Secrets Manager** | 2 secrets (LLM + Pinecone) / 1 secret (pgvector) | ~$0.40–0.80 |
 | **S3 — docs bucket** | Storage + requests (usage-based) | ~$0.50–5 |
 | **CloudWatch Logs** | 14-day retention, low traffic | ~$1–3 |
+| **RDS PostgreSQL + pgvector** | `db.t4g.micro` + 32 GB gp3 — **only if `vector_store = pgvector`** | ~$16 |
 | **Data transfer** | Outbound to internet ($0.09/GB) | variable |
-| **Total (idle / light traffic)** | | **~$66–77/month** |
+| **Total — `vector_store = pinecone`** | | **~$66–77/month** |
+| **Total — `vector_store = pgvector`** | | **~$82–93/month** |
 
 > The backend default was raised to 1 vCPU / 2 GB (`task_cpu = 1024`, `task_memory = 2048`) because the embedding model needs the memory headroom — see the note in CHATBOT-LOGIC.md. Drop it to `256 / 512` for a lighter (~$38–50/month) footprint if your backend image doesn't load a local model.
 >
-> **Pinecone** is billed separately by Pinecone (not AWS/Azure). The serverless free tier covers light usage; paid usage is per-read/write/storage.
+> **Choosing a vector store.** With `pinecone`, the customer pays Pinecone directly (serverless free tier covers light usage) and the ~$16 RDS line disappears — but embeddings leave their cloud account, and their own Pinecone plan's index-per-project quota (Starter 5, Builder 10, Standard 20, Enterprise 200) limits how many chatbots they can run. With `pgvector`, everything stays inside their account at a fixed ~$16/month.
 
 #### Recommended production sizing (512 vCPU units / 1 024 MB per service)
 

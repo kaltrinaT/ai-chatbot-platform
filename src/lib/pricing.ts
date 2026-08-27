@@ -45,7 +45,19 @@ function acaMonthly(vcpu: number, gib: number): number {
 
 const round = (n: number) => Math.round(n);
 
-export function estimateMonthlyCost(provider: "aws" | "azure"): CostEstimate {
+export type VectorStore = "pinecone" | "pgvector";
+
+// Smallest burstable managed Postgres on each cloud, which is what the
+// Terraform provisions for the pgvector option (db.t4g.micro / B1ms + 32 GB).
+const RDS_T4G_MICRO_MONTHLY = 12;
+const RDS_STORAGE_32GB_MONTHLY = 4;
+const AZURE_PG_B1MS_MONTHLY = 13;
+const AZURE_PG_STORAGE_32GB_MONTHLY = 4;
+
+export function estimateMonthlyCost(
+  provider: "aws" | "azure",
+  vectorStore: VectorStore = "pinecone"
+): CostEstimate {
   const lines: CostLine[] =
     provider === "aws"
       ? [
@@ -70,9 +82,12 @@ export function estimateMonthlyCost(provider: "aws" | "azure"): CostEstimate {
           { label: "ECR", detail: "2 repos, ~500 MB images", lowUsd: 1, highUsd: 1 },
           {
             label: "Secrets Manager",
-            detail: "2 secrets (LLM + Pinecone keys)",
-            lowUsd: 0.8,
-            highUsd: 0.8,
+            detail:
+              vectorStore === "pinecone"
+                ? "2 secrets (LLM + Pinecone keys)"
+                : "1 secret (LLM key)",
+            lowUsd: vectorStore === "pinecone" ? 0.8 : 0.4,
+            highUsd: vectorStore === "pinecone" ? 0.8 : 0.4,
           },
           { label: "S3 — docs bucket", detail: "Storage + requests, usage-based", lowUsd: 0.5, highUsd: 5 },
           { label: "CloudWatch Logs", detail: "14-day retention, light traffic", lowUsd: 1, highUsd: 3 },
@@ -96,6 +111,24 @@ export function estimateMonthlyCost(provider: "aws" | "azure"): CostEstimate {
           { label: "Log Analytics", detail: "30-day retention, 5 GB/mo free", lowUsd: 0, highUsd: 5 },
         ];
 
+  if (vectorStore === "pgvector") {
+    lines.push(
+      provider === "aws"
+        ? {
+            label: "RDS PostgreSQL + pgvector",
+            detail: "db.t4g.micro, single-AZ, 32 GB gp3",
+            lowUsd: RDS_T4G_MICRO_MONTHLY + RDS_STORAGE_32GB_MONTHLY,
+            highUsd: RDS_T4G_MICRO_MONTHLY + RDS_STORAGE_32GB_MONTHLY,
+          }
+        : {
+            label: "Azure PostgreSQL + pgvector",
+            detail: "Flexible Server B1ms, 32 GB",
+            lowUsd: AZURE_PG_B1MS_MONTHLY + AZURE_PG_STORAGE_32GB_MONTHLY,
+            highUsd: AZURE_PG_B1MS_MONTHLY + AZURE_PG_STORAGE_32GB_MONTHLY,
+          }
+    );
+  }
+
   return {
     lines,
     totalLow: round(lines.reduce((s, l) => s + l.lowUsd, 0)),
@@ -103,11 +136,15 @@ export function estimateMonthlyCost(provider: "aws" | "azure"): CostEstimate {
   };
 }
 
-export const COST_FOOTNOTES: string[] = [
-  "Estimates at us-east-1 / East US list prices for idle-to-light traffic; other regions vary by up to ~20%.",
-  "Pinecone and the LLM API are billed separately by their providers, per usage.",
-  "Outbound data transfer is usage-based and not included.",
-];
+export function costFootnotes(vectorStore: VectorStore = "pinecone"): string[] {
+  return [
+    "Estimates at us-east-1 / East US list prices for idle-to-light traffic; other regions vary by up to ~20%.",
+    vectorStore === "pinecone"
+      ? "Pinecone is billed by the customer's own Pinecone account, and the LLM API by its provider — neither appears on the cloud bill above."
+      : "The vector store is included above because it runs in the customer's own cloud. The LLM API is billed separately by its provider.",
+    "Outbound data transfer is usage-based and not included.",
+  ];
+}
 
 export const AZURE_FREE_GRANT_NOTE =
   "Each Azure subscription includes a monthly free grant of 180,000 vCPU-seconds and 360,000 GiB-seconds for Container Apps, which reduces the compute lines above (most significant with few tenants per subscription).";

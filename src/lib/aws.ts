@@ -37,11 +37,18 @@ export async function assumeTenantRole(opts: {
   };
 }
 
-export async function writeLlmSecret(opts: {
+/**
+ * Write a secret into the CUSTOMER's Secrets Manager using assumed credentials
+ * and return its ARN. Keeping the value here — rather than passing it as a
+ * workflow input — is why AWS deploys never expose tenant keys to GitHub
+ * Actions; only the resulting ARN travels.
+ */
+export async function writeTenantSecret(opts: {
   credentials: AssumedCredentials;
   region: string;
   secretName: string;
   secretValue: string;
+  description: string;
 }): Promise<string> {
   const client = new SecretsManagerClient({
     region: opts.region,
@@ -53,7 +60,7 @@ export async function writeLlmSecret(opts: {
       new CreateSecretCommand({
         Name: opts.secretName,
         SecretString: opts.secretValue,
-        Description: "LLM API key for the AI chatbot tenant (managed by ai-chatbot-platform)",
+        Description: opts.description,
       }),
     );
     if (!res.ARN) throw new Error("CreateSecret returned no ARN");

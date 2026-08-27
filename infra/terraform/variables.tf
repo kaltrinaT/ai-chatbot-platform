@@ -81,10 +81,46 @@ variable "llm_model" {
   default     = ""
 }
 
+variable "vector_store" {
+  description = "Where embeddings live: \"pinecone\" (customer's own Pinecone project) or \"pgvector\" (RDS PostgreSQL inside this VPC)."
+  type        = string
+  default     = "pinecone"
+
+  validation {
+    condition     = contains(["pinecone", "pgvector"], var.vector_store)
+    error_message = "vector_store must be either \"pinecone\" or \"pgvector\"."
+  }
+}
+
 variable "pinecone_api_key" {
-  description = "Pinecone API key — Terraform writes it to Secrets Manager in the customer account."
+  description = "The CUSTOMER's Pinecone API key, read from their Secrets Manager by the workflow. Only used to provision the index; empty when vector_store is pgvector."
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+variable "pinecone_secret_arn" {
+  description = "ARN of the customer-account secret holding their Pinecone API key, written by the platform during onboarding. Empty when vector_store is pgvector."
+  type        = string
+  default     = ""
+}
+
+variable "pinecone_environment" {
+  description = "Pinecone serverless region for the tenant's index (e.g. us-east-1)."
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "vector_db_instance_class" {
+  description = "RDS instance class for the pgvector store."
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "vector_db_storage_gb" {
+  description = "Allocated storage (GB) for the pgvector store."
+  type        = number
+  default     = 32
 }
 
 variable "llm_secret_arn" {

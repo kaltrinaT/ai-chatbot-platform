@@ -1,25 +1,34 @@
 name: Deploy Tenant (Azure)
+# The deployment ID in the run name lets the platform find this run by
+# display_title if the "run started" callback below never arrives.
+run-name: "Deploy ${{ inputs.tenant_slug }} (Azure) [${{ inputs.deployment_id }}]"
 
+# workflow_dispatch allows at most 10 inputs, and the platform needs to pass
+# 11 per-tenant values — so non-secret settings travel packed in one JSON
+# `config` input (see buildAzureInputs in src/lib/deploy.ts, which must stay
+# in sync with the "Parse tenant config" step below).
 on:
   workflow_dispatch:
     inputs:
+      deployment_id:
+        description: "Platform deployment row UUID (status callbacks post to it)"
+        required: true
       tenant_slug:
         description: "Tenant identifier (3-18 chars, lowercase, hyphens ok — e.g. acme-corp)"
         required: true
-      llm_provider:
-        description: "LLM provider"
+      config:
+        description: 'JSON: {"azure_subscription_id","azure_tenant_id","azure_client_id","azure_region","llm_provider","llm_model","chatbot_version","domain","vector_store"}'
         required: true
-        default: openrouter
-        type: choice
-        options: [openrouter, openai, anthropic]
-      azure_region:
-        description: "Azure region (must be allowed by your subscription policy)"
+      azure_client_secret:
+        description: "Customer service-principal client secret"
         required: true
-        default: eastus
-      image_tag:
-        description: "Docker image tag to deploy"
+      llm_api_key:
+        description: "Tenant LLM API key (written to Key Vault by Terraform)"
+        required: true
+      pinecone_api_key:
+        description: "Customer's own Pinecone API key; empty when vector_store is pgvector"
         required: false
-        default: latest
+        default: ""
 
 env:
   TF_DIR: infra/terraform/azure
@@ -29,8 +38,57 @@ jobs:
   deploy:
     name: Deploy chatbot-${{ inputs.tenant_slug }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
+      # Dispatch inputs are visible to anyone with read access to the run;
+      # mask the secret ones so they can never appear in step logs.
+      - name: Mask secret inputs
+        env:
+          AZ_CLIENT_SECRET: ${{ inputs.azure_client_secret }}
+          LLM_API_KEY: ${{ inputs.llm_api_key }}
+          PINECONE_API_KEY: ${{ inputs.pinecone_api_key }}
+        run: |
+          echo "::add-mask::${AZ_CLIENT_SECRET}"
+          echo "::add-mask::${LLM_API_KEY}"
+          if [ -n "${PINECONE_API_KEY}" ]; then echo "::add-mask::${PINECONE_API_KEY}"; fi
+
+      # Report the run ID to the platform immediately so the tenant page can
+      # poll live progress. Best-effort: a platform outage must not fail the
+      # customer's deploy.
+      - name: Notify platform — run started
+        continue-on-error: true
+        run: |
+          curl -sS --max-time 15 -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "running",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+
+      - name: Parse tenant config
+        id: cfg
+        env:
+          CONFIG_JSON: ${{ inputs.config }}
+        run: |
+          echo "$CONFIG_JSON" | jq -e 'has("azure_subscription_id") and has("azure_tenant_id") and has("azure_client_id")' > /dev/null
+          {
+            echo "azure_subscription_id=$(echo "$CONFIG_JSON" | jq -r '.azure_subscription_id')"
+            echo "azure_tenant_id=$(echo "$CONFIG_JSON" | jq -r '.azure_tenant_id')"
+            echo "azure_client_id=$(echo "$CONFIG_JSON" | jq -r '.azure_client_id')"
+            echo "azure_region=$(echo "$CONFIG_JSON" | jq -r '.azure_region // "eastus"')"
+            echo "llm_provider=$(echo "$CONFIG_JSON" | jq -r '.llm_provider')"
+            echo "llm_model=$(echo "$CONFIG_JSON" | jq -r '.llm_model // ""')"
+            echo "chatbot_version=$(echo "$CONFIG_JSON" | jq -r '.chatbot_version // "latest"')"
+            echo "domain=$(echo "$CONFIG_JSON" | jq -r '.domain // ""')"
+            echo "vector_store=$(echo "$CONFIG_JSON" | jq -r '.vector_store // "pinecone"')"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Checkout platform repo
         uses: actions/checkout@v4
 
@@ -46,16 +104,16 @@ jobs:
         run: |
           SLUG="${{ inputs.tenant_slug }}"
           ACR_NAME=$(echo "chatbot${SLUG}" | tr -d '-' | cut -c1-50)
-          IMAGE_URI="${ACR_NAME}.azurecr.io/chatbot-backend:${{ inputs.image_tag }}"
-          FRONTEND_URI="${ACR_NAME}.azurecr.io/chatbot-frontend:${{ inputs.image_tag }}"
+          IMAGE_URI="${ACR_NAME}.azurecr.io/chatbot-backend:${{ steps.cfg.outputs.chatbot_version }}"
+          FRONTEND_URI="${ACR_NAME}.azurecr.io/chatbot-frontend:${{ steps.cfg.outputs.chatbot_version }}"
           echo "acr_name=${ACR_NAME}" >> "$GITHUB_OUTPUT"
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
           echo "frontend_uri=${FRONTEND_URI}" >> "$GITHUB_OUTPUT"
 
-      - name: Azure login
+      - name: Azure login (customer subscription, per-tenant service principal)
         uses: azure/login@v2
         with:
-          creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
+          creds: '{"clientId":"${{ steps.cfg.outputs.azure_client_id }}","clientSecret":"${{ inputs.azure_client_secret }}","subscriptionId":"${{ steps.cfg.outputs.azure_subscription_id }}","tenantId":"${{ steps.cfg.outputs.azure_tenant_id }}"}'
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -75,19 +133,25 @@ jobs:
 
       - name: "Terraform apply — bootstrap ACR"
         working-directory: ${{ env.TF_DIR }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_azure_client_secret: ${{ inputs.azure_client_secret }}
+          TF_VAR_llm_api_key: ${{ inputs.llm_api_key }}
+          TF_VAR_pinecone_api_key: ${{ inputs.pinecone_api_key }}
         run: |
           terraform apply -auto-approve \
             -target=azurerm_resource_group.this \
             -target=azurerm_container_registry.this \
             -var="tenant_slug=${{ inputs.tenant_slug }}" \
-            -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-            -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
-            -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}" \
-            -var="azure_client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
-            -var="azure_region=${{ inputs.azure_region }}" \
-            -var="llm_provider=${{ inputs.llm_provider }}" \
-            -var="llm_api_key=${{ secrets.LLM_API_KEY }}" \
-            -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+            -var="azure_subscription_id=${{ steps.cfg.outputs.azure_subscription_id }}" \
+            -var="azure_tenant_id=${{ steps.cfg.outputs.azure_tenant_id }}" \
+            -var="azure_client_id=${{ steps.cfg.outputs.azure_client_id }}" \
+            -var="azure_region=${{ steps.cfg.outputs.azure_region }}" \
+            -var="llm_provider=${{ steps.cfg.outputs.llm_provider }}" \
+            -var="llm_model=${{ steps.cfg.outputs.llm_model }}" \
+            -var="domain=${{ steps.cfg.outputs.domain }}" \
+            -var="vector_store=${{ steps.cfg.outputs.vector_store }}" \
             -var="image_uri=placeholder" \
             -var="frontend_image_uri=placeholder"
 
@@ -114,24 +178,64 @@ jobs:
 
       - name: "Terraform apply — full deploy"
         working-directory: ${{ env.TF_DIR }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_azure_client_secret: ${{ inputs.azure_client_secret }}
+          TF_VAR_llm_api_key: ${{ inputs.llm_api_key }}
+          TF_VAR_pinecone_api_key: ${{ inputs.pinecone_api_key }}
         run: |
           terraform apply -auto-approve \
             -var="tenant_slug=${{ inputs.tenant_slug }}" \
-            -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-            -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
-            -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}" \
-            -var="azure_client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
-            -var="azure_region=${{ inputs.azure_region }}" \
-            -var="llm_provider=${{ inputs.llm_provider }}" \
-            -var="llm_api_key=${{ secrets.LLM_API_KEY }}" \
-            -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+            -var="azure_subscription_id=${{ steps.cfg.outputs.azure_subscription_id }}" \
+            -var="azure_tenant_id=${{ steps.cfg.outputs.azure_tenant_id }}" \
+            -var="azure_client_id=${{ steps.cfg.outputs.azure_client_id }}" \
+            -var="azure_region=${{ steps.cfg.outputs.azure_region }}" \
+            -var="llm_provider=${{ steps.cfg.outputs.llm_provider }}" \
+            -var="llm_model=${{ steps.cfg.outputs.llm_model }}" \
+            -var="domain=${{ steps.cfg.outputs.domain }}" \
+            -var="vector_store=${{ steps.cfg.outputs.vector_store }}" \
             -var="image_uri=${{ steps.names.outputs.image_uri }}" \
             -var="frontend_image_uri=${{ steps.names.outputs.frontend_uri }}"
 
-      - name: Print chatbot URL
+      - name: Read Terraform outputs
+        id: tf
         working-directory: ${{ env.TF_DIR }}
         run: |
-          URL=$(terraform output -raw chatbot_url)
+          echo "chatbot_url=$(terraform output -raw chatbot_url)" >> "$GITHUB_OUTPUT"
+          echo "fqdn=$(terraform output -raw container_app_fqdn)" >> "$GITHUB_OUTPUT"
           echo "### Deployment complete" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Chatbot URL:** ${URL}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Deployed to: ${URL}"
+          echo "**Chatbot URL:** $(terraform output -raw chatbot_url)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify platform — success
+        if: success()
+        run: |
+          curl -sS --max-time 15 -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "succeeded",
+            "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
+            "albDnsName": "${{ steps.tf.outputs.fqdn }}",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+
+      - name: Notify platform — failure
+        if: failure()
+        run: |
+          curl -sS --max-time 15 -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "failed",
+            "errorMessage": "Azure workflow run ${{ github.run_id }} failed; see GitHub Actions logs.",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF

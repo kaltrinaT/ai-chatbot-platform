@@ -16,7 +16,7 @@ This platform is a **control plane only**. It deploys and monitors infrastructur
 ┌─────────────────────────────────────────────────────────────────────┐
 │                  DATA PLANE (customer cloud account)                │
 │                                                                     │
-│  Chatbot runtime, S3/blob documents, Pinecone index, LLM calls,     │
+│  Chatbot runtime, S3/blob documents, LLM calls,                     │
 │  CloudWatch/Log Analytics, user queries and answers                 │
 │                                                                     │
 │  ← platform never reads or receives any of this →                  │
@@ -24,6 +24,43 @@ This platform is a **control plane only**. It deploys and monitors infrastructur
 ```
 
 The only information that crosses from data plane to control plane is deployment lifecycle data: success/failure status and the resulting chatbot URL. Do not add any endpoint, IAM role, or delegated access that would give the platform visibility into runtime traffic, documents, or logs.
+
+### Configurable vector store
+
+Where a tenant's embeddings live is a **per-tenant choice** made at onboarding
+(`tenants.vector_store`), because isolation and cost pull in opposite
+directions. Both options keep the platform out of the data path — the platform
+holds no standing credential to either one after deployment.
+
+| Client selection | AWS deployment | Azure deployment |
+|---|---|---|
+| Customer-owned Pinecone | Pinecone (customer's project) | Pinecone (customer's project) |
+| Customer-cloud vector store | RDS PostgreSQL + pgvector | Azure Database for PostgreSQL + pgvector |
+
+**`pinecone`** — the customer supplies their own Pinecone API key, handled
+exactly like the LLM key: AES-256-GCM encrypted at rest, and on AWS written
+into *their* Secrets Manager during onboarding so it never passes through
+GitHub Actions. Terraform provisions one dedicated index (`chatbot-{slug}`)
+inside the customer's project. Cheapest option and nothing to operate, but
+embeddings leave the customer's cloud account for a third-party service.
+
+**`pgvector`** — Terraform provisions a managed PostgreSQL instance with the
+pgvector extension *inside the customer's own account*, on the same private
+network as the chatbot. Embeddings sit beside the documents they were derived
+from, so nothing crosses the data-plane boundary; the trade-off is roughly
+$16–17/month for the smallest instance, plus a database to operate.
+
+Neither option gives the platform access to embeddings. The residual risk is
+the one already documented for every tenant secret: the platform operator holds
+`PLATFORM_ENCRYPTION_KEY` and the database, so an encrypted credential *could*
+be recovered — see Known Limitation #2 in `SECURITY.md`.
+
+> **Residency caveat.** Only `pgvector` currently gives regional control. The
+> platform never sets `pinecone_environment`, so every Pinecone index is created
+> in the Terraform default `us-east-1` on AWS — including for a tenant deployed
+> to `eu-central-1` or to Azure `westeurope`. A customer who picks Pinecone for
+> a GDPR-motivated deployment still has their embeddings stored in Virginia.
+> See Known Limitation #6 in `SECURITY.md`.
 
 ---
 
@@ -47,33 +84,43 @@ The only information that crosses from data plane to control plane is deployment
                               ┌───────────────────────────┘
                               │  workflow_dispatch
                               ▼
-              ┌───────────────────────────────┐
-              │       GitHub Actions           │
-              │  (deploy-tenant.yml or         │
-              │   deploy-tenant-azure.yml)     │
-              │                               │
-              │  1. Pull image from ECR        │
-              │  2. Push to customer registry  │
-              │  3. terraform apply            │
-              │  4. POST /api/deployments/*/   │
-              │          status (callback)     │
-              └───────────┬───────────────────┘
+              ┌──────────────────────────────────────────┐
+              │              GitHub Actions              │
+              │                                          │
+              │  deploy-tenant.yml (AWS):                │
+              │    1. Pull image from platform ECR       │
+              │    2. Replicate to customer ECR          │
+              │    3. terraform apply                    │
+              │                                          │
+              │  deploy-tenant-azure.yml (Azure):        │
+              │    1. Build images from source           │
+              │    2. Push to customer ACR               │
+              │    3. terraform apply                    │
+              │                                          │
+              │  Both: POST /api/deployments/{id}/       │
+              │        status  (running, then final)     │
+              └───────────┬──────────────────────────────┘
                           │
-          ┌───────────────┴───────────────┐
-          │                               │
-          ▼                               ▼
-┌──────────────────┐           ┌──────────────────┐
-│  CUSTOMER AWS    │           │  CUSTOMER AZURE  │
-│  ACCOUNT         │           │  SUBSCRIPTION    │
-│                  │           │                  │
-│  VPC + subnets   │           │  Resource Group  │
-│  ALB             │           │  Container App   │
-│  ECS Fargate     │           │  ACR             │
-│  ECR             │           │  Key Vault       │
-│  S3 docs bucket  │           │  Storage Account │
-│  Secrets Manager │           │  Log Analytics   │
-│  CloudWatch      │           │                  │
-└──────────────────┘           └──────────────────┘
+          ┌───────────────┴──────────────┬──────────────────────┐
+          │                              │                      │
+          ▼                              ▼                      ▼
+┌──────────────────┐           ┌──────────────────┐  ┌─────────────────────┐
+│  CUSTOMER AWS    │           │  CUSTOMER AZURE  │  │  CUSTOMER'S OWN     │
+│  ACCOUNT         │           │  SUBSCRIPTION    │  │  PINECONE PROJECT   │
+│                  │           │                  │  │                     │
+│  VPC + subnets   │           │  Resource Group  │  │  only when the      │
+│  ALB             │           │  Container App   │  │  tenant selects     │
+│  ECS Fargate     │           │  ACR             │  │  vector_store =     │
+│  ECR             │           │  Key Vault       │  │  "pinecone"         │
+│  S3 docs bucket  │           │  Storage Account │  │                     │
+│  Secrets Manager │           │  Log Analytics   │  │  index per tenant:  │
+│  CloudWatch      │           │                  │  │  chatbot-{slug}     │
+│                  │           │                  │  │                     │
+│  vector_store =  │           │  vector_store =  │  │  billed to the      │
+│  "pgvector"? →   │           │  "pgvector"? →   │  │  customer's own     │
+│  RDS + pgvector  │           │  Azure PG +      │  │  Pinecone account   │
+│                  │           │  pgvector        │  │                     │
+└──────────────────┘           └──────────────────┘  └─────────────────────┘
 ```
 
 ---
@@ -125,6 +172,12 @@ Operator                Platform (Next.js)           Customer Cloud      GitHub 
    │◄─ chatbot URL ───────────│                            │                    │
 ```
 
+Before submitting, the onboarding form and the tenant page render a **static
+monthly cost estimate** for the resources that will run in the customer's own
+cloud account (`src/lib/pricing.ts`, `CostEstimateCard`). These are list-price
+estimates computed from the Terraform sizing defaults — the platform makes no
+billing API calls and never sees actual customer spend.
+
 ---
 
 ## AWS Infrastructure (per tenant)
@@ -170,7 +223,7 @@ VPC  10.20.0.0/16
 │   │           ├── env:   S3_DOCS_BUCKET, S3_DOCS_PREFIX,
 │   │           │          LLM_PROVIDER, AWS_REGION, PORT,
 │   │           │          OPENAI_BASE_URL, OPENAI_API_BASE,
-│   │           │          LLM_MODEL, PINECONE_INDEX (=chatbot-shared)
+│   │           │          LLM_MODEL, PINECONE_INDEX (=chatbot-{slug})
 │   │           └── secret: LLM_API_KEY, OPENAI_API_KEY,
 │   │                       ANTHROPIC_API_KEY ← LLM secret,
 │   │                       PINECONE_API_KEY  ← Pinecone secret
@@ -188,11 +241,25 @@ VPC  10.20.0.0/16
 ├── Secrets Manager: {slug}/llm-api-key
 │   └── written by platform during onboarding (AssumeRole)
 │
-├── Secrets Manager: {slug}/pinecone-api-key
-│   └── written by Terraform from the pinecone_api_key var
-│       (platform-wide PINECONE_API_KEY GitHub secret)
+├── Secrets Manager: {slug}/pinecone-api-key      [vector_store = pinecone]
+│   └── the CUSTOMER's own key, written by the platform during onboarding
+│       (AssumeRole) — never passed to GitHub Actions; only the ARN is
+│
+├── RDS PostgreSQL 16: chatbot-{slug}-vectors     [vector_store = pgvector]
+│   ├── db.t4g.micro, 32 GB gp3, storage encrypted, 7-day backups
+│   ├── publicly_accessible = false, in the tenant's own subnet group
+│   ├── Security Group: vectors  (ingress 5432 from task-sg ONLY)
+│   └── Secrets Manager: {slug}/vector-db-url
+│         └── postgresql://… connection URL incl. generated password
 │
 └── CloudWatch Log Group: /ecs/chatbot-{slug}  (14-day retention)
+
+CUSTOMER'S OWN PINECONE PROJECT                  [vector_store = pinecone]
+─────────────────────────────────────────────────────────────
+└── Serverless index: chatbot-{slug}   (dim 384, cosine, us-east-1)
+    └── created by the same terraform apply. The workflow reads the
+        customer's key from THEIR Secrets Manager under the assumed role,
+        masks it, and passes it to the pinecone provider via TF_VAR.
 
 Terraform state: s3://{TF_STATE_BUCKET}/tenants/{slug}.tfstate
 ```
@@ -207,13 +274,23 @@ CUSTOMER AZURE SUBSCRIPTION
 Resource Group: chatbot-{slug}
 │
 ├── Container Registry: chatbot{slug}acr  (Basic SKU, admin enabled)
+│   │  images are BUILT FROM SOURCE in deploy-tenant-azure.yml and pushed
+│   │  here (AWS instead replicates prebuilt images from the platform ECR)
 │   ├── image: chatbot{slug}acr.azurecr.io/chatbot-backend:{version}
 │   └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
 │
 ├── Key Vault: cb-{slug}-kv  (Standard SKU)
 │   ├── secret: llm-api-key       ← written by Terraform during apply
-│   ├── secret: pinecone-api-key  ← written by Terraform during apply
+│   ├── secret: pinecone-api-key  ← customer's own key  [vector_store = pinecone]
+│   ├── secret: vector-db-url     ← Postgres URL        [vector_store = pgvector]
 │   └── secret: storage-key       ← storage account primary access key
+│
+├── PostgreSQL Flexible Server: chatbot-{slug}-pg  [vector_store = pgvector]
+│   ├── B_Standard_B1ms, 32 GB, PG 16, 7-day backups
+│   ├── azure.extensions = VECTOR  (allows CREATE EXTENSION vector)
+│   ├── database: vectors
+│   └── firewall: allow-azure-services (0.0.0.0) — Container Apps egress
+│       from rotating Azure IPs; not open to the public internet
 │
 ├── Storage Account: chatbot{slug}  (hyphens stripped, max 24 chars)
 │   └── Blob container: documents  (private)
@@ -228,18 +305,28 @@ Resource Group: chatbot-{slug}
     ├── Revision mode: Single
     ├── Ingress: external, target port 80  → frontend container
     ├── Scaling: min 1 replica, max 3
-    ├── App secrets: acr-password, llm-api-key, pinecone-api-key, storage-key
+    ├── App secrets: acr-password, llm-api-key, storage-key,
+    │                + pinecone-api-key OR vector-db-url (per vector_store)
     ├── Container: chatbot   (backend, 0.5 vCPU / 1 Gi, :8000)
     │   ├── env:    PORT, LLM_PROVIDER, AZURE_STORAGE_ACCOUNT,
-    │   │           AZURE_STORAGE_CONTAINER, PINECONE_INDEX (=chatbot-shared),
-    │   │           PINECONE_ENVIRONMENT, OPENAI_BASE_URL,
+    │   │           AZURE_STORAGE_CONTAINER, VECTOR_STORE, OPENAI_BASE_URL,
     │   │           OPENAI_API_BASE, LLM_MODEL
+    │   │           [pinecone] PINECONE_INDEX (=chatbot-{slug}), PINECONE_ENVIRONMENT
+    │   │           [pgvector] PGVECTOR_TABLE (=embeddings), PGVECTOR_DIMENSION (=384)
     │   └── secret: LLM_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY ← llm-api-key,
-    │               PINECONE_API_KEY ← pinecone-api-key,
-    │               AZURE_STORAGE_KEY ← storage-key
+    │               AZURE_STORAGE_KEY ← storage-key,
+    │               [pinecone] PINECONE_API_KEY ← pinecone-api-key
+    │               [pgvector] DATABASE_URL, PGVECTOR_URL ← vector-db-url
     └── Container: frontend  (chat UI, nginx :80, 0.25 vCPU / 0.5 Gi)
         ├── env: BACKEND_PORT (nginx proxies /api → localhost:8000)
         └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
+
+CUSTOMER'S OWN PINECONE PROJECT                  [vector_store = pinecone]
+─────────────────────────────────────────────────────────────
+└── Serverless index: chatbot-{slug}   (dim 384, cosine, us-east-1)
+    └── same index resource as the AWS path. Azure has no pre-created secret
+        store at dispatch time, so the customer's key travels as a masked
+        workflow input rather than being read from their cloud.
 
 Terraform state: s3://{TF_STATE_BUCKET}/azure/tenants/{slug}/terraform.tfstate
 ```
@@ -342,6 +429,8 @@ tenants ────────────────────────
   │                                                              │
   │  shared: llmProvider (openai|anthropic|openrouter),           │
   │          llmApiKeyEncrypted, llmModel, llmBaseUrl,           │
+  │          vectorStore (pinecone|pgvector),                    │
+  │          pineconeApiKeyEncrypted, pineconeSecretArn (AWS),   │
   │          chatbotVersion, domain, albDnsName, chatbotUrl,     │
   │          config (jsonb)                                      │
   │                                                              │
@@ -365,6 +454,12 @@ GitHub Actions                          Platform
       │── POST /api/deployments/{id}/status ►│
       │   Headers:                          │
       │     x-webhook-secret: {secret}      │ timingSafeEqual check
+      │   Body (running, at job start):     │
+      │     {                               │
+      │       "status": "running",          │ UPDATE deployments SET
+      │       "githubRunId": "12345",       │   status, githubRunId,
+      │       "githubRunUrl": "https://..." │   githubRunUrl
+      │     }                               │
       │   Body (success):                   │
       │     {                               │
       │       "status": "succeeded",        │
@@ -400,6 +495,6 @@ GitHub Actions                          Platform
 | AWS integration | AWS SDK v3 (STS, Secrets Manager) |
 | Azure integration | `@azure/identity`, `@azure/keyvault-secrets` |
 | GitHub integration | Octokit REST |
-| Infrastructure | Terraform 1.9.5, AWS provider ~5.60 |
+| Infrastructure | Terraform 1.9.5 — AWS provider ~5.60, azurerm ~3.110, pinecone ~2.0 |
 | CI/CD | GitHub Actions |
 | Runtime | Node.js on Vercel / any Node host |

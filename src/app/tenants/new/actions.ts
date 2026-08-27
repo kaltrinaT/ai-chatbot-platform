@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { tenants } from "@/db/schema";
 import { triggerDeployment } from "@/lib/deploy";
 import { encryptSecret } from "@/lib/crypto";
-import { assumeTenantRole, writeLlmSecret } from "@/lib/aws";
+import { assumeTenantRole, writeTenantSecret } from "@/lib/aws";
 
 // ── Shared fields ─────────────────────────────────────────────────────
 const SharedInput = z.object({
@@ -34,7 +34,11 @@ const SharedInput = z.object({
   }),
   llmApiKey: z.string().min(10, "API key looks too short"),
   llmModel: z.string().optional(),
+  vectorStore: z.enum(["pinecone", "pgvector"]).default("pinecone"),
+  // Required only for vectorStore = "pinecone"; enforced by the refine below.
+  pineconeApiKey: z.string().optional(),
 });
+
 
 // ── AWS fields ────────────────────────────────────────────────────────
 const AwsInput = SharedInput.extend({
@@ -67,7 +71,14 @@ const AzureInput = SharedInput.extend({
   azureRegion: z.string().min(1, "Required"),
 });
 
-const TenantInput = z.discriminatedUnion("cloudProvider", [AwsInput, AzureInput]);
+// The Pinecone key is the customer's own, so it is mandatory when they pick
+// Pinecone and unused when the vectors stay inside their cloud account.
+const TenantInput = z
+  .discriminatedUnion("cloudProvider", [AwsInput, AzureInput])
+  .refine((v) => v.vectorStore !== "pinecone" || (v.pineconeApiKey ?? "").length >= 10, {
+    message: "Required when the vector store is Pinecone",
+    path: ["pineconeApiKey"],
+  });
 
 export type FormState = { errors: Record<string, string> } | null;
 
@@ -87,7 +98,8 @@ export async function createTenantAndDeploy(
     llmProvider: formData.get("llmProvider"),
     llmApiKey: formData.get("llmApiKey"),
     llmModel: (formData.get("llmModel") as string) || undefined,
-    pineconeApiKey: formData.get("pineconeApiKey"),
+    vectorStore: formData.get("vectorStore") || "pinecone",
+    pineconeApiKey: (formData.get("pineconeApiKey") as string) || undefined,
     // AWS
     awsAccountId: formData.get("awsAccountId"),
     awsRegion: formData.get("awsRegion"),
@@ -116,7 +128,13 @@ export async function createTenantAndDeploy(
   const { llmApiKey, ...tenantFields } = parsed;
   const llmApiKeyEncrypted = encryptSecret(llmApiKey);
 
+  const usesPinecone = parsed.vectorStore === "pinecone";
+  const pineconeApiKeyEncrypted = usesPinecone
+    ? encryptSecret(parsed.pineconeApiKey!)
+    : null;
+
   let llmSecretArn: string | null;
+  let pineconeSecretArn: string | null = null;
   let azureClientSecretEncrypted: string | undefined;
 
   if (parsed.cloudProvider === "aws") {
@@ -125,12 +143,24 @@ export async function createTenantAndDeploy(
       sessionName: `tenant-onboarding-${parsed.slug}`,
       region: parsed.awsRegion,
     });
-    llmSecretArn = await writeLlmSecret({
+    llmSecretArn = await writeTenantSecret({
       credentials: creds,
       region: parsed.awsRegion,
       secretName: `${parsed.slug}/llm-api-key`,
       secretValue: llmApiKey,
+      description:
+        "LLM API key for the AI chatbot tenant (managed by ai-chatbot-platform)",
     });
+    if (usesPinecone) {
+      pineconeSecretArn = await writeTenantSecret({
+        credentials: creds,
+        region: parsed.awsRegion,
+        secretName: `${parsed.slug}/pinecone-api-key`,
+        secretValue: parsed.pineconeApiKey!,
+        description:
+          "Customer-owned Pinecone API key for the AI chatbot tenant (managed by ai-chatbot-platform)",
+      });
+    }
   } else {
     azureClientSecretEncrypted = encryptSecret(parsed.azureClientSecret);
     // LLM key is passed directly to the workflow from the encrypted DB value;
@@ -150,6 +180,9 @@ export async function createTenantAndDeploy(
           llmApiKeyEncrypted,
           llmSecretArn,
           llmModel: tenantFields.llmModel ?? null,
+          vectorStore: parsed.vectorStore,
+          pineconeApiKeyEncrypted,
+          pineconeSecretArn,
           ownerUserId: session.user.id,
           awsAccountId: parsed.awsAccountId,
           awsRegion: parsed.awsRegion,
@@ -166,6 +199,8 @@ export async function createTenantAndDeploy(
           llmApiKeyEncrypted,
           llmSecretArn,
           llmModel: tenantFields.llmModel ?? null,
+          vectorStore: parsed.vectorStore,
+          pineconeApiKeyEncrypted,
           ownerUserId: session.user.id,
           azureSubscriptionId: parsed.azureSubscriptionId,
           azureTenantId: parsed.azureTenantId,

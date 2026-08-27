@@ -5,11 +5,23 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.60"
     }
+    pinecone = {
+      source  = "pinecone-io/pinecone"
+      version = "~> 2.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
 provider "aws" {
   region = var.aws_region
+}
+
+provider "pinecone" {
+  api_key = var.pinecone_api_key
 }
 
 data "aws_caller_identity" "current" {}
@@ -36,6 +48,9 @@ locals {
   }[var.llm_provider]
 
   llm_model = var.llm_model != "" ? var.llm_model : local.llm_default_model
+
+  use_pinecone = var.vector_store == "pinecone"
+  use_pgvector = var.vector_store == "pgvector"
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -255,19 +270,118 @@ resource "aws_s3_bucket_public_access_block" "docs" {
 }
 
 # ──────────────────────────────────────────────────────────────────────
-# Secrets Manager — Pinecone key (platform-owned, written here so the
-# ECS execution role can inject it without a pre-existing ARN)
+# Vector store — exactly one of the two blocks below is created, chosen by
+# var.vector_store.
+#
+#   "pinecone" — a dedicated index in the CUSTOMER's own Pinecone project.
+#                Cheaper and nothing to operate, but embeddings leave the
+#                customer's cloud account.
+#   "pgvector" — RDS PostgreSQL with the pgvector extension, inside this
+#                VPC. Embeddings never leave the customer's account, at the
+#                cost of a managed database.
 # ──────────────────────────────────────────────────────────────────────
 
-resource "aws_secretsmanager_secret" "pinecone" {
-  name        = "${var.tenant_slug}/pinecone-api-key"
-  description = "Pinecone API key for tenant ${var.tenant_slug} (managed by ai-chatbot-platform)"
+resource "pinecone_index" "this" {
+  count = local.use_pinecone ? 1 : 0
+
+  name      = local.name
+  dimension = 384 # must match the all-MiniLM-L6-v2 embedding output
+  metric    = "cosine"
+
+  spec = {
+    serverless = {
+      cloud  = "aws"
+      region = var.pinecone_environment
+    }
+  }
+
+  # Offboarding a tenant is `terraform destroy`; the index must go with it.
+  deletion_protection = "disabled"
+}
+
+# Reachable only from the ECS tasks — no public IP, no ingress from the ALB.
+resource "aws_security_group" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  name        = "${local.name}-vectors"
+  description = "Postgres vector store: ingress from the chatbot tasks only"
+  vpc_id      = aws_vpc.this.id
+
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.task.id]
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_db_subnet_group" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  name       = "${local.name}-vectors"
+  subnet_ids = aws_subnet.public[*].id
+  tags       = local.common_tags
+}
+
+resource "random_password" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  length = 32
+  # RDS rejects '/', '@', '"' and space in master passwords, and the value is
+  # embedded in a connection URL, so stick to alphanumerics.
+  special = false
+}
+
+resource "aws_db_instance" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  identifier     = "${local.name}-vectors"
+  engine         = "postgres"
+  engine_version = "16"
+  instance_class = var.vector_db_instance_class
+
+  allocated_storage = var.vector_db_storage_gb
+  storage_type      = "gp3"
+  storage_encrypted = true
+
+  db_name  = "vectors"
+  username = "chatbot"
+  password = random_password.vectors[0].result
+
+  db_subnet_group_name   = aws_db_subnet_group.vectors[0].name
+  vpc_security_group_ids = [aws_security_group.vectors[0].id]
+  publicly_accessible    = false
+
+  backup_retention_period = 7
+  skip_final_snapshot     = true
+  apply_immediately       = true
+
+  tags = local.common_tags
+}
+
+# The full connection URL (with password) is a secret, so it is injected via
+# the execution role rather than as a plaintext env var.
+resource "aws_secretsmanager_secret" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  name        = "${var.tenant_slug}/vector-db-url"
+  description = "pgvector connection URL for tenant ${var.tenant_slug} (managed by ai-chatbot-platform)"
   tags        = local.common_tags
 }
 
-resource "aws_secretsmanager_secret_version" "pinecone" {
-  secret_id     = aws_secretsmanager_secret.pinecone.id
-  secret_string = var.pinecone_api_key
+resource "aws_secretsmanager_secret_version" "vectors" {
+  count = local.use_pgvector ? 1 : 0
+
+  secret_id = aws_secretsmanager_secret.vectors[0].id
+  secret_string = format(
+    "postgresql://%s:%s@%s/%s?sslmode=require",
+    aws_db_instance.vectors[0].username,
+    random_password.vectors[0].result,
+    aws_db_instance.vectors[0].endpoint,
+    aws_db_instance.vectors[0].db_name,
+  )
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -301,9 +415,13 @@ resource "aws_iam_role_policy" "execution_secret_read" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue"]
-      Resource = [var.llm_secret_arn, aws_secretsmanager_secret.pinecone.arn]
+      Effect = "Allow"
+      Action = ["secretsmanager:GetSecretValue"]
+      Resource = concat(
+        [var.llm_secret_arn],
+        local.use_pinecone ? [var.pinecone_secret_arn] : [],
+        local.use_pgvector ? [aws_secretsmanager_secret.vectors[0].arn] : [],
+      )
     }]
   })
 }
@@ -360,23 +478,40 @@ resource "aws_ecs_task_definition" "this" {
       containerPort = var.container_port
       protocol      = "tcp"
     }]
-    environment = [
-      { name = "S3_DOCS_BUCKET",   value = aws_s3_bucket.docs.bucket },
-      { name = "S3_DOCS_PREFIX",   value = var.s3_docs_prefix },
-      { name = "LLM_PROVIDER",     value = var.llm_provider },
-      { name = "AWS_REGION",       value = var.aws_region },
-      { name = "PORT",             value = tostring(var.container_port) },
-      { name = "PINECONE_INDEX",   value = "chatbot-shared" },
-      { name = "OPENAI_BASE_URL",  value = local.llm_base_url },
-      { name = "OPENAI_API_BASE",  value = local.llm_base_url },
-      { name = "LLM_MODEL",        value = local.llm_model }
-    ]
-    secrets = [
-      { name = "LLM_API_KEY",      valueFrom = var.llm_secret_arn },
-      { name = "OPENAI_API_KEY",   valueFrom = var.llm_secret_arn },
-      { name = "ANTHROPIC_API_KEY", valueFrom = var.llm_secret_arn },
-      { name = "PINECONE_API_KEY", valueFrom = aws_secretsmanager_secret.pinecone.arn }
-    ]
+    environment = concat(
+      [
+        { name = "S3_DOCS_BUCKET", value = aws_s3_bucket.docs.bucket },
+        { name = "S3_DOCS_PREFIX", value = var.s3_docs_prefix },
+        { name = "LLM_PROVIDER", value = var.llm_provider },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "PORT", value = tostring(var.container_port) },
+        { name = "VECTOR_STORE", value = var.vector_store },
+        { name = "OPENAI_BASE_URL", value = local.llm_base_url },
+        { name = "OPENAI_API_BASE", value = local.llm_base_url },
+        { name = "LLM_MODEL", value = local.llm_model }
+      ],
+      local.use_pinecone ? [
+        { name = "PINECONE_INDEX", value = pinecone_index.this[0].name }
+      ] : [],
+      local.use_pgvector ? [
+        { name = "PGVECTOR_TABLE", value = "embeddings" },
+        { name = "PGVECTOR_DIMENSION", value = "384" }
+      ] : [],
+    )
+    secrets = concat(
+      [
+        { name = "LLM_API_KEY", valueFrom = var.llm_secret_arn },
+        { name = "OPENAI_API_KEY", valueFrom = var.llm_secret_arn },
+        { name = "ANTHROPIC_API_KEY", valueFrom = var.llm_secret_arn }
+      ],
+      local.use_pinecone ? [
+        { name = "PINECONE_API_KEY", valueFrom = var.pinecone_secret_arn }
+      ] : [],
+      local.use_pgvector ? [
+        { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.vectors[0].arn },
+        { name = "PGVECTOR_URL", valueFrom = aws_secretsmanager_secret.vectors[0].arn }
+      ] : [],
+    )
     logConfiguration = {
       logDriver = "awslogs"
       options = {

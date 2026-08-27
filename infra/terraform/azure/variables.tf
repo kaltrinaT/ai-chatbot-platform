@@ -88,10 +88,34 @@ variable "llm_api_key" {
   sensitive   = true
 }
 
+variable "vector_store" {
+  description = "Where embeddings live: \"pinecone\" (customer's own Pinecone project) or \"pgvector\" (Azure Database for PostgreSQL in this resource group)."
+  type        = string
+  default     = "pinecone"
+
+  validation {
+    condition     = contains(["pinecone", "pgvector"], var.vector_store)
+    error_message = "vector_store must be either \"pinecone\" or \"pgvector\"."
+  }
+}
+
 variable "pinecone_api_key" {
-  description = "Pinecone API key — stored in Key Vault by Terraform during deploy."
+  description = "The CUSTOMER's Pinecone API key — stored in Key Vault by Terraform during deploy. Empty when vector_store is pgvector."
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+variable "vector_db_sku" {
+  description = "SKU for the pgvector Flexible Server."
+  type        = string
+  default     = "B_Standard_B1ms"
+}
+
+variable "vector_db_storage_mb" {
+  description = "Storage (MB) for the pgvector Flexible Server."
+  type        = number
+  default     = 32768
 }
 
 variable "domain" {

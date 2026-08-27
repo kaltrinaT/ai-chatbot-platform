@@ -27,6 +27,16 @@ export const llmProviderEnum = pgEnum("llm_provider", [
 
 export const cloudProviderEnum = pgEnum("cloud_provider", ["aws", "azure"]);
 
+/**
+ * Where the tenant's document embeddings live.
+ *
+ * "pinecone" — the customer's OWN Pinecone project (they supply the API key).
+ * "pgvector" — Postgres + the pgvector extension provisioned inside the
+ *              customer's own cloud account (RDS on AWS, Flexible Server on
+ *              Azure), so no vector data leaves their subscription.
+ */
+export const vectorStoreEnum = pgEnum("vector_store", ["pinecone", "pgvector"]);
+
 export const tenants = pgTable("tenants", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -61,6 +71,14 @@ export const tenants = pgTable("tenants", {
   llmSecretArn: text("llm_secret_arn"),
   llmModel: text("llm_model"),
   llmBaseUrl: text("llm_base_url"),
+
+  // ── Vector store ──────────────────────────────────────────────────────
+  vectorStore: vectorStoreEnum("vector_store").notNull().default("pinecone"),
+  // Only set when vectorStore = "pinecone" — the CUSTOMER's own key.
+  pineconeApiKeyEncrypted: text("pinecone_api_key_encrypted"),
+  // AWS only: ARN of the customer-account secret holding the key above.
+  // Mirrors llmSecretArn so the key never passes through GitHub Actions.
+  pineconeSecretArn: text("pinecone_secret_arn"),
 
   domain: text("domain"),
   chatbotVersion: text("chatbot_version").notNull().default("latest"),

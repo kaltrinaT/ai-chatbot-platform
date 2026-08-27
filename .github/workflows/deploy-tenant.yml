@@ -50,6 +50,16 @@ on:
         required: true
         type: string
         description: "Source frontend (chat UI) image URI in the platform's ECR (with tag)"
+      vector_store:
+        required: false
+        type: string
+        default: "pinecone"
+        description: "pinecone (customer's own project) or pgvector (RDS in their VPC)"
+      pinecone_secret_arn:
+        required: false
+        type: string
+        default: ""
+        description: "ARN of the customer's Pinecone key secret; empty for pgvector"
 
 jobs:
   deploy:
@@ -165,8 +175,24 @@ jobs:
             -backend-config="key=tenants/${{ inputs.tenant_slug }}.tfstate" \
             -backend-config="encrypt=true"
 
+      # The customer's Pinecone key lives in THEIR Secrets Manager and is never
+      # passed as a workflow input. Terraform needs the value only to create
+      # the index in their Pinecone project, so read it here under the assumed
+      # client role and mask it before it can reach any log.
+      - name: Read customer Pinecone key
+        id: pinecone
+        if: inputs.vector_store == 'pinecone'
+        run: |
+          key="$(aws secretsmanager get-secret-value \
+            --secret-id "${{ inputs.pinecone_secret_arn }}" \
+            --query SecretString --output text)"
+          echo "::add-mask::$key"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
       - name: Terraform apply
         working-directory: infra/terraform
+        env:
+          TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key }}
         run: |
           terraform apply -auto-approve \
             -var "tenant_slug=${{ inputs.tenant_slug }}" \
@@ -177,7 +203,8 @@ jobs:
             -var "llm_provider=${{ inputs.llm_provider }}" \
             -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
             -var "llm_model=${{ inputs.llm_model }}" \
-            -var "pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+            -var "vector_store=${{ inputs.vector_store }}" \
+            -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
             -var "domain=${{ inputs.domain }}"
 
       - name: Read Terraform outputs
