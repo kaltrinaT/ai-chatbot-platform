@@ -75,7 +75,7 @@ This means clients do not need to trust the platform operator's claims — they 
 
 ### Recommended trust policy
 
-The client's IAM role trust policy should be scoped as tightly as possible:
+The client's IAM role trust policy should be scoped as tightly as possible. **Use this today:**
 
 ```json
 {
@@ -86,18 +86,23 @@ The client's IAM role trust policy should be scoped as tightly as possible:
       "Principal": {
         "AWS": "arn:aws:iam::PLATFORM_ACCOUNT_ID:root"
       },
-      "Action": "sts:AssumeRole",
-      "Condition": {
-        "StringEquals": {
-          "sts:ExternalId": "PLATFORM_EXTERNAL_ID"
-        }
-      }
+      "Action": "sts:AssumeRole"
     }
   ]
 }
 ```
 
-The `ExternalId` condition is important — see [Known Limitations](#known-limitations) below.
+⚠️ **Do not add an `sts:ExternalId` condition yet**, even though it's the right long-term posture (see [Known Limitations](#known-limitations) below). `assumeTenantRole` in `src/lib/aws.ts` does not currently pass an `ExternalId` to `AssumeRoleCommand`. A trust policy that requires one will make every `AssumeRole` call fail with `AccessDenied`, blocking onboarding and every deploy. Add the condition only after the platform-side fix in Known Limitation #1 ships.
+
+### Required role name
+
+The platform's own IAM identity (the principal shown above) is restricted by its own identity-based policy to only assume roles matching:
+
+```
+arn:aws:iam::*:role/chatbot-client-deploy-*
+```
+
+The client's role name **must start with `chatbot-client-deploy-`** (e.g. `chatbot-client-deploy-acme`) or `AssumeRole` will be denied before the trust policy is even evaluated, regardless of how the trust policy itself is configured.
 
 ---
 
@@ -105,7 +110,7 @@ The `ExternalId` condition is important — see [Known Limitations](#known-limit
 
 ### How it works
 
-The client provides a service principal (client ID + secret) with Contributor access scoped to a single resource group. The client secret is encrypted immediately on receipt and stored encrypted in the database.
+The client provides a service principal (client ID + secret). The client secret is encrypted immediately on receipt and stored encrypted in the database.
 
 During deployment, the encrypted secret is decrypted server-side and passed as a masked input to the GitHub Actions workflow. GitHub Actions masks the value in all logs using `::add-mask::`. Terraform uses the credentials to provision infrastructure in the client's subscription.
 
@@ -113,13 +118,14 @@ The platform itself (the Next.js app) never authenticates against the client's A
 
 ### What the service principal can access
 
-The Contributor role on a single resource group limits the blast radius of the service principal. It cannot:
+⚠️ **This must be Contributor at the subscription scope, not a single resource group.** `infra/terraform/azure/main.tf` has Terraform create the tenant's resource group itself (`azurerm_resource_group.this`) — a role assignment can't target a resource group that doesn't exist yet, so scoping Contributor to one resource group up front makes the first `terraform apply` fail at the resource-group-creation step.
 
-- Access other resource groups or subscriptions
+Subscription-level Contributor still cannot:
+
 - Modify Azure AD / Entra ID settings
 - Elevate its own permissions
 
-Clients should create a dedicated service principal solely for use with this platform and assign it Contributor access only on the resource group used for the chatbot deployment.
+Clients should create a dedicated service principal solely for use with this platform. Narrowing it to a single resource group is only possible after that resource group already exists (i.e. after the first successful deploy) — not something the current onboarding flow supports.
 
 ---
 
@@ -200,15 +206,15 @@ These values must never be committed to source control, logged, or included in e
 ## Client Security Checklist
 
 ### AWS
-- [ ] Create a dedicated IAM role used only for this platform
-- [ ] Scope the role's permission policy to the minimum required (see [AWS requirements](README.md))
-- [ ] Add an `ExternalId` condition to the trust policy (when supported by the platform)
+- [ ] Create a dedicated IAM role used only for this platform, named `chatbot-client-deploy-<something>` (see "Required role name" above)
+- [ ] Scope the role's permission policy to the minimum required — no minimal policy is published yet; the role needs to create VPC/networking, ALB, ECS, ECR, S3, Secrets Manager, CloudWatch Logs, IAM roles for the ECS tasks, and (if using pgvector) RDS resources, per [`infra/terraform/main.tf`](infra/terraform/main.tf)
+- [ ] Do **not** add an `ExternalId` condition to the trust policy yet — see "Recommended trust policy" above
 - [ ] Enable CloudTrail in the deployment region to independently audit all platform activity
 - [ ] Review and revoke the role if the tenant is deleted
 
 ### Azure
 - [ ] Create a dedicated service principal used only for this platform
-- [ ] Assign Contributor access only on the specific resource group for this deployment
+- [ ] Assign Contributor access at the **subscription** scope (Terraform creates the resource group itself, so scoping to a not-yet-existing resource group will fail — see "What the service principal can access" above)
 - [ ] Use a separate service principal per tenant (not one shared across all tenants)
 - [ ] Rotate the client secret periodically
 - [ ] Delete the service principal when the tenant is no longer needed

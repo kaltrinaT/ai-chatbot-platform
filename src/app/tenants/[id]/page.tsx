@@ -110,7 +110,7 @@ export default async function TenantDetailPage({
               label="Deployment role"
               value={tenant.deploymentRoleArn ?? "—"}
               mono
-              hint="ARN of the cross-account IAM role our platform assumes to deploy into your account. Create it in AWS Console → IAM → Roles, trust our platform account, then paste the role ARN (arn:aws:iam::<account>:role/...)."
+              hint="ARN of the cross-account IAM role our platform assumes to deploy into your account. Create it in AWS Console → IAM → Roles, trust our platform account, name it chatbot-client-deploy-<something> (required prefix), then paste the role ARN (arn:aws:iam::<account>:role/...)."
             />
             <Row
               label="S3 docs bucket"

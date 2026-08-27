@@ -130,11 +130,11 @@ export default function TenantForm() {
           <Field
             label="Deployment role ARN"
             name="deploymentRoleArn"
-            placeholder="arn:aws:iam::123456789012:role/ai-chatbot-platform-deployer"
-            hint="IAM role in the customer account the platform will assume to run Terraform."
+            placeholder="arn:aws:iam::123456789012:role/chatbot-client-deploy-acme"
+            hint="Role name must start with chatbot-client-deploy- — the platform's own AWS identity can only assume roles matching that pattern."
             required
             error={errors.deploymentRoleArn}
-            tooltip="The customer creates this: AWS Console → IAM → Roles → Create role, trusting the platform's AWS account, then copies the ARN from the role's summary page (arn:aws:iam::<account>:role/…)."
+            tooltip="The customer creates this: AWS Console → IAM → Roles → Create role, trusting the platform's AWS account, then copies the ARN from the role's summary page. Name it chatbot-client-deploy-<something> — the platform's IAM policy only permits assuming roles with that prefix."
           />
           <Field
             label="S3 prefix (optional)"

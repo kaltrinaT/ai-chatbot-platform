@@ -206,12 +206,12 @@ Managed by Drizzle ORM, running on Neon Postgres.
 4. `terraform init` with S3 backend (`tenants/{slug}.tfstate`)
 5. For Pinecone tenants: read the customer's Pinecone key back from **their** Secrets Manager under the assumed role and `::add-mask::` it, so Terraform can create the index without the key ever being a workflow input
 6. `terraform apply -auto-approve` — provisions all infra
-6. Read outputs: `alb_dns_name`, `chatbot_url`
-7. POST to `/api/deployments/{id}/status` with status + URLs + GitHub run details
+7. Read outputs: `alb_dns_name`, `chatbot_url`
+8. POST to `/api/deployments/{id}/status` with status + URLs + GitHub run details
 
 ### Azure — `.github/workflows/deploy-tenant-azure.yml`
 
-**Workflow inputs (`workflow_dispatch`):** fully per-tenant, dispatched by `buildAzureInputs` in [`src/lib/deploy.ts`](src/lib/deploy.ts). Because GitHub allows at most 10 `workflow_dispatch` inputs, non-secret settings travel packed in one JSON input:
+**Workflow inputs (`workflow_dispatch`):** fully per-tenant, dispatched by `buildAzureInputs` in [`src/lib/deploy.ts`](src/lib/deploy.ts). GitHub's `workflow_dispatch` input limit was 10 when this was designed (raised to 25 in December 2025), so non-secret settings travel packed in one JSON input rather than as separate top-level inputs:
 
 | Input | Contents |
 |---|---|
@@ -484,7 +484,7 @@ src/
     schema.ts                           # All table definitions and relations
   lib/
     aws.ts                              # AssumeRole, writeTenantSecret
-    azure.ts                            # writeAzureKeyVaultSecret
+    azure.ts                            # writeAzureKeyVaultSecret (currently unused — Terraform writes Key Vault secrets directly during deploy)
     crypto.ts                           # AES-256-GCM encrypt/decrypt
     deploy.ts                           # triggerDeployment, buildAwsInputs, buildAzureInputs
 

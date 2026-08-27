@@ -3,10 +3,11 @@ name: Deploy Tenant (Azure)
 # display_title if the "run started" callback below never arrives.
 run-name: "Deploy ${{ inputs.tenant_slug }} (Azure) [${{ inputs.deployment_id }}]"
 
-# workflow_dispatch allows at most 10 inputs, and the platform needs to pass
-# 11 per-tenant values — so non-secret settings travel packed in one JSON
-# `config` input (see buildAzureInputs in src/lib/deploy.ts, which must stay
-# in sync with the "Parse tenant config" step below).
+# workflow_dispatch's input limit was 10 when this was designed (raised to 25
+# in December 2025), and the platform needs to pass 11 per-tenant values — so
+# non-secret settings travel packed in one JSON `config` input (see
+# buildAzureInputs in src/lib/deploy.ts, which must stay in sync with the
+# "Parse tenant config" step below).
 on:
   workflow_dispatch:
     inputs:
