@@ -192,7 +192,11 @@ jobs:
       - name: Terraform apply
         working-directory: infra/terraform
         env:
-          TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key }}
+          # The pinecone provider requires a non-empty credential to
+          # initialize even when vector_store = pgvector, where count = 0
+          # means no Pinecone resources are actually created and this value
+          # is never used for anything real.
+          TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key || 'unused' }}
         run: |
           terraform apply -auto-approve \
             -var "tenant_slug=${{ inputs.tenant_slug }}" \

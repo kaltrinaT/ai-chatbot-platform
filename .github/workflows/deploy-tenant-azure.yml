@@ -139,7 +139,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           TF_VAR_azure_client_secret: ${{ inputs.azure_client_secret }}
           TF_VAR_llm_api_key: ${{ inputs.llm_api_key }}
-          TF_VAR_pinecone_api_key: ${{ inputs.pinecone_api_key }}
+          # The pinecone provider requires a non-empty credential to
+          # initialize even when vector_store = pgvector, where count = 0
+          # means no Pinecone resources are actually created and this value
+          # is never used for anything real.
+          TF_VAR_pinecone_api_key: ${{ inputs.pinecone_api_key || 'unused' }}
         run: |
           terraform apply -auto-approve \
             -target=azurerm_resource_group.this \
@@ -184,7 +188,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           TF_VAR_azure_client_secret: ${{ inputs.azure_client_secret }}
           TF_VAR_llm_api_key: ${{ inputs.llm_api_key }}
-          TF_VAR_pinecone_api_key: ${{ inputs.pinecone_api_key }}
+          # The pinecone provider requires a non-empty credential to
+          # initialize even when vector_store = pgvector, where count = 0
+          # means no Pinecone resources are actually created and this value
+          # is never used for anything real.
+          TF_VAR_pinecone_api_key: ${{ inputs.pinecone_api_key || 'unused' }}
         run: |
           terraform apply -auto-approve \
             -var="tenant_slug=${{ inputs.tenant_slug }}" \
