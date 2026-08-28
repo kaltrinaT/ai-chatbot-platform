@@ -1,0 +1,216 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { Octokit } from "@octokit/rest";
+
+const getWorkflowRun = vi.fn();
+const listJobsForWorkflowRun = vi.fn();
+const listWorkflowRuns = vi.fn();
+
+vi.mock("@octokit/rest", () => ({
+  // A regular function (not an arrow function) so `new Octokit(...)` in the
+  // source can construct it — an arrow-function implementation isn't a valid
+  // constructor and throws "is not a constructor".
+  Octokit: vi.fn().mockImplementation(function () {
+    return {
+      actions: {
+        getWorkflowRun,
+        listJobsForWorkflowRun,
+        listWorkflowRuns,
+      },
+    };
+  }),
+}));
+
+describe("github", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.resetModules();
+    getWorkflowRun.mockReset();
+    listJobsForWorkflowRun.mockReset();
+    listWorkflowRuns.mockReset();
+    vi.mocked(Octokit).mockClear();
+    process.env = { ...originalEnv };
+    process.env.CHATBOT_REPO_OWNER = "acme";
+    process.env.CHATBOT_REPO_NAME = "chatbot";
+    process.env.GITHUB_PAT = "test-pat";
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  describe("getChatbotRepo", () => {
+    it("returns owner/repo from env", async () => {
+      const { getChatbotRepo } = await import("./github");
+      expect(getChatbotRepo()).toEqual({ owner: "acme", repo: "chatbot" });
+    });
+
+    it("throws when CHATBOT_REPO_OWNER or CHATBOT_REPO_NAME are missing", async () => {
+      delete process.env.CHATBOT_REPO_OWNER;
+      const { getChatbotRepo } = await import("./github");
+      expect(() => getChatbotRepo()).toThrow(/CHATBOT_REPO_OWNER/);
+    });
+  });
+
+  describe("getDeployWorkflowId", () => {
+    it("defaults to deploy-tenant.yml", async () => {
+      delete process.env.CHATBOT_DEPLOY_WORKFLOW;
+      const { getDeployWorkflowId } = await import("./github");
+      expect(getDeployWorkflowId()).toBe("deploy-tenant.yml");
+    });
+
+    it("honors an override", async () => {
+      process.env.CHATBOT_DEPLOY_WORKFLOW = "custom.yml";
+      const { getDeployWorkflowId } = await import("./github");
+      expect(getDeployWorkflowId()).toBe("custom.yml");
+    });
+  });
+
+  describe("getOctokit", () => {
+    it("constructs the client once with GITHUB_PAT and reuses it on later calls", async () => {
+      const { getOctokit } = await import("./github");
+
+      const first = getOctokit();
+      const second = getOctokit();
+
+      expect(first).toBe(second);
+      expect(Octokit).toHaveBeenCalledTimes(1);
+      expect(Octokit).toHaveBeenCalledWith({ auth: "test-pat" });
+    });
+
+    it("constructs a fresh client per module instance (no leakage across resetModules)", async () => {
+      const { getOctokit: getOctokitA } = await import("./github");
+      getOctokitA();
+
+      vi.resetModules();
+      const { getOctokit: getOctokitB } = await import("./github");
+      getOctokitB();
+
+      expect(Octokit).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("fetchRunProgress", () => {
+    it("picks the in-progress job/step and counts completed steps", async () => {
+      getWorkflowRun.mockResolvedValue({
+        data: {
+          status: "in_progress",
+          conclusion: null,
+          run_started_at: "2026-01-01T00:00:00Z",
+          html_url: "https://github.com/acme/chatbot/actions/runs/1",
+          updated_at: "2026-01-01T00:05:00Z",
+        },
+      });
+      listJobsForWorkflowRun.mockResolvedValue({
+        data: {
+          jobs: [
+            {
+              name: "deploy",
+              status: "in_progress",
+              steps: [
+                { name: "checkout", status: "completed" },
+                { name: "terraform apply", status: "in_progress" },
+                { name: "notify", status: "queued" },
+              ],
+            },
+          ],
+        },
+      });
+
+      const { fetchRunProgress } = await import("./github");
+      const progress = await fetchRunProgress(1);
+
+      expect(progress.currentJobName).toBe("deploy");
+      expect(progress.currentStepName).toBe("terraform apply");
+      expect(progress.stepsCompleted).toBe(1);
+      expect(progress.stepsTotal).toBe(3);
+      expect(progress.runStatus).toBe("in_progress");
+    });
+
+    it("falls back to a queued job when nothing is in progress", async () => {
+      getWorkflowRun.mockResolvedValue({
+        data: {
+          status: "queued",
+          conclusion: null,
+          run_started_at: null,
+          html_url: "https://example.com/run/2",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      });
+      listJobsForWorkflowRun.mockResolvedValue({
+        data: {
+          jobs: [
+            { name: "build", status: "queued", steps: [] },
+            { name: "deploy", status: "queued", steps: [] },
+          ],
+        },
+      });
+
+      const { fetchRunProgress } = await import("./github");
+      const progress = await fetchRunProgress(2);
+
+      expect(progress.currentJobName).toBe("build");
+      expect(progress.stepsTotal).toBe(0);
+    });
+
+    it("defaults to null job/step and queued status when there are no jobs", async () => {
+      getWorkflowRun.mockResolvedValue({
+        data: {
+          status: undefined,
+          conclusion: undefined,
+          run_started_at: undefined,
+          html_url: "https://example.com/run/3",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      });
+      listJobsForWorkflowRun.mockResolvedValue({ data: { jobs: [] } });
+
+      const { fetchRunProgress } = await import("./github");
+      const progress = await fetchRunProgress(3);
+
+      expect(progress.currentJobName).toBeNull();
+      expect(progress.currentStepName).toBeNull();
+      expect(progress.runStatus).toBe("queued");
+      expect(progress.runConclusion).toBeNull();
+      expect(progress.runStartedAt).toBeNull();
+    });
+  });
+
+  describe("findRunForDeployment", () => {
+    it("matches a run whose display_title contains the deployment id", async () => {
+      listWorkflowRuns.mockResolvedValue({
+        data: {
+          workflow_runs: [
+            { id: 10, display_title: "deploy unrelated-id", html_url: "https://x/10" },
+            { id: 11, display_title: "deploy dep-abc123", html_url: "https://x/11" },
+          ],
+        },
+      });
+
+      const { findRunForDeployment } = await import("./github");
+      const result = await findRunForDeployment("dep-abc123", new Date("2026-01-01T00:10:00Z"));
+
+      expect(result).toEqual({ runId: 11, htmlUrl: "https://x/11" });
+    });
+
+    it("returns null when no run matches", async () => {
+      listWorkflowRuns.mockResolvedValue({ data: { workflow_runs: [] } });
+
+      const { findRunForDeployment } = await import("./github");
+      const result = await findRunForDeployment("dep-missing", new Date());
+
+      expect(result).toBeNull();
+    });
+
+    it("queries with a 5-minute clock-skew buffer before startedAt", async () => {
+      listWorkflowRuns.mockResolvedValue({ data: { workflow_runs: [] } });
+
+      const { findRunForDeployment } = await import("./github");
+      await findRunForDeployment("dep-x", new Date("2026-01-01T00:10:00Z"));
+
+      expect(listWorkflowRuns).toHaveBeenCalledWith(
+        expect.objectContaining({ created: ">=2026-01-01T00:05:00.000Z" }),
+      );
+    });
+  });
+});
