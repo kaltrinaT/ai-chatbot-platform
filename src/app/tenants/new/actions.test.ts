@@ -2,14 +2,23 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { insertValuesReturningChain } from "@/test/db-chains";
 import { buildFormData } from "@/test/form-data";
 
-const { authMock, dbInsertReturning, triggerDeployment, encryptSecret, assumeTenantRole, writeTenantSecret, redirectMock } =
-  vi.hoisted(() => {
+const {
+  authMock,
+  dbInsertReturning,
+  triggerDeployment,
+  encryptSecret,
+  assumeTenantRole,
+  writeTenantSecret,
+  ensureDocsSignerSecret,
+  redirectMock,
+} = vi.hoisted(() => {
     const authMock = vi.fn();
     const dbInsertReturning = vi.fn();
     const triggerDeployment = vi.fn();
     const encryptSecret = vi.fn((v: string) => `enc:${v}`);
     const assumeTenantRole = vi.fn();
     const writeTenantSecret = vi.fn();
+    const ensureDocsSignerSecret = vi.fn();
     const redirectMock = vi.fn((url: string) => {
       throw new Error(`REDIRECT:${url}`);
     });
@@ -20,6 +29,7 @@ const { authMock, dbInsertReturning, triggerDeployment, encryptSecret, assumeTen
       encryptSecret,
       assumeTenantRole,
       writeTenantSecret,
+      ensureDocsSignerSecret,
       redirectMock,
     };
   });
@@ -31,7 +41,7 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("@/lib/deploy", () => ({ triggerDeployment }));
 vi.mock("@/lib/crypto", () => ({ encryptSecret }));
-vi.mock("@/lib/aws", () => ({ assumeTenantRole, writeTenantSecret }));
+vi.mock("@/lib/aws", () => ({ assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret }));
 
 import { db } from "@/db";
 import { createTenantAndDeploy } from "./actions";
@@ -87,6 +97,10 @@ describe("createTenantAndDeploy", () => {
       sessionToken: "c",
     });
     writeTenantSecret.mockResolvedValue("arn:aws:secretsmanager:us-east-1:123456789012:secret:x");
+    ensureDocsSignerSecret.mockResolvedValue({
+      docsSignerSecretArn: "arn:aws:secretsmanager:us-east-1:123456789012:secret:acme-co/docs-signer-secret",
+      docsSignerSecretEncrypted: "enc:docs-signer-secret",
+    });
   });
 
   it("redirects to /signin when there is no authenticated session", async () => {
@@ -223,6 +237,9 @@ describe("createTenantAndDeploy", () => {
         expect.objectContaining({ roleArn: validAws.deploymentRoleArn, region: "us-east-1" }),
       );
       expect(writeTenantSecret).toHaveBeenCalledTimes(2); // llm key + pinecone key
+      expect(ensureDocsSignerSecret).toHaveBeenCalledWith(
+        expect.objectContaining({ roleArn: validAws.deploymentRoleArn, slug: "acme-co" }),
+      );
       expect(triggerDeployment).toHaveBeenCalledWith(
         expect.objectContaining({ tenantId: "tenant-1", triggeredByUserId: "user-1" }),
       );
@@ -235,6 +252,7 @@ describe("createTenantAndDeploy", () => {
 
       expect(assumeTenantRole).not.toHaveBeenCalled();
       expect(writeTenantSecret).not.toHaveBeenCalled();
+      expect(ensureDocsSignerSecret).not.toHaveBeenCalled();
       expect(encryptSecret).toHaveBeenCalledWith(validAzure.azureClientSecret);
       expect(triggerDeployment).toHaveBeenCalled();
     });

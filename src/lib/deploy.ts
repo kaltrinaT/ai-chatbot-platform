@@ -3,6 +3,7 @@ import { deployments, tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { decryptSecret } from "@/lib/crypto";
 import { getChatbotRepo, getDeployWorkflowId, getOctokit } from "@/lib/github";
+import { ensureDocsSignerSecret } from "@/lib/aws";
 
 type TriggerInput = {
   tenantId: string;
@@ -15,7 +16,7 @@ export async function triggerDeployment({
   chatbotVersion,
   triggeredByUserId,
 }: TriggerInput) {
-  const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
+  let [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
   if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
 
   const { owner, repo } = getChatbotRepo();
@@ -59,6 +60,31 @@ export async function triggerDeployment({
       );
     }
   }
+  if (tenant.cloudProvider === "aws" && !tenant.docsSignerSecretArn) {
+    // Tenants onboarded before the docs-signer feature shipped have no
+    // secret on file yet — generate and store it lazily on their next
+    // deploy rather than requiring a manual DB backfill.
+    const docsSigner = await ensureDocsSignerSecret({
+      roleArn: tenant.deploymentRoleArn!,
+      region: tenant.awsRegion!,
+      slug: tenant.slug,
+      sessionName: `tenant-redeploy-docs-${tenant.slug}`,
+    });
+    await db
+      .update(tenants)
+      .set({
+        docsSignerSecretArn: docsSigner.docsSignerSecretArn,
+        docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted,
+        updatedAt: new Date(),
+      })
+      .where(eq(tenants.id, tenant.id));
+    tenant = {
+      ...tenant,
+      docsSignerSecretArn: docsSigner.docsSignerSecretArn,
+      docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted,
+    };
+  }
+
   const [deployment] = await db
     .insert(deployments)
     .values({ tenantId, chatbotVersion, triggeredByUserId, status: "pending" })
@@ -126,6 +152,7 @@ function buildAwsInputs(
     // only the ARN travels through GitHub Actions.
     vector_store: tenant.vectorStore,
     pinecone_secret_arn: tenant.pineconeSecretArn ?? "",
+    docs_signer_secret_arn: tenant.docsSignerSecretArn!,
   };
 }
 

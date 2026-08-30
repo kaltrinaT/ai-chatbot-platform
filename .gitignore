@@ -40,3 +40,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+infra/terraform/.build/
+
+# docs-signer lambda deps (installed fresh by the workflow before zipping)
+infra/lambda/docs-signer/node_modules/

@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { tenants, deployments } from "@/db/schema";
+import { tenants, deployments, tenantDocuments } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import RedeployButton from "./RedeployButton";
 import DeploymentProgress from "./DeploymentProgress";
 import CostEstimateCard from "./CostEstimateCard";
+import DocumentsSection from "./documents/DocumentsSection";
 
 export default async function TenantDetailPage({
   params,
@@ -30,6 +31,15 @@ export default async function TenantDetailPage({
     .from(deployments)
     .where(eq(deployments.tenantId, tenant.id))
     .orderBy(desc(deployments.startedAt));
+
+  const documents =
+    tenant.cloudProvider === "aws"
+      ? await db
+          .select()
+          .from(tenantDocuments)
+          .where(eq(tenantDocuments.tenantId, tenant.id))
+          .orderBy(desc(tenantDocuments.createdAt))
+      : [];
 
   const isDeploying = tenantDeploys.some(
     (d: { status: string }) => d.status === "pending" || d.status === "running",
@@ -189,6 +199,14 @@ export default async function TenantDetailPage({
         slug={tenant.slug}
         vectorStore={tenant.vectorStore}
       />
+
+      {tenant.cloudProvider === "aws" && (
+        <DocumentsSection
+          tenantId={tenant.id}
+          docsSignerUrl={tenant.docsSignerUrl}
+          documents={documents}
+        />
+      )}
 
       <h2 className="mt-8 mb-3 text-lg font-medium">Deployments</h2>
       {tenantDeploys.length === 0 ? (

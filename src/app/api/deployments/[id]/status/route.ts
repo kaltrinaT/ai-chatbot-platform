@@ -12,6 +12,7 @@ const StatusUpdate = z.object({
   errorMessage: z.string().optional(),
   albDnsName: z.string().optional(),
   chatbotUrl: z.string().url().optional(),
+  docsSignerUrl: z.string().url().optional(),
 });
 
 function authorized(req: Request): boolean {
@@ -57,12 +58,16 @@ export async function POST(
     return NextResponse.json({ error: "deployment not found" }, { status: 404 });
   }
 
-  if (parsed.data.status === "succeeded" && (parsed.data.albDnsName || parsed.data.chatbotUrl)) {
+  if (
+    parsed.data.status === "succeeded" &&
+    (parsed.data.albDnsName || parsed.data.chatbotUrl || parsed.data.docsSignerUrl)
+  ) {
     await db
       .update(tenants)
       .set({
         ...(parsed.data.albDnsName ? { albDnsName: parsed.data.albDnsName } : {}),
         ...(parsed.data.chatbotUrl ? { chatbotUrl: parsed.data.chatbotUrl } : {}),
+        ...(parsed.data.docsSignerUrl ? { docsSignerUrl: parsed.data.docsSignerUrl } : {}),
         updatedAt: new Date(),
       })
       .where(eq(tenants.id, updated.tenantId));

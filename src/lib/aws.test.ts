@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const { stsSend, secretsSend } = vi.hoisted(() => ({
   stsSend: vi.fn(),
@@ -39,7 +39,8 @@ vi.mock("@aws-sdk/client-secrets-manager", () => {
 
 import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
 import { CreateSecretCommand, UpdateSecretCommand } from "@aws-sdk/client-secrets-manager";
-import { assumeTenantRole, writeTenantSecret } from "./aws";
+import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "./aws";
+import { decryptSecret } from "@/lib/crypto";
 
 describe("assumeTenantRole", () => {
   beforeEach(() => {
@@ -156,5 +157,91 @@ describe("writeTenantSecret", () => {
 
     await expect(writeTenantSecret(opts)).rejects.toThrow("access denied");
     expect(UpdateSecretCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe("ensureDocsSignerSecret", () => {
+  const originalKey = process.env.PLATFORM_ENCRYPTION_KEY;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // A real (not mocked) encrypt/decrypt round-trip needs a valid key —
+    // this exercises the actual @/lib/crypto module, not a stub.
+    process.env.PLATFORM_ENCRYPTION_KEY = "1".repeat(64);
+    stsSend.mockResolvedValue({
+      Credentials: { AccessKeyId: "AKIA123", SecretAccessKey: "secret", SessionToken: "token" },
+    });
+  });
+
+  afterEach(() => {
+    process.env.PLATFORM_ENCRYPTION_KEY = originalKey;
+  });
+
+  it("assumes the role, writes a freshly generated secret, and returns the ARN plus a decryptable local copy", async () => {
+    secretsSend.mockResolvedValue({
+      ARN: "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",
+    });
+
+    const result = await ensureDocsSignerSecret({
+      roleArn: "arn:aws:iam::111111111111:role/deploy",
+      region: "us-east-1",
+      slug: "acme-co",
+      sessionName: "tenant-onboarding-docs-acme-co",
+    });
+
+    expect(result.docsSignerSecretArn).toBe(
+      "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",
+    );
+    expect(AssumeRoleCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        RoleArn: "arn:aws:iam::111111111111:role/deploy",
+        RoleSessionName: "tenant-onboarding-docs-acme-co",
+      }),
+    );
+
+    const createInput = vi.mocked(CreateSecretCommand).mock.calls[0][0] as {
+      Name: string;
+      SecretString: string;
+    };
+    expect(createInput.Name).toBe("acme-co/docs-signer-secret");
+    // randomBytes(32).toString("hex") — 64 hex characters.
+    expect(createInput.SecretString).toMatch(/^[0-9a-f]{64}$/);
+
+    // The platform's own encrypted copy must decrypt back to the exact
+    // value written into the tenant's Secrets Manager — that's the whole
+    // point of keeping a local copy instead of re-fetching it later.
+    expect(decryptSecret(result.docsSignerSecretEncrypted)).toBe(createInput.SecretString);
+  });
+
+  it("generates a different secret value on every call", async () => {
+    secretsSend.mockResolvedValue({ ARN: "arn:aws:secretsmanager:us-east-1:1:secret:x" });
+
+    await ensureDocsSignerSecret({
+      roleArn: "arn:x",
+      region: "us-east-1",
+      slug: "acme",
+      sessionName: "s1",
+    });
+    await ensureDocsSignerSecret({
+      roleArn: "arn:x",
+      region: "us-east-1",
+      slug: "acme",
+      sessionName: "s2",
+    });
+
+    const [first, second] = vi.mocked(CreateSecretCommand).mock.calls as {
+      0: { SecretString: string };
+    }[];
+    expect(first[0].SecretString).not.toBe(second[0].SecretString);
+  });
+
+  it("propagates an AssumeRole failure without writing a secret", async () => {
+    stsSend.mockResolvedValue({});
+
+    await expect(
+      ensureDocsSignerSecret({ roleArn: "arn:x", region: "us-east-1", slug: "acme", sessionName: "s" }),
+    ).rejects.toThrow(/incomplete credentials/);
+
+    expect(CreateSecretCommand).not.toHaveBeenCalled();
   });
 });

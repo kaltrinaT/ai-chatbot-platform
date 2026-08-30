@@ -10,6 +10,7 @@ const {
   getChatbotRepo,
   getDeployWorkflowId,
   getOctokit,
+  ensureDocsSignerSecret,
 } = vi.hoisted(() => {
   const dbSelectWhere = vi.fn();
   const dbInsertReturning = vi.fn();
@@ -21,6 +22,7 @@ const {
   const getChatbotRepo = vi.fn(() => ({ owner: "acme", repo: "chatbot" }));
   const getDeployWorkflowId = vi.fn(() => "deploy-tenant.yml");
   const getOctokit = vi.fn(() => ({ actions: { createWorkflowDispatch } }));
+  const ensureDocsSignerSecret = vi.fn();
 
   return {
     dbSelectWhere,
@@ -31,6 +33,7 @@ const {
     getChatbotRepo,
     getDeployWorkflowId,
     getOctokit,
+    ensureDocsSignerSecret,
   };
 });
 
@@ -53,6 +56,7 @@ vi.mock("@/lib/github", () => ({
   getDeployWorkflowId,
   getOctokit,
 }));
+vi.mock("@/lib/aws", () => ({ ensureDocsSignerSecret }));
 
 import { db } from "@/db";
 import { triggerDeployment } from "./deploy";
@@ -71,6 +75,8 @@ const baseAwsTenant = {
   s3DocsPrefix: "docs/",
   vectorStore: "pinecone",
   pineconeSecretArn: "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/pinecone-api-key",
+  docsSignerSecretArn: "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",
+  docsSignerSecretEncrypted: "iv:tag:docssignerct",
 };
 
 const baseAzureTenant = {
@@ -97,6 +103,10 @@ describe("triggerDeployment", () => {
     getChatbotRepo.mockReturnValue({ owner: "acme", repo: "chatbot" });
     getDeployWorkflowId.mockReturnValue("deploy-tenant.yml");
     getOctokit.mockReturnValue({ actions: { createWorkflowDispatch } });
+    ensureDocsSignerSecret.mockResolvedValue({
+      docsSignerSecretArn: "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",
+      docsSignerSecretEncrypted: "iv:tag:docssignerct",
+    });
     process.env.PLATFORM_CHATBOT_IMAGE_URI = "111111111111.dkr.ecr.us-east-1.amazonaws.com/chatbot";
     process.env.PLATFORM_FRONTEND_IMAGE_URI = "111111111111.dkr.ecr.us-east-1.amazonaws.com/frontend";
     delete process.env.CHATBOT_DEPLOY_REF;
@@ -180,10 +190,37 @@ describe("triggerDeployment", () => {
           your_frontend_ecr_image: "111111111111.dkr.ecr.us-east-1.amazonaws.com/frontend:v1.2.3",
           vector_store: "pinecone",
           pinecone_secret_arn: baseAwsTenant.pineconeSecretArn,
+          docs_signer_secret_arn: baseAwsTenant.docsSignerSecretArn,
         }),
       }),
     );
     expect(dbUpdateWhere).toHaveBeenCalled();
+    expect(ensureDocsSignerSecret).not.toHaveBeenCalled();
+  });
+
+  it("lazily generates and stores the docs-signer secret for AWS tenants missing one", async () => {
+    dbSelectWhere.mockResolvedValue([{ ...baseAwsTenant, docsSignerSecretArn: null }]);
+    dbInsertReturning.mockResolvedValue([{ id: "deploy-5", status: "pending" }]);
+    dbUpdateWhere.mockResolvedValue(undefined);
+    createWorkflowDispatch.mockResolvedValue({});
+
+    await triggerDeployment({
+      tenantId: baseAwsTenant.id,
+      chatbotVersion: "v1",
+      triggeredByUserId: "u1",
+    });
+
+    expect(ensureDocsSignerSecret).toHaveBeenCalledWith(
+      expect.objectContaining({ roleArn: baseAwsTenant.deploymentRoleArn, slug: baseAwsTenant.slug }),
+    );
+    expect(createWorkflowDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputs: expect.objectContaining({
+          docs_signer_secret_arn:
+            "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",
+        }),
+      }),
+    );
   });
 
   it("uses deploy-tenant-azure.yml and JSON-packs config for Azure tenants", async () => {

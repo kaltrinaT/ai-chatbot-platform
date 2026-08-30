@@ -53,6 +53,13 @@ export const tenants = pgTable("tenants", {
   deploymentRoleArn: text("deployment_role_arn"),
   s3DocsBucket: text("s3_docs_bucket"),
   s3DocsPrefix: text("s3_docs_prefix"),
+  // ARN in the tenant's own Secrets Manager holding the docs-signer shared
+  // auth secret (written once during onboarding, like llmSecretArn) plus the
+  // platform's own encrypted copy, used to call the Lambda directly without
+  // ever touching tenant AWS credentials again after deploy.
+  docsSignerSecretArn: text("docs_signer_secret_arn"),
+  docsSignerSecretEncrypted: text("docs_signer_secret_encrypted"),
+  docsSignerUrl: text("docs_signer_url"),
 
   // ── Azure ─────────────────────────────────────────────────────────────
   azureSubscriptionId: text("azure_subscription_id"),
@@ -114,6 +121,38 @@ export const deployments = pgTable("deployments", {
   errorMessage: text("error_message"),
 });
 
+/**
+ * Status of a document as tracked by the platform's own record — the
+ * platform never calls s3:ListBucket, so this table (not the bucket) is the
+ * source of truth for "what documents exist" from the UI's perspective.
+ */
+export const documentStatusEnum = pgEnum("document_status", [
+  "pending",
+  "uploaded",
+  "failed",
+]);
+
+export const tenantDocuments = pgTable("tenant_documents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+
+  // Minted server-side by the docs-signer Lambda — never client-supplied.
+  objectKey: text("object_key").notNull(),
+  displayName: text("display_name").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes"),
+  status: documentStatusEnum("status").notNull().default("pending"),
+
+  uploadedByUserId: text("uploaded_by_user_id")
+    .notNull()
+    .references(() => users.id),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const users = pgTable("users", {
   id: text("id")
     .primaryKey()
@@ -164,6 +203,7 @@ export const verificationTokens = pgTable(
 
 export const tenantsRelations = relations(tenants, ({ many, one }) => ({
   deployments: many(deployments),
+  documents: many(tenantDocuments),
   owner: one(users, { fields: [tenants.ownerUserId], references: [users.id] }),
 }));
 
@@ -171,6 +211,14 @@ export const deploymentsRelations = relations(deployments, ({ one }) => ({
   tenant: one(tenants, { fields: [deployments.tenantId], references: [tenants.id] }),
   triggeredBy: one(users, {
     fields: [deployments.triggeredByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const tenantDocumentsRelations = relations(tenantDocuments, ({ one }) => ({
+  tenant: one(tenants, { fields: [tenantDocuments.tenantId], references: [tenants.id] }),
+  uploadedBy: one(users, {
+    fields: [tenantDocuments.uploadedByUserId],
     references: [users.id],
   }),
 }));

@@ -159,6 +159,17 @@ describe("POST /api/deployments/[id]/status", () => {
       });
     });
 
+    it("updates the tenant row when status is succeeded and docsSignerUrl is provided", async () => {
+      await callRoute({
+        body: { status: "succeeded", docsSignerUrl: "https://abc123.lambda-url.us-east-1.on.aws/" },
+      });
+
+      expect(db.update).toHaveBeenCalledTimes(2);
+      expect(setArgsForUpdateCall(1)).toMatchObject({
+        docsSignerUrl: "https://abc123.lambda-url.us-east-1.on.aws/",
+      });
+    });
+
     it("does not update the tenant row when status is succeeded but no URL fields are provided", async () => {
       await callRoute({ body: { status: "succeeded" } });
       expect(db.update).toHaveBeenCalledTimes(1);

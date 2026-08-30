@@ -13,6 +13,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
   }
 }
 
@@ -267,6 +271,131 @@ resource "aws_s3_bucket_public_access_block" "docs" {
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
+}
+
+# The browser uploads document bytes directly to S3 via a presigned POST
+# minted by the docs-signer Lambda below — that's a cross-origin request from
+# the platform's own origin, so it needs CORS. Nothing else touches this
+# bucket from a browser.
+resource "aws_s3_bucket_cors_configuration" "docs" {
+  bucket = aws_s3_bucket.docs.id
+
+  cors_rule {
+    allowed_methods = ["POST"]
+    allowed_origins = [var.platform_origin]
+    allowed_headers = ["*"]
+    max_age_seconds = 3000
+  }
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# Docs-signer Lambda — the ONLY component with write access to the docs
+# bucket besides the tenant themselves. It holds s3:PutObject/DeleteObject
+# ONLY (never GetObject, never ListBucket) so that even full possession of
+# its credentials cannot read a document's content. The platform reaches it
+# over plain authenticated HTTPS (shared-secret header, no AWS SigV4) — the
+# platform itself never holds an AWS credential capable of touching this
+# bucket. See ARCHITECTURE.md.
+# ──────────────────────────────────────────────────────────────────────
+
+data "aws_iam_policy_document" "assume_lambda" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "docs_signer" {
+  name               = "${local.name}-docs-signer"
+  assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
+  tags               = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "docs_signer_logs" {
+  role       = aws_iam_role.docs_signer.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "docs_signer_s3" {
+  name = "write-docs-bucket"
+  role = aws_iam_role.docs_signer.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.docs.arn}/${var.s3_docs_prefix}*"
+      }
+    ]
+  })
+}
+
+# Terraform (running under the broad deployment role) never reads this
+# secret's value — only references its ARN as a string. Only the Lambda's
+# own narrow role can actually read it.
+resource "aws_iam_role_policy" "docs_signer_secret_read" {
+  name = "read-docs-signer-secret"
+  role = aws_iam_role.docs_signer.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = var.docs_signer_secret_arn
+      }
+    ]
+  })
+}
+
+data "archive_file" "docs_signer" {
+  type        = "zip"
+  source_dir  = "${path.module}/../lambda/docs-signer"
+  output_path = "${path.module}/.build/docs-signer-${var.tenant_slug}.zip"
+}
+
+resource "aws_cloudwatch_log_group" "docs_signer" {
+  name              = "/aws/lambda/${local.name}-docs-signer"
+  retention_in_days = 14
+  tags              = local.common_tags
+}
+
+resource "aws_lambda_function" "docs_signer" {
+  function_name    = "${local.name}-docs-signer"
+  role             = aws_iam_role.docs_signer.arn
+  handler          = "index.handler"
+  runtime          = "nodejs20.x"
+  timeout          = 10
+  memory_size      = 128
+  filename         = data.archive_file.docs_signer.output_path
+  source_code_hash = data.archive_file.docs_signer.output_base64sha256
+
+  environment {
+    variables = {
+      DOCS_BUCKET            = aws_s3_bucket.docs.bucket
+      DOCS_PREFIX            = var.s3_docs_prefix
+      DOCS_SIGNER_SECRET_ARN = var.docs_signer_secret_arn
+      MAX_UPLOAD_BYTES       = tostring(var.max_docs_upload_mb * 1024 * 1024)
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.docs_signer]
+
+  tags = local.common_tags
+}
+
+# Public-but-secret-gated: authorization_type = NONE means no AWS SigV4 is
+# required to invoke it (the platform holds no AWS credential to sign with —
+# that's the point), auth is enforced inside the handler via a shared-secret
+# header. Only ever called server-to-server from the platform, never from a
+# browser.
+resource "aws_lambda_function_url" "docs_signer" {
+  function_name      = aws_lambda_function.docs_signer.function_name
+  authorization_type = "NONE"
 }
 
 # ──────────────────────────────────────────────────────────────────────

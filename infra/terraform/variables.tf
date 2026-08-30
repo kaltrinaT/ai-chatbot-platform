@@ -133,6 +133,27 @@ variable "llm_secret_arn" {
   }
 }
 
+variable "docs_signer_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the docs-signer Lambda's shared auth secret. Written once by the platform during onboarding, like llm_secret_arn — Terraform only ever references the ARN, never the value."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:secretsmanager:[a-z]{2}-[a-z]+-[0-9]:[0-9]{12}:secret:.+$", var.docs_signer_secret_arn))
+    error_message = "docs_signer_secret_arn must be a valid Secrets Manager ARN."
+  }
+}
+
+variable "platform_origin" {
+  description = "Origin (scheme+host) of the platform's own web UI. Used for S3 CORS on the docs bucket so the browser can upload directly to S3."
+  type        = string
+}
+
+variable "max_docs_upload_mb" {
+  description = "Maximum single-document upload size in MB, enforced by the docs-signer Lambda's S3 presigned-POST policy."
+  type        = number
+  default     = 25
+}
+
 variable "domain" {
   description = "Optional custom hostname. Empty string = HTTP only via ALB DNS."
   type        = string

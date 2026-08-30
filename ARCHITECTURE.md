@@ -25,6 +25,8 @@ This platform is a **control plane only**. It deploys and monitors infrastructur
 
 The only information that crosses from data plane to control plane is deployment lifecycle data: success/failure status and the resulting chatbot URL. Do not add any endpoint, IAM role, or delegated access that would give the platform visibility into runtime traffic, documents, or logs.
 
+**Document management (AWS) is the one deliberate, narrow exception to "no IAM role" above, and it's built specifically to avoid becoming a visibility exception too.** The platform lets an operator upload/delete a tenant's knowledge-base documents from its own UI, but it holds **no AWS credential of any kind** for the docs bucket — not even a scoped one. Instead, each tenant gets its own `docs-signer` Lambda (see the AWS Infrastructure diagram below), with an IAM role limited to `s3:PutObject`/`s3:DeleteObject` and nothing else — never `GetObject`, never `ListBucket`. The platform reaches it only over plain authenticated HTTPS (a shared secret, no AWS SigV4), the same shape as the existing deployment-status webhook. Uploads are S3 presigned POSTs the browser sends directly to S3 — file bytes never pass through the platform's server. The platform's own Postgres (`tenant_documents`), not `s3:ListBucket`, is what the document list in the UI is drawn from — so the platform knows filenames and sizes (it needs to, to render a list), but at no point holds a credential capable of reading a document's content. Deleting a document does not purge its already-embedded vectors — that's a limitation of the chatbot backend's `/api/index`, not something the platform can address.
+
 ### Configurable vector store
 
 Where a tenant's embeddings live is a **per-tenant choice** made at onboarding
@@ -236,10 +238,28 @@ VPC  10.20.0.0/16
 │
 ├── S3 Bucket: chatbot-{slug}-docs
 │   ├── AES-256 SSE
-│   └── all public access blocked
+│   ├── all public access blocked
+│   └── CORS: POST from the platform's own origin (browser → S3 uploads)
+│
+├── Lambda: chatbot-{slug}-docs-signer  (Function URL, auth: NONE)
+│   ├── Role: s3:PutObject + s3:DeleteObject → docs bucket/{prefix}*  ONLY
+│   │         (never s3:GetObject, never s3:ListBucket)
+│   ├── Role: secretsmanager:GetSecretValue → docs-signer-secret ARN only
+│   └── The platform calls this over plain HTTPS (shared-secret header) to
+│       mint presigned S3 POSTs for uploads and to perform deletes. This is
+│       the ONLY way the platform ever touches this bucket — it holds no AWS
+│       credential capable of reading, writing, or listing it. See the
+│       Control Plane / Data Plane Boundary section above.
 │
 ├── Secrets Manager: {slug}/llm-api-key
 │   └── written by platform during onboarding (AssumeRole)
+│
+├── Secrets Manager: {slug}/docs-signer-secret
+│   └── shared auth secret for the docs-signer Lambda above, generated and
+│       written by the platform during onboarding (AssumeRole) — the
+│       platform also keeps its own encrypted copy so it never needs to
+│       touch tenant AWS again to use it; only the ARN travels through
+│       Terraform/GitHub Actions afterward, like llm-api-key
 │
 ├── Secrets Manager: {slug}/pinecone-api-key      [vector_store = pinecone]
 │   └── the CUSTOMER's own key, written by the platform during onboarding

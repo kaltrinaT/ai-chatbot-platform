@@ -19,3 +19,8 @@ output "ecs_service_name" {
 output "log_group" {
   value = aws_cloudwatch_log_group.this.name
 }
+
+output "docs_signer_url" {
+  description = "Function URL of the docs-signer Lambda. The platform calls this over plain HTTPS for document upload/delete — it never calls AWS directly for documents."
+  value       = aws_lambda_function_url.docs_signer.function_url
+}

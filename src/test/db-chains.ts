@@ -29,6 +29,11 @@ export function insertValuesReturningChain(returning: AnyMock) {
   return { values: vi.fn(() => ({ returning })) };
 }
 
+/** `db.delete(table).where(cond)` */
+export function deleteWhereChain(where: AnyMock) {
+  return { where };
+}
+
 /**
  * A resolved `Promise<undefined>` that also exposes `.returning()` — for
  * `update().set().where()` call sites where some callers `await` the

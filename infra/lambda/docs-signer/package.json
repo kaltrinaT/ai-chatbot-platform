@@ -1,0 +1,11 @@
+{
+  "name": "docs-signer",
+  "private": true,
+  "type": "module",
+  "description": "Per-tenant Lambda that mints S3 presigned POSTs for document uploads and performs deletes, using its own narrow PutObject/DeleteObject-only IAM role. The platform never calls AWS for documents; it only calls this Lambda's Function URL over HTTPS with a shared secret.",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.658.0",
+    "@aws-sdk/client-secrets-manager": "^3.658.0",
+    "@aws-sdk/s3-presigned-post": "^3.658.0"
+  }
+}

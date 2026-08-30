@@ -38,6 +38,10 @@ on:
       llm_secret_arn:
         required: true
         type: string
+      docs_signer_secret_arn:
+        required: true
+        type: string
+        description: "ARN of the docs-signer Lambda's shared auth secret, written by the platform during onboarding (like llm_secret_arn — an ARN, not the secret value)"
       llm_model:
         required: false
         type: string
@@ -189,6 +193,14 @@ jobs:
           echo "::add-mask::$key"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
+      # The docs-signer Lambda ships real node_modules (the Node 20.x Lambda
+      # runtime only bundles @aws-sdk/client-s3, not s3-presigned-post or
+      # client-secrets-manager) — archive_file just zips whatever's on disk,
+      # so the deps have to be installed before Terraform runs.
+      - name: Install docs-signer Lambda dependencies
+        working-directory: infra/lambda/docs-signer
+        run: npm install --production
+
       - name: Terraform apply
         working-directory: infra/terraform
         env:
@@ -209,7 +221,9 @@ jobs:
             -var "llm_model=${{ inputs.llm_model }}" \
             -var "vector_store=${{ inputs.vector_store }}" \
             -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
-            -var "domain=${{ inputs.domain }}"
+            -var "domain=${{ inputs.domain }}" \
+            -var "docs_signer_secret_arn=${{ inputs.docs_signer_secret_arn }}" \
+            -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
 
       - name: Read Terraform outputs
         id: tf
@@ -217,6 +231,7 @@ jobs:
         run: |
           echo "alb_dns_name=$(terraform output -raw alb_dns_name)" >> "$GITHUB_OUTPUT"
           echo "chatbot_url=$(terraform output -raw chatbot_url)" >> "$GITHUB_OUTPUT"
+          echo "docs_signer_url=$(terraform output -raw docs_signer_url)" >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────────────────────
       # 4. Callback to platform
@@ -233,6 +248,7 @@ jobs:
             "status": "succeeded",
             "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
             "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
+            "docsSignerUrl": "${{ steps.tf.outputs.docs_signer_url }}",
             "githubRunId": "${{ github.run_id }}",
             "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }

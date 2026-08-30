@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { tenants } from "@/db/schema";
 import { triggerDeployment } from "@/lib/deploy";
 import { encryptSecret } from "@/lib/crypto";
-import { assumeTenantRole, writeTenantSecret } from "@/lib/aws";
+import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "@/lib/aws";
 
 // ── Shared fields ─────────────────────────────────────────────────────
 const SharedInput = z.object({
@@ -136,6 +136,8 @@ export async function createTenantAndDeploy(
   let llmSecretArn: string | null;
   let pineconeSecretArn: string | null = null;
   let azureClientSecretEncrypted: string | undefined;
+  let docsSignerSecretArn: string | null = null;
+  let docsSignerSecretEncrypted: string | null = null;
 
   if (parsed.cloudProvider === "aws") {
     const creds = await assumeTenantRole({
@@ -161,6 +163,14 @@ export async function createTenantAndDeploy(
           "Customer-owned Pinecone API key for the AI chatbot tenant (managed by ai-chatbot-platform)",
       });
     }
+    const docsSigner = await ensureDocsSignerSecret({
+      roleArn: parsed.deploymentRoleArn,
+      region: parsed.awsRegion,
+      slug: parsed.slug,
+      sessionName: `tenant-onboarding-docs-${parsed.slug}`,
+    });
+    docsSignerSecretArn = docsSigner.docsSignerSecretArn;
+    docsSignerSecretEncrypted = docsSigner.docsSignerSecretEncrypted;
   } else {
     azureClientSecretEncrypted = encryptSecret(parsed.azureClientSecret);
     // LLM key is passed directly to the workflow from the encrypted DB value;
@@ -188,6 +198,8 @@ export async function createTenantAndDeploy(
           awsRegion: parsed.awsRegion,
           deploymentRoleArn: parsed.deploymentRoleArn,
           s3DocsPrefix: parsed.s3DocsPrefix,
+          docsSignerSecretArn,
+          docsSignerSecretEncrypted,
         }
       : {
           cloudProvider: "azure" as const,
