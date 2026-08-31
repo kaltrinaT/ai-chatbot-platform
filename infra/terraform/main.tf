@@ -609,6 +609,7 @@ resource "aws_ecs_task_definition" "this" {
     }]
     environment = concat(
       [
+        { name = "TENANT_ID", value = var.tenant_slug },
         { name = "S3_DOCS_BUCKET", value = aws_s3_bucket.docs.bucket },
         { name = "S3_DOCS_PREFIX", value = var.s3_docs_prefix },
         { name = "LLM_PROVIDER", value = var.llm_provider },

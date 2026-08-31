@@ -320,6 +320,10 @@ resource "azurerm_container_app" "this" {
         value = tostring(var.container_port)
       }
       env {
+        name  = "TENANT_ID"
+        value = var.tenant_slug
+      }
+      env {
         name  = "LLM_PROVIDER"
         value = var.llm_provider
       }
