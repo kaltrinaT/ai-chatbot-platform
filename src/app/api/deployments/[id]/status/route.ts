@@ -58,7 +58,12 @@ export async function POST(
     return NextResponse.json({ error: "deployment not found" }, { status: 404 });
   }
 
-  if (
+  if (parsed.data.status === "succeeded" && updated.kind === "destroy") {
+    await db
+      .update(tenants)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(tenants.id, updated.tenantId));
+  } else if (
     parsed.data.status === "succeeded" &&
     (parsed.data.albDnsName || parsed.data.chatbotUrl || parsed.data.docsSignerUrl)
   ) {

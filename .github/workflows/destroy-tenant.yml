@@ -1,0 +1,197 @@
+name: Destroy tenant chatbot
+run-name: "Destroy ${{ inputs.tenant_slug }} [${{ inputs.deployment_id }}]"
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        required: true
+        type: string
+      tenant_slug:
+        required: true
+        type: string
+      aws_account_id:
+        required: true
+        type: string
+      aws_region:
+        required: true
+        type: string
+      deployment_role_arn:
+        required: true
+        type: string
+      chatbot_version:
+        required: true
+        type: string
+      domain:
+        required: false
+        type: string
+        default: ""
+      s3_docs_prefix:
+        required: false
+        type: string
+        default: ""
+      llm_provider:
+        required: true
+        type: string
+      llm_secret_arn:
+        required: true
+        type: string
+      docs_signer_secret_arn:
+        required: true
+        type: string
+      llm_model:
+        required: false
+        type: string
+        default: ""
+      vector_store:
+        required: false
+        type: string
+        default: "pinecone"
+      pinecone_secret_arn:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Notify platform — run started
+        continue-on-error: true
+        run: |
+          curl -sS --max-time 15 -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "running",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (client — assume tenant role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.deployment_role_arn }}
+          role-session-name: destroy-${{ inputs.tenant_slug }}-${{ github.run_id }}
+          role-duration-seconds: 3600
+          role-skip-session-tagging: true
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Terraform init
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ secrets.TF_STATE_REGION }}" \
+            -backend-config="key=tenants/${{ inputs.tenant_slug }}.tfstate" \
+            -backend-config="encrypt=true"
+
+      # Destroying pinecone_index.this actually calls Pinecone's API, which
+      # needs a real key — AWS credentials alone don't cover that provider.
+      - name: Read customer Pinecone key
+        id: pinecone
+        if: inputs.vector_store == 'pinecone'
+        run: |
+          key="$(aws secretsmanager get-secret-value \
+            --secret-id "${{ inputs.pinecone_secret_arn }}" \
+            --query SecretString --output text)"
+          echo "::add-mask::$key"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      # No real image is pulled/pushed for a destroy — these just need to be
+      # well-formed ECR URIs to satisfy Terraform's variable validation.
+      - name: Terraform destroy
+        working-directory: infra/terraform
+        env:
+          TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key || 'unused' }}
+        run: |
+          CLIENT_REGISTRY="${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com"
+          terraform destroy -auto-approve \
+            -var "tenant_slug=${{ inputs.tenant_slug }}" \
+            -var "aws_region=${{ inputs.aws_region }}" \
+            -var "image_uri=$CLIENT_REGISTRY/${{ inputs.tenant_slug }}/chatbot:${{ inputs.chatbot_version }}" \
+            -var "frontend_image_uri=$CLIENT_REGISTRY/${{ inputs.tenant_slug }}/chatbot-frontend:${{ inputs.chatbot_version }}" \
+            -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
+            -var "llm_provider=${{ inputs.llm_provider }}" \
+            -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
+            -var "llm_model=${{ inputs.llm_model }}" \
+            -var "vector_store=${{ inputs.vector_store }}" \
+            -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
+            -var "domain=${{ inputs.domain }}" \
+            -var "docs_signer_secret_arn=${{ inputs.docs_signer_secret_arn }}" \
+            -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
+
+      # Created imperatively by deploy-tenant.yml, not Terraform-managed —
+      # terraform destroy above never touches these. Best-effort: a tenant
+      # that never got this far in a deploy won't have them.
+      - name: Delete ECR repositories
+        run: |
+          aws ecr delete-repository --region ${{ inputs.aws_region }} \
+            --repository-name "${{ inputs.tenant_slug }}/chatbot" --force || true
+          aws ecr delete-repository --region ${{ inputs.aws_region }} \
+            --repository-name "${{ inputs.tenant_slug }}/chatbot-frontend" --force || true
+
+      # Written directly by the platform (writeTenantSecret), not Terraform
+      # resources — vector-db-url IS Terraform-managed and already gone via
+      # terraform destroy above. Best-effort: pinecone-api-key only exists
+      # for vector_store = pinecone.
+      - name: Delete platform-written secrets
+        run: |
+          aws secretsmanager delete-secret --region ${{ inputs.aws_region }} \
+            --secret-id "${{ inputs.tenant_slug }}/llm-api-key" \
+            --force-delete-without-recovery || true
+          aws secretsmanager delete-secret --region ${{ inputs.aws_region }} \
+            --secret-id "${{ inputs.tenant_slug }}/docs-signer-secret" \
+            --force-delete-without-recovery || true
+          if [ "${{ inputs.vector_store }}" = "pinecone" ]; then
+            aws secretsmanager delete-secret --region ${{ inputs.aws_region }} \
+              --secret-id "${{ inputs.tenant_slug }}/pinecone-api-key" \
+              --force-delete-without-recovery || true
+          fi
+
+      - name: Notify platform — success
+        if: success()
+        run: |
+          curl -sS -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "succeeded",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+
+      - name: Notify platform — failure
+        if: failure()
+        run: |
+          curl -sS -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            -d @- \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          {
+            "status": "failed",
+            "errorMessage": "Destroy workflow run ${{ github.run_id }} failed; see GitHub Actions logs.",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF

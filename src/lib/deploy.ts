@@ -1,9 +1,10 @@
 import { db } from "@/db";
-import { deployments, tenants } from "@/db/schema";
+import { deployments, tenants, tenantDocuments } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { decryptSecret } from "@/lib/crypto";
-import { getChatbotRepo, getDeployWorkflowId, getOctokit } from "@/lib/github";
+import { getChatbotRepo, getDeployWorkflowId, getDestroyWorkflowId, getOctokit } from "@/lib/github";
 import { ensureDocsSignerSecret } from "@/lib/aws";
+import { deleteViaSigner } from "@/lib/docsSigner";
 
 type TriggerInput = {
   tenantId: string;
@@ -125,6 +126,109 @@ export async function triggerDeployment({
   }
 
   return deployment;
+}
+
+type TenantRow = Awaited<ReturnType<typeof db.select>>["0"] & { cloudProvider: string };
+
+type DestroyInput = {
+  tenantId: string;
+  triggeredByUserId: string;
+};
+
+/**
+ * Tears down a tenant's AWS infrastructure: best-effort empties the docs
+ * bucket via the docs-signer Lambda (no AWS credential needed for that —
+ * force_destroy on the bucket is the backstop if this can't run), then
+ * dispatches destroy-tenant.yml, which runs `terraform destroy` plus cleanup
+ * for the handful of resources Terraform doesn't manage (ECR repos, the
+ * platform-written secrets). Reuses the `deployments` table (kind: "destroy")
+ * so this gets the same live-progress polling and reconciliation as a deploy.
+ */
+export async function triggerTenantDestroy({ tenantId, triggeredByUserId }: DestroyInput) {
+  const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
+  if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
+  if (tenant.cloudProvider !== "aws") {
+    throw new Error("Tenant deletion is only available for AWS tenants right now.");
+  }
+  if (tenant.deletedAt) {
+    throw new Error(`Tenant ${tenant.id} has already been deleted.`);
+  }
+
+  if (tenant.docsSignerUrl) {
+    const docs = await db
+      .select()
+      .from(tenantDocuments)
+      .where(eq(tenantDocuments.tenantId, tenant.id));
+
+    for (const doc of docs) {
+      try {
+        await deleteViaSigner(tenant, doc.objectKey);
+      } catch {
+        // Best-effort — force_destroy on the bucket is the backstop for
+        // whatever this couldn't clean up (e.g. the Lambda is unreachable).
+      }
+    }
+
+    await db.delete(tenantDocuments).where(eq(tenantDocuments.tenantId, tenant.id));
+  }
+
+  const [deployment] = await db
+    .insert(deployments)
+    .values({
+      tenantId,
+      kind: "destroy",
+      chatbotVersion: tenant.chatbotVersion,
+      triggeredByUserId,
+      status: "pending",
+    })
+    .returning();
+
+  const octokit = getOctokit();
+  const { owner, repo } = getChatbotRepo();
+  const ref = process.env.CHATBOT_DEPLOY_REF ?? "main";
+
+  try {
+    await octokit.actions.createWorkflowDispatch({
+      owner,
+      repo,
+      workflow_id: getDestroyWorkflowId(),
+      ref,
+      inputs: buildAwsDestroyInputs(tenant, deployment.id),
+    });
+
+    await db
+      .update(deployments)
+      .set({ status: "running" })
+      .where(eq(deployments.id, deployment.id));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await db
+      .update(deployments)
+      .set({ status: "failed", errorMessage: message, finishedAt: new Date() })
+      .where(eq(deployments.id, deployment.id));
+    throw err;
+  }
+
+  return deployment;
+}
+
+function buildAwsDestroyInputs(tenant: TenantRow, deploymentId: string): Record<string, string> {
+  return {
+    deployment_id: deploymentId,
+    tenant_slug: tenant.slug,
+    aws_account_id: tenant.awsAccountId!,
+    aws_region: tenant.awsRegion!,
+    deployment_role_arn: tenant.deploymentRoleArn!,
+    chatbot_version: tenant.chatbotVersion,
+    domain: tenant.domain ?? "",
+    s3_docs_prefix: tenant.s3DocsPrefix ?? "",
+    llm_provider: tenant.llmProvider,
+    llm_secret_arn: tenant.llmSecretArn!,
+    llm_model: tenant.llmModel ?? "",
+    vector_store: tenant.vectorStore,
+    pinecone_secret_arn: tenant.pineconeSecretArn ?? "",
+    docs_signer_secret_arn: tenant.docsSignerSecretArn!,
+  };
 }
 
 function buildAwsInputs(

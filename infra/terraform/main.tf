@@ -254,6 +254,13 @@ resource "aws_cloudwatch_log_group" "this" {
 resource "aws_s3_bucket" "docs" {
   bucket = "chatbot-${var.tenant_slug}-docs"
   tags   = merge(local.common_tags, { Name = "${local.name}-docs" })
+
+  # The platform tries to empty this bucket via the docs-signer Lambda before
+  # requesting tenant destroy, but that's best-effort (e.g. tenants onboarded
+  # before docs-signer existed have no way to enumerate their objects) — this
+  # is the backstop so `terraform destroy` never gets blocked on a non-empty
+  # bucket. Uses the same already-granted s3:* permission, no new IAM needed.
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "docs" {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { selectWhereChain, selectJoinChain } from "@/test/db-chains";
+import { selectWhereChain, selectJoinChain, thenableWithReturning } from "@/test/db-chains";
 
 const {
   authMock,
@@ -7,6 +7,7 @@ const {
   dbReloadWhere,
   dbUpdate,
   dbUpdateSet,
+  dbUpdateReturning,
   fetchRunProgress,
   findRunForDeployment,
 } = vi.hoisted(() => {
@@ -14,7 +15,11 @@ const {
   const dbOwnershipWhere = vi.fn();
   const dbReloadWhere = vi.fn();
 
-  const dbUpdateWhere = vi.fn(() => Promise.resolve(undefined));
+  // .where() is awaitable directly (deployments-row update, existing
+  // behavior) but also exposes .returning() (needed by reconcileCompletedRun
+  // to read back `kind` for the destroy → tenants.deletedAt branch).
+  const dbUpdateReturning = vi.fn();
+  const dbUpdateWhere = vi.fn(() => thenableWithReturning(dbUpdateReturning));
   const dbUpdateSet = vi.fn((values: Record<string, unknown>) => {
     void values;
     return { where: dbUpdateWhere };
@@ -30,6 +35,7 @@ const {
     dbReloadWhere,
     dbUpdate,
     dbUpdateSet,
+    dbUpdateReturning,
     fetchRunProgress,
     findRunForDeployment,
   };
@@ -55,6 +61,7 @@ function deploymentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "dep-1",
     tenantId: "tenant-1",
+    kind: "deploy",
     status: "running",
     chatbotVersion: "v1",
     githubRunId: null,
@@ -89,6 +96,7 @@ describe("GET /api/deployments/[id]/progress", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authMock.mockResolvedValue({ user: { id: "user-1" } });
+    dbUpdateReturning.mockResolvedValue([deploymentRow()]);
   });
 
   it("returns 401 when there is no authenticated session", async () => {
@@ -184,6 +192,60 @@ describe("GET /api/deployments/[id]/progress", () => {
       await callRoute();
 
       expect(dbUpdateSet.mock.calls[0][0].errorMessage).toMatch(/Reconciled from GitHub/);
+    });
+
+    it("also sets tenants.deletedAt when reconciling a destroy deployment to succeeded", async () => {
+      dbOwnershipWhere.mockResolvedValue([
+        { deployment: deploymentRow({ kind: "destroy", status: "running", githubRunId: "123" }) },
+      ]);
+      fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "completed", runConclusion: "success" }));
+      // The .returning() from the deployments-row update — this is what tells
+      // reconcileCompletedRun it just reconciled a destroy row.
+      dbUpdateReturning.mockResolvedValue([
+        deploymentRow({ kind: "destroy", tenantId: "tenant-1", status: "succeeded" }),
+      ]);
+      dbReloadWhere.mockResolvedValue([
+        deploymentRow({ kind: "destroy", status: "succeeded" }),
+      ]);
+
+      await callRoute();
+
+      // Two db.update() calls: the deployments row, then the tenants row.
+      expect(dbUpdate).toHaveBeenCalledTimes(2);
+      expect(dbUpdateSet).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ deletedAt: expect.any(Date) }),
+      );
+    });
+
+    it("does not touch tenants when reconciling a destroy deployment to a non-success conclusion", async () => {
+      dbOwnershipWhere.mockResolvedValue([
+        { deployment: deploymentRow({ kind: "destroy", status: "running", githubRunId: "123" }) },
+      ]);
+      fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "completed", runConclusion: "failure" }));
+      dbUpdateReturning.mockResolvedValue([
+        deploymentRow({ kind: "destroy", tenantId: "tenant-1", status: "failed" }),
+      ]);
+      dbReloadWhere.mockResolvedValue([deploymentRow({ kind: "destroy", status: "failed" })]);
+
+      await callRoute();
+
+      expect(dbUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not touch tenants when reconciling an ordinary deploy to succeeded", async () => {
+      dbOwnershipWhere.mockResolvedValue([
+        { deployment: deploymentRow({ kind: "deploy", status: "running", githubRunId: "123" }) },
+      ]);
+      fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "completed", runConclusion: "success" }));
+      dbUpdateReturning.mockResolvedValue([
+        deploymentRow({ kind: "deploy", tenantId: "tenant-1", status: "succeeded" }),
+      ]);
+      dbReloadWhere.mockResolvedValue([deploymentRow({ kind: "deploy", status: "succeeded" })]);
+
+      await callRoute();
+
+      expect(dbUpdate).toHaveBeenCalledTimes(1);
     });
   });
 

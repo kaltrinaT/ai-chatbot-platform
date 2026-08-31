@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { db } from "@/db";
 import { tenants, deployments } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc, isNull } from "drizzle-orm";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -12,7 +12,7 @@ export default async function DashboardPage() {
   const myTenants = await db
     .select()
     .from(tenants)
-    .where(eq(tenants.ownerUserId, session.user.id))
+    .where(and(eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt)))
     .orderBy(desc(tenants.createdAt));
 
   const recentDeploys = myTenants.length

@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { tenants, deployments, tenantDocuments } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import RedeployButton from "./RedeployButton";
+import DeleteTenantButton from "./DeleteTenantButton";
 import DeploymentProgress from "./DeploymentProgress";
 import CostEstimateCard from "./CostEstimateCard";
 import DocumentsSection from "./documents/DocumentsSection";
@@ -56,10 +57,31 @@ export default async function TenantDetailPage({
           <h1 className="text-2xl font-semibold">{tenant.name}</h1>
           <p className="text-sm text-gray-500">{tenant.slug}</p>
         </div>
-        <RedeployButton tenantId={tenant.id} disabled={isDeploying} />
+        {!tenant.deletedAt && (
+          <div className="flex gap-2">
+            <RedeployButton tenantId={tenant.id} disabled={isDeploying} />
+            <DeleteTenantButton
+              tenantId={tenant.id}
+              slug={tenant.slug}
+              disabled={isDeploying || tenant.cloudProvider !== "aws"}
+              disabledReason={
+                isDeploying
+                  ? "A deployment is already in progress"
+                  : tenant.cloudProvider !== "aws"
+                    ? "Tenant deletion isn't available for Azure tenants yet"
+                    : undefined
+              }
+            />
+          </div>
+        )}
       </div>
 
-      {tenant.chatbotUrl ? (
+      {tenant.deletedAt ? (
+        <div className="mt-6 rounded border border-gray-300 bg-gray-50 p-4 text-sm text-gray-700">
+          This tenant was deleted on {tenant.deletedAt.toISOString()}. Its AWS infrastructure
+          has been torn down; deployment history below is kept for reference.
+        </div>
+      ) : tenant.chatbotUrl ? (
         <a
           href={tenant.chatbotUrl}
           target="_blank"
@@ -200,7 +222,7 @@ export default async function TenantDetailPage({
         vectorStore={tenant.vectorStore}
       />
 
-      {tenant.cloudProvider === "aws" && (
+      {tenant.cloudProvider === "aws" && !tenant.deletedAt && (
         <DocumentsSection
           tenantId={tenant.id}
           docsSignerUrl={tenant.docsSignerUrl}

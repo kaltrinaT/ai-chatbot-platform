@@ -81,6 +81,10 @@ async function failStuckDeployment(id: string, message: string) {
  * from the customer's account. For redeploys this is lossless (in-place, URL
  * unchanged); after a lost first-deploy success callback the URL fills in on
  * the next successful deploy.
+ *
+ * tenants.deletedAt is the one exception — unlike a URL, it needs no output
+ * value from the run, just "now()", so a lost success webhook for a destroy
+ * doesn't leave the tenant stuck looking un-deleted after its infra is gone.
  */
 async function reconcileCompletedRun(id: string, live: RunProgress) {
   const status =
@@ -90,7 +94,7 @@ async function reconcileCompletedRun(id: string, live: RunProgress) {
         ? ("cancelled" as const)
         : ("failed" as const);
 
-  await db
+  const [updated] = await db
     .update(deployments)
     .set({
       status,
@@ -101,7 +105,15 @@ async function reconcileCompletedRun(id: string, live: RunProgress) {
             errorMessage: `Reconciled from GitHub: run concluded '${live.runConclusion ?? "unknown"}'; the completion webhook was not received. See the run logs.`,
           }),
     })
-    .where(and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES])));
+    .where(and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES])))
+    .returning();
+
+  if (updated && status === "succeeded" && updated.kind === "destroy") {
+    await db
+      .update(tenants)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(tenants.id, updated.tenantId));
+  }
 }
 
 async function reload(id: string): Promise<DeploymentRow> {

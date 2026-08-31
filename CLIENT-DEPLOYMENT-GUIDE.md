@@ -48,7 +48,7 @@ Trust policy — paste exactly this (replace `PLATFORM_ACCOUNT_ID` with the valu
 **The role name must start with `chatbot-client-deploy-`** (e.g. `chatbot-client-deploy-acme`). The platform's own AWS identity is restricted by its own IAM policy to only assume roles matching `arn:aws:iam::*:role/chatbot-client-deploy-*` — any other name is denied before your trust policy is even evaluated, regardless of how correctly it's configured.
 
 ### 4. Attach the permissions policy
-This role needs to create everything Terraform provisions on your behalf: a VPC, an Application Load Balancer, an ECS cluster with two Fargate services, two ECR repos, an S3 documents bucket, a CloudWatch log group, IAM roles for the ECS tasks, Secrets Manager secrets, and (if you chose pgvector) an RDS instance.
+This role needs to create everything Terraform provisions on your behalf: a VPC, an Application Load Balancer, an ECS cluster with two Fargate services, two ECR repos, an S3 documents bucket, a per-tenant docs-signer Lambda (for the platform's document upload/delete UI — see `DOCUMENT-MANAGEMENT.md`), a CloudWatch log group, IAM roles for the ECS tasks and the Lambda, Secrets Manager secrets, and (if you chose pgvector) an RDS instance.
 
 ```json
 {
@@ -59,6 +59,7 @@ This role needs to create everything Terraform provisions on your behalf: a VPC,
     { "Sid": "Compute", "Effect": "Allow", "Action": "ecs:*", "Resource": "*" },
     { "Sid": "Images", "Effect": "Allow", "Action": "ecr:*", "Resource": "*" },
     { "Sid": "Storage", "Effect": "Allow", "Action": "s3:*", "Resource": "*" },
+    { "Sid": "Functions", "Effect": "Allow", "Action": "lambda:*", "Resource": "*" },
     { "Sid": "Secrets", "Effect": "Allow", "Action": "secretsmanager:*", "Resource": "*" },
     { "Sid": "Logs", "Effect": "Allow", "Action": "logs:*", "Resource": "*" },
     { "Sid": "Database", "Effect": "Allow", "Action": "rds:*", "Resource": "*" },
@@ -77,7 +78,9 @@ This role needs to create everything Terraform provisions on your behalf: a VPC,
   ]
 }
 ```
-> **Why `s3:*` instead of a narrower list:** Terraform's S3 resources read back many bucket attributes to reconcile state (tags, policy, ACL, versioning, etc.), each requiring its own IAM `Get*` action. A narrower hand-picked list will fail one missing permission at a time as different attributes get read; `s3:*` avoids that entirely. This mirrors how every other service in this policy is already granted (`ec2:*`, `ecs:*`, etc.) rather than curated to specific actions.
+> **Why `s3:*`/`lambda:*` instead of a narrower list:** Terraform's resources read back many attributes to reconcile state (tags, policy, ACL, versioning, etc.), each requiring its own IAM `Get*` action. A narrower hand-picked list will fail one missing permission at a time as different attributes get read; a broad grant avoids that entirely. This mirrors how every other service in this policy is already granted (`ec2:*`, `ecs:*`, etc.) rather than curated to specific actions — the `Functions` Sid is not a broader grant of trust than the rest of this policy already represents, since the same role can already create/modify the ECS tasks that run your data plane.
+>
+> **If you already created this role before document management existed:** add the `Functions` Sid above to your existing role's policy (IAM → Roles → your `chatbot-client-deploy-*` role → Permissions → edit the policy) before your next deploy — Terraform will fail on `lambda:CreateFunction` with an `AccessDeniedException` otherwise.
 
 This role's own permissions also implicitly cover reading and writing to the platform's shared Terraform state bucket (the platform operator grants that bucket's cross-account access separately, scoped to your specific AWS account — nothing you need to configure).
 

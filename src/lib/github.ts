@@ -22,6 +22,10 @@ export function getDeployWorkflowId(): string {
   return process.env.CHATBOT_DEPLOY_WORKFLOW ?? "deploy-tenant.yml";
 }
 
+export function getDestroyWorkflowId(): string {
+  return process.env.CHATBOT_DESTROY_WORKFLOW ?? "destroy-tenant.yml";
+}
+
 export type RunProgress = {
   runStatus: string;
   runConclusion: string | null;

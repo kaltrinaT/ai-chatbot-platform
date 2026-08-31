@@ -19,6 +19,10 @@ export const deploymentStatusEnum = pgEnum("deployment_status", [
   "cancelled",
 ]);
 
+// "destroy" reuses the same table/status lifecycle/polling machinery as a
+// normal deploy — see triggerTenantDestroy in src/lib/deploy.ts.
+export const deploymentKindEnum = pgEnum("deployment_kind", ["deploy", "destroy"]);
+
 export const llmProviderEnum = pgEnum("llm_provider", [
   "openai",
   "anthropic",
@@ -97,6 +101,10 @@ export const tenants = pgTable("tenants", {
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  // Soft delete — set once a "destroy" deployment succeeds. The row (and its
+  // deployment/document history) stays for audit purposes but drops off the
+  // active dashboard and can no longer be redeployed or managed.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 export const deployments = pgTable("deployments", {
@@ -105,6 +113,7 @@ export const deployments = pgTable("deployments", {
     .notNull()
     .references(() => tenants.id, { onDelete: "cascade" }),
 
+  kind: deploymentKindEnum("kind").notNull().default("deploy"),
   status: deploymentStatusEnum("status").notNull().default("pending"),
   chatbotVersion: text("chatbot_version").notNull(),
 

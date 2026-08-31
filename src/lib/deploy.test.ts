@@ -1,39 +1,53 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { selectWhereChain, updateSetWhereChain, insertValuesReturningChain } from "@/test/db-chains";
+import {
+  selectWhereChain,
+  updateSetWhereChain,
+  insertValuesReturningChain,
+  deleteWhereChain,
+} from "@/test/db-chains";
 
 const {
   dbSelectWhere,
   dbInsertReturning,
   dbUpdateWhere,
+  dbDeleteWhere,
   decryptSecret,
   createWorkflowDispatch,
   getChatbotRepo,
   getDeployWorkflowId,
+  getDestroyWorkflowId,
   getOctokit,
   ensureDocsSignerSecret,
+  deleteViaSigner,
 } = vi.hoisted(() => {
   const dbSelectWhere = vi.fn();
   const dbInsertReturning = vi.fn();
   const dbUpdateWhere = vi.fn();
+  const dbDeleteWhere = vi.fn();
 
   const decryptSecret = vi.fn((blob: string) => `decrypted:${blob}`);
 
   const createWorkflowDispatch = vi.fn();
   const getChatbotRepo = vi.fn(() => ({ owner: "acme", repo: "chatbot" }));
   const getDeployWorkflowId = vi.fn(() => "deploy-tenant.yml");
+  const getDestroyWorkflowId = vi.fn(() => "destroy-tenant.yml");
   const getOctokit = vi.fn(() => ({ actions: { createWorkflowDispatch } }));
   const ensureDocsSignerSecret = vi.fn();
+  const deleteViaSigner = vi.fn();
 
   return {
     dbSelectWhere,
     dbInsertReturning,
     dbUpdateWhere,
+    dbDeleteWhere,
     decryptSecret,
     createWorkflowDispatch,
     getChatbotRepo,
     getDeployWorkflowId,
+    getDestroyWorkflowId,
     getOctokit,
     ensureDocsSignerSecret,
+    deleteViaSigner,
   };
 });
 
@@ -48,18 +62,21 @@ vi.mock("@/db", () => ({
     select: vi.fn(() => selectWhereChain(dbSelectWhere)),
     insert: vi.fn(() => insertValuesReturningChain(dbInsertReturning)),
     update: vi.fn(() => updateSetWhereChain(dbUpdateWhere)),
+    delete: vi.fn(() => deleteWhereChain(dbDeleteWhere)),
   },
 }));
 vi.mock("@/lib/crypto", () => ({ decryptSecret }));
 vi.mock("@/lib/github", () => ({
   getChatbotRepo,
   getDeployWorkflowId,
+  getDestroyWorkflowId,
   getOctokit,
 }));
 vi.mock("@/lib/aws", () => ({ ensureDocsSignerSecret }));
+vi.mock("@/lib/docsSigner", () => ({ deleteViaSigner }));
 
 import { db } from "@/db";
-import { triggerDeployment } from "./deploy";
+import { triggerDeployment, triggerTenantDestroy } from "./deploy";
 
 const baseAwsTenant = {
   id: "tenant-1",
@@ -274,5 +291,114 @@ describe("triggerDeployment", () => {
     await triggerDeployment({ tenantId: baseAwsTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" });
 
     expect(createWorkflowDispatch).toHaveBeenCalledWith(expect.objectContaining({ ref: "release" }));
+  });
+});
+
+describe("triggerTenantDestroy", () => {
+  const destroyTenant = {
+    ...baseAwsTenant,
+    docsSignerUrl: "https://abc.lambda-url.us-east-1.on.aws/",
+    docsSignerSecretEncrypted: "iv:tag:docssignerct",
+    deletedAt: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getChatbotRepo.mockReturnValue({ owner: "acme", repo: "chatbot" });
+    getDestroyWorkflowId.mockReturnValue("destroy-tenant.yml");
+    getOctokit.mockReturnValue({ actions: { createWorkflowDispatch } });
+    dbInsertReturning.mockResolvedValue([{ id: "destroy-1", kind: "destroy", status: "pending" }]);
+    dbUpdateWhere.mockResolvedValue(undefined);
+    dbDeleteWhere.mockResolvedValue(undefined);
+    createWorkflowDispatch.mockResolvedValue({});
+  });
+
+  it("throws for a non-AWS tenant without touching docs or dispatching anything", async () => {
+    dbSelectWhere.mockResolvedValue([{ ...destroyTenant, cloudProvider: "azure" }]);
+
+    await expect(
+      triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" }),
+    ).rejects.toThrow(/only available for AWS tenants/);
+
+    expect(deleteViaSigner).not.toHaveBeenCalled();
+    expect(createWorkflowDispatch).not.toHaveBeenCalled();
+  });
+
+  it("throws for a tenant that's already been deleted", async () => {
+    dbSelectWhere.mockResolvedValue([
+      { ...destroyTenant, deletedAt: new Date("2026-01-01T00:00:00Z") },
+    ]);
+
+    await expect(
+      triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" }),
+    ).rejects.toThrow(/already been deleted/);
+
+    expect(createWorkflowDispatch).not.toHaveBeenCalled();
+  });
+
+  it("empties every tenant_documents row via the docs-signer before dispatching, best-effort", async () => {
+    dbSelectWhere
+      .mockResolvedValueOnce([destroyTenant]) // tenant lookup
+      .mockResolvedValueOnce([
+        { id: "doc-1", objectKey: "docs/a.pdf" },
+        { id: "doc-2", objectKey: "docs/b.pdf" },
+      ]); // tenant_documents
+    deleteViaSigner
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("lambda unreachable")); // best-effort — must not abort the destroy
+
+    await triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" });
+
+    expect(deleteViaSigner).toHaveBeenCalledTimes(2);
+    expect(deleteViaSigner).toHaveBeenNthCalledWith(1, destroyTenant, "docs/a.pdf");
+    expect(deleteViaSigner).toHaveBeenNthCalledWith(2, destroyTenant, "docs/b.pdf");
+    expect(dbDeleteWhere).toHaveBeenCalled();
+    expect(createWorkflowDispatch).toHaveBeenCalled();
+  });
+
+  it("skips the docs cleanup entirely when the tenant has no docsSignerUrl", async () => {
+    dbSelectWhere.mockResolvedValue([{ ...destroyTenant, docsSignerUrl: null }]);
+
+    await triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" });
+
+    expect(deleteViaSigner).not.toHaveBeenCalled();
+    expect(dbDeleteWhere).not.toHaveBeenCalled();
+  });
+
+  it("dispatches destroy-tenant.yml with a destroy-kind deployment row and no image inputs", async () => {
+    dbSelectWhere.mockResolvedValueOnce([destroyTenant]).mockResolvedValueOnce([]);
+
+    await triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" });
+
+    expect(dbInsertReturning).toHaveBeenCalled();
+    const insertedValues = db.insert.mock.results[0].value.values.mock.calls[0][0];
+    expect(insertedValues).toMatchObject({ kind: "destroy", status: "pending" });
+
+    expect(createWorkflowDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: "acme",
+        repo: "chatbot",
+        workflow_id: "destroy-tenant.yml",
+        inputs: expect.objectContaining({
+          tenant_slug: destroyTenant.slug,
+          deployment_role_arn: destroyTenant.deploymentRoleArn,
+          docs_signer_secret_arn: destroyTenant.docsSignerSecretArn,
+        }),
+      }),
+    );
+    const inputs = createWorkflowDispatch.mock.calls[0][0].inputs;
+    expect(inputs).not.toHaveProperty("your_ecr_image");
+    expect(inputs).not.toHaveProperty("your_frontend_ecr_image");
+  });
+
+  it("marks the deployment failed and rethrows when workflow dispatch fails", async () => {
+    dbSelectWhere.mockResolvedValueOnce([destroyTenant]).mockResolvedValueOnce([]);
+    createWorkflowDispatch.mockRejectedValue(new Error("GitHub API unavailable"));
+
+    await expect(
+      triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" }),
+    ).rejects.toThrow("GitHub API unavailable");
+
+    expect(dbUpdateWhere).toHaveBeenCalled();
   });
 });

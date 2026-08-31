@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { tenants, tenantDocuments } from "@/db/schema";
@@ -18,7 +18,9 @@ async function requireOwnedTenant(tenantId: string, userId: string) {
   const [tenant] = await db
     .select()
     .from(tenants)
-    .where(and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId)));
+    .where(
+      and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt)),
+    );
 
   if (!tenant) throw new Error("Tenant not found");
   return tenant;

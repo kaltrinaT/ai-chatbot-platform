@@ -66,6 +66,20 @@ describe("github", () => {
     });
   });
 
+  describe("getDestroyWorkflowId", () => {
+    it("defaults to destroy-tenant.yml", async () => {
+      delete process.env.CHATBOT_DESTROY_WORKFLOW;
+      const { getDestroyWorkflowId } = await import("./github");
+      expect(getDestroyWorkflowId()).toBe("destroy-tenant.yml");
+    });
+
+    it("honors an override", async () => {
+      process.env.CHATBOT_DESTROY_WORKFLOW = "custom-destroy.yml";
+      const { getDestroyWorkflowId } = await import("./github");
+      expect(getDestroyWorkflowId()).toBe("custom-destroy.yml");
+    });
+  });
+
   describe("getOctokit", () => {
     it("constructs the client once with GITHUB_PAT and reuses it on later calls", async () => {
       const { getOctokit } = await import("./github");

@@ -170,6 +170,25 @@ describe("POST /api/deployments/[id]/status", () => {
       });
     });
 
+    it("sets tenants.deletedAt (not URL fields) when a destroy deployment succeeds", async () => {
+      dbUpdateReturning.mockResolvedValue([{ id: "dep-1", tenantId: "tenant-1", kind: "destroy" }]);
+
+      await callRoute({ body: { status: "succeeded" } });
+
+      expect(db.update).toHaveBeenCalledTimes(2);
+      expect(db.update.mock.calls[1][0]).toBe(tenants);
+      expect(setArgsForUpdateCall(1)).toMatchObject({ deletedAt: expect.any(Date) });
+      expect(setArgsForUpdateCall(1)).not.toHaveProperty("chatbotUrl");
+    });
+
+    it("does not touch tenants for a destroy deployment that failed", async () => {
+      dbUpdateReturning.mockResolvedValue([{ id: "dep-1", tenantId: "tenant-1", kind: "destroy" }]);
+
+      await callRoute({ body: { status: "failed", errorMessage: "boom" } });
+
+      expect(db.update).toHaveBeenCalledTimes(1);
+    });
+
     it("does not update the tenant row when status is succeeded but no URL fields are provided", async () => {
       await callRoute({ body: { status: "succeeded" } });
       expect(db.update).toHaveBeenCalledTimes(1);
