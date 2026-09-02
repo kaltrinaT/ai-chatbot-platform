@@ -1,62 +1,111 @@
-import { tenantDocuments } from "@/db/schema";
-import UploadDocumentForm from "./UploadDocumentForm";
-import DeleteDocumentButton from "./DeleteDocumentButton";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import DocumentsStatsRow from "./DocumentsStatsRow";
+import DocumentsFilterBar from "./DocumentsFilterBar";
+import DocumentsTable from "./DocumentsTable";
+import {
+  computeDocumentStats,
+  documentTypeLabel,
+  filterDocuments,
+  type DocumentFilters,
+  type DocumentRow,
+} from "./utils";
 
-function formatBytes(n: number | null): string {
-  if (n == null) return "—";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
+const PAGE_SIZE = 10;
 
 export default function DocumentsSection({
   tenantId,
   docsSignerUrl,
   documents,
+  filters,
+  page,
 }: {
   tenantId: string;
   docsSignerUrl: string | null;
-  documents: (typeof tenantDocuments.$inferSelect)[];
+  documents: DocumentRow[];
+  filters: DocumentFilters;
+  page: number;
 }) {
+  if (!docsSignerUrl) {
+    return (
+      <div className="rounded border border-dashed p-4 text-sm text-gray-500">
+        Document upload will be available here once the first deployment succeeds.
+      </div>
+    );
+  }
+
+  const stats = computeDocumentStats(documents);
+  const typeOptions = [...new Set(documents.map((d) => documentTypeLabel(d.contentType)))].sort();
+  const filtered = filterDocuments(documents, filters);
+  const total = filtered.length;
+  const pageDocs = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const hasNextPage = page * PAGE_SIZE < total;
+  const hasPrevPage = page > 1;
+  const showingFrom = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const showingTo = Math.min(page * PAGE_SIZE, total);
+
+  function pageHref(p: number): string {
+    const params = new URLSearchParams();
+    params.set("tab", "documents");
+    if (filters.q) params.set("docQuery", filters.q);
+    if (filters.status) params.set("docStatus", filters.status);
+    if (filters.type) params.set("docType", filters.type);
+    if (p > 1) params.set("docPage", String(p));
+    return `/tenants/${tenantId}?${params.toString()}`;
+  }
+
   return (
-    <div className="mt-8">
-      <h2 className="mb-3 text-lg font-medium">Documents</h2>
+    <div className="space-y-6">
+      <p className="text-xs text-gray-500">
+        Uploads go straight from your browser to your S3 bucket — the platform never receives or stores the
+        file contents. Deleting a document removes it from S3, but does not remove any answers already
+        derived from it until the chatbot&apos;s knowledge base fully re-embeds.
+      </p>
 
-      {!docsSignerUrl ? (
-        <div className="rounded border border-dashed p-4 text-sm text-gray-500">
-          Document upload will be available here once the first deployment succeeds.
-        </div>
-      ) : (
-        <>
-          <p className="text-xs text-gray-500">
-            Uploads go straight from your browser to your S3 bucket — the platform never
-            receives or stores the file contents. Deleting a document removes it from S3, but
-            does not remove any answers already derived from it until the chatbot&apos;s
-            knowledge base fully re-embeds.
-          </p>
+      <DocumentsStatsRow stats={stats} />
 
-          <UploadDocumentForm tenantId={tenantId} />
+      <div className="rounded-lg border bg-white">
+        <DocumentsFilterBar tenantId={tenantId} typeOptions={typeOptions} />
 
-          {documents.length === 0 ? (
-            <p className="mt-4 text-sm text-gray-500">No documents uploaded yet.</p>
-          ) : (
-            <ul className="mt-4 divide-y rounded border">
-              {documents.map((doc) => (
-                <li key={doc.id} className="flex items-center justify-between gap-4 p-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{doc.displayName}</div>
-                    <div className="text-xs text-gray-500">
-                      {formatBytes(doc.sizeBytes)} · {doc.status} ·{" "}
-                      {doc.createdAt.toISOString()}
-                    </div>
-                  </div>
-                  <DeleteDocumentButton documentId={doc.id} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
+        {documents.length === 0 ? (
+          <p className="p-6 text-sm text-gray-500">No documents uploaded yet.</p>
+        ) : pageDocs.length === 0 ? (
+          <p className="p-6 text-sm text-gray-500">No documents match your search/filters.</p>
+        ) : (
+          <DocumentsTable documents={pageDocs} />
+        )}
+
+        {total > 0 && (
+          <div className="flex items-center justify-between border-t px-4 py-3 text-sm">
+            <span className="text-gray-500">
+              Showing {showingFrom} to {showingTo} of {total} document{total === 1 ? "" : "s"}
+            </span>
+            <div className="flex items-center gap-2">
+              <Link
+                href={pageHref(page - 1)}
+                aria-disabled={!hasPrevPage}
+                className={`flex h-8 w-8 items-center justify-center rounded-md border ${
+                  hasPrevPage ? "text-gray-600 hover:bg-gray-50" : "pointer-events-none text-gray-300"
+                }`}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Link>
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-xs font-medium text-white">
+                {page}
+              </span>
+              <Link
+                href={pageHref(page + 1)}
+                aria-disabled={!hasNextPage}
+                className={`flex h-8 w-8 items-center justify-center rounded-md border ${
+                  hasNextPage ? "text-gray-600 hover:bg-gray-50" : "pointer-events-none text-gray-300"
+                }`}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

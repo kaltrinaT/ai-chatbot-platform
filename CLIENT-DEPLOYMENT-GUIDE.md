@@ -71,6 +71,7 @@ This role needs to create everything Terraform provisions on your behalf: a VPC,
         "iam:AttachRolePolicy", "iam:DetachRolePolicy",
         "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
         "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
         "iam:TagRole", "iam:PassRole", "iam:CreateServiceLinkedRole"
       ],
       "Resource": "*"
@@ -81,6 +82,8 @@ This role needs to create everything Terraform provisions on your behalf: a VPC,
 > **Why `s3:*`/`lambda:*` instead of a narrower list:** Terraform's resources read back many attributes to reconcile state (tags, policy, ACL, versioning, etc.), each requiring its own IAM `Get*` action. A narrower hand-picked list will fail one missing permission at a time as different attributes get read; a broad grant avoids that entirely. This mirrors how every other service in this policy is already granted (`ec2:*`, `ecs:*`, etc.) rather than curated to specific actions — the `Functions` Sid is not a broader grant of trust than the rest of this policy already represents, since the same role can already create/modify the ECS tasks that run your data plane.
 >
 > **If you already created this role before document management existed:** add the `Functions` Sid above to your existing role's policy (IAM → Roles → your `chatbot-client-deploy-*` role → Permissions → edit the policy) before your next deploy — Terraform will fail on `lambda:CreateFunction` with an `AccessDeniedException` otherwise.
+>
+> **If you already created this role before `iam:ListInstanceProfilesForRole` was added above:** add it to your existing role's `IamForTaskRoles` statement before offboarding — otherwise `terraform destroy` fails partway through with `AccessDenied` on `iam:ListInstanceProfilesForRole` when it tries to delete the tenant's IAM roles (it's a pre-delete check the AWS provider runs automatically; it only surfaces on destroy, never on deploy).
 
 This role's own permissions also implicitly cover reading and writing to the platform's shared Terraform state bucket (the platform operator grants that bucket's cross-account access separately, scoped to your specific AWS account — nothing you need to configure).
 

@@ -1,7 +1,43 @@
 {
   "permissions": {
     "allow": [
-      "mcp__Neon__complete_database_migration"
+      "mcp__Neon__complete_database_migration",
+      "Bash(node -e ' *)",
+      "Bash(git restore *)",
+      "Bash(terraform fmt *)",
+      "Bash(terraform init *)",
+      "Bash(node --check infra/lambda/docs-signer/index.mjs)",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('infra/lambda/docs-signer/package.json','utf8'\\)\\); console.log\\('package.json OK'\\)\")",
+      "mcp__Neon__run_sql",
+      "Bash(terraform validate *)",
+      "Bash(rm -rf .terraform .terraform.lock.hcl .build)",
+      "Bash(docker build *)",
+      "Bash(docker rm *)",
+      "Bash(docker run *)",
+      "Bash(curl -s http://localhost:18080/env-config.js)",
+      "Bash(docker push *)",
+      "Bash(echo \"fmt-exit:$?\")",
+      "Bash(git show *)",
+      "Bash(awk -F: '{sum+=$2} END{print sum\" total it\\(\\) blocks\"}')",
+      "Bash(node \"C:\\\\Users\\\\Kaltrina\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Kaltrina-Desktop-MLE-ai-chatbot-platform\\\\8e818356-1e7c-4587-b4ec-ae5dfe464c28\\\\scratchpad\\\\query_tenant.mjs\")",
+      "Bash(node .scratch-query-tenant.mjs)",
+      "Bash(aws sts *)",
+      "Bash(node .scratch-query-tenants2.mjs)",
+      "Bash(node .scratch-lookup.mjs)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000 --max-time 3)",
+      "Bash(node .scratch-check-deploys.mjs)",
+      "Bash(rm .scratch-check-deploys.mjs)",
+      "Bash(xxd \"c:\\\\Users\\\\Kaltrina\\\\Desktop\\\\MLE\\\\ai-chatbot-platform\\\\.env.local\")",
+      "Bash(node .scratch-check-url.mjs)",
+      "Bash(rm .scratch-check-url.mjs)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000 --max-time 5)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Kaltrina\\Desktop\\MLE\\ai-chatbot\\ai-frontend\\public",
+      "C:\\Users\\Kaltrina\\Desktop\\MLE\\ai-chatbot\\ai-frontend\\src",
+      "C:\\Users\\Kaltrina\\Desktop\\MLE\\ai-chatbot\\ai-frontend\\docker-entrypoint.d",
+      "C:\\Users\\Kaltrina\\Desktop\\MLE\\ai-chatbot\\ai-frontend"
     ]
   }
 }

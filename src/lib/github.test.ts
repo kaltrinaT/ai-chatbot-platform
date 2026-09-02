@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Octokit } from "@octokit/rest";
+import AdmZip from "adm-zip";
 
 const getWorkflowRun = vi.fn();
 const listJobsForWorkflowRun = vi.fn();
 const listWorkflowRuns = vi.fn();
+const listWorkflowRunArtifacts = vi.fn();
+const downloadArtifact = vi.fn();
 
 vi.mock("@octokit/rest", () => ({
   // A regular function (not an arrow function) so `new Octokit(...)` in the
@@ -15,10 +18,18 @@ vi.mock("@octokit/rest", () => ({
         getWorkflowRun,
         listJobsForWorkflowRun,
         listWorkflowRuns,
+        listWorkflowRunArtifacts,
+        downloadArtifact,
       },
     };
   }),
 }));
+
+function zipWithOutputs(outputs: Record<string, unknown>): Buffer {
+  const zip = new AdmZip();
+  zip.addFile("outputs.json", Buffer.from(JSON.stringify(outputs)));
+  return zip.toBuffer();
+}
 
 describe("github", () => {
   const originalEnv = { ...process.env };
@@ -28,6 +39,8 @@ describe("github", () => {
     getWorkflowRun.mockReset();
     listJobsForWorkflowRun.mockReset();
     listWorkflowRuns.mockReset();
+    listWorkflowRunArtifacts.mockReset();
+    downloadArtifact.mockReset();
     vi.mocked(Octokit).mockClear();
     process.env = { ...originalEnv };
     process.env.CHATBOT_REPO_OWNER = "acme";
@@ -202,7 +215,11 @@ describe("github", () => {
       });
 
       const { findRunForDeployment } = await import("./github");
-      const result = await findRunForDeployment("dep-abc123", new Date("2026-01-01T00:10:00Z"));
+      const result = await findRunForDeployment(
+        "dep-abc123",
+        new Date("2026-01-01T00:10:00Z"),
+        "deploy-tenant.yml",
+      );
 
       expect(result).toEqual({ runId: 11, htmlUrl: "https://x/11" });
     });
@@ -211,7 +228,7 @@ describe("github", () => {
       listWorkflowRuns.mockResolvedValue({ data: { workflow_runs: [] } });
 
       const { findRunForDeployment } = await import("./github");
-      const result = await findRunForDeployment("dep-missing", new Date());
+      const result = await findRunForDeployment("dep-missing", new Date(), "deploy-tenant.yml");
 
       expect(result).toBeNull();
     });
@@ -220,11 +237,75 @@ describe("github", () => {
       listWorkflowRuns.mockResolvedValue({ data: { workflow_runs: [] } });
 
       const { findRunForDeployment } = await import("./github");
-      await findRunForDeployment("dep-x", new Date("2026-01-01T00:10:00Z"));
+      await findRunForDeployment("dep-x", new Date("2026-01-01T00:10:00Z"), "deploy-tenant.yml");
 
       expect(listWorkflowRuns).toHaveBeenCalledWith(
         expect.objectContaining({ created: ">=2026-01-01T00:05:00.000Z" }),
       );
+    });
+
+    it("searches the workflow file passed in, not a hardcoded one", async () => {
+      listWorkflowRuns.mockResolvedValue({ data: { workflow_runs: [] } });
+
+      const { findRunForDeployment } = await import("./github");
+      await findRunForDeployment("dep-x", new Date(), "destroy-tenant.yml");
+
+      expect(listWorkflowRuns).toHaveBeenCalledWith(
+        expect.objectContaining({ workflow_id: "destroy-tenant.yml" }),
+      );
+    });
+  });
+
+  describe("fetchDeploymentOutputsArtifact", () => {
+    it("downloads and unzips the matching artifact", async () => {
+      listWorkflowRunArtifacts.mockResolvedValue({
+        data: { artifacts: [{ id: 42, name: "deployment-outputs-dep-1", expired: false }] },
+      });
+      downloadArtifact.mockResolvedValue({
+        data: zipWithOutputs({ chatbotUrl: "https://chat.example.com", albDnsName: "alb.example.com" }),
+      });
+
+      const { fetchDeploymentOutputsArtifact } = await import("./github");
+      const result = await fetchDeploymentOutputsArtifact(123);
+
+      expect(result).toEqual({ chatbotUrl: "https://chat.example.com", albDnsName: "alb.example.com" });
+      expect(downloadArtifact).toHaveBeenCalledWith(
+        expect.objectContaining({ artifact_id: 42, archive_format: "zip" }),
+      );
+    });
+
+    it("returns null when no matching artifact exists", async () => {
+      listWorkflowRunArtifacts.mockResolvedValue({ data: { artifacts: [] } });
+
+      const { fetchDeploymentOutputsArtifact } = await import("./github");
+      const result = await fetchDeploymentOutputsArtifact(123);
+
+      expect(result).toBeNull();
+      expect(downloadArtifact).not.toHaveBeenCalled();
+    });
+
+    it("ignores an expired artifact and returns null", async () => {
+      listWorkflowRunArtifacts.mockResolvedValue({
+        data: { artifacts: [{ id: 42, name: "deployment-outputs-dep-1", expired: true }] },
+      });
+
+      const { fetchDeploymentOutputsArtifact } = await import("./github");
+      const result = await fetchDeploymentOutputsArtifact(123);
+
+      expect(result).toBeNull();
+      expect(downloadArtifact).not.toHaveBeenCalled();
+    });
+
+    it("throws when the artifact's outputs.json is malformed", async () => {
+      listWorkflowRunArtifacts.mockResolvedValue({
+        data: { artifacts: [{ id: 42, name: "deployment-outputs-dep-1", expired: false }] },
+      });
+      const zip = new AdmZip();
+      zip.addFile("outputs.json", Buffer.from("not json"));
+      downloadArtifact.mockResolvedValue({ data: zip.toBuffer() });
+
+      const { fetchDeploymentOutputsArtifact } = await import("./github");
+      await expect(fetchDeploymentOutputsArtifact(123)).rejects.toThrow();
     });
   });
 });

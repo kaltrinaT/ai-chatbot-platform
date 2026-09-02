@@ -36,7 +36,7 @@ export default function DeleteTenantButton({
   return (
     <form
       action={deleteTenant}
-      className="rounded-md border border-red-200 bg-red-50 p-3 text-sm"
+      className="w-80 rounded-md border border-red-200 bg-red-50 p-3 text-sm"
       onSubmit={(e) => {
         if (!matches) e.preventDefault();
       }}

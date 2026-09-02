@@ -3,7 +3,14 @@ import { and, eq, inArray } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { deployments, tenants } from "@/db/schema";
-import { fetchRunProgress, findRunForDeployment, type RunProgress } from "@/lib/github";
+import {
+  fetchDeploymentOutputsArtifact,
+  fetchRunProgress,
+  findRunForDeployment,
+  getDeployWorkflowId,
+  getDestroyWorkflowId,
+  type RunProgress,
+} from "@/lib/github";
 
 /**
  * Session-authed live view of a deployment. While the deployment is active it
@@ -76,17 +83,22 @@ async function failStuckDeployment(id: string, message: string) {
  * webhook was lost. Flip the row to the mapped terminal status. The write is
  * guarded on status so a concurrently-arriving real webhook wins.
  *
- * Deliberately does NOT touch tenants.chatbotUrl/albDnsName: Terraform outputs
- * aren't in run metadata, and the control-plane boundary forbids fetching them
- * from the customer's account. For redeploys this is lossless (in-place, URL
- * unchanged); after a lost first-deploy success callback the URL fills in on
- * the next successful deploy.
+ * For a successful deploy, also best-effort recovers tenants.chatbotUrl /
+ * albDnsName / docsSignerUrl from the "Upload deployment outputs" artifact
+ * the workflow uploads right after `terraform apply` — the same recovery
+ * path used for status/githubRunId above, just for Terraform outputs. This
+ * stays within the platform's own CI (an artifact it already has read access
+ * to), not the customer's AWS account, so it doesn't cross the control-plane
+ * boundary. Redundant-but-harmless when the direct webhook already landed
+ * (same values); the only cost of a lost webhook is now one extra API call
+ * instead of a permanently-missing URL.
  *
- * tenants.deletedAt is the one exception — unlike a URL, it needs no output
- * value from the run, just "now()", so a lost success webhook for a destroy
- * doesn't leave the tenant stuck looking un-deleted after its infra is gone.
+ * tenants.deletedAt is the destroy equivalent — unlike a URL, it needs no
+ * output value from the run, just "now()", so a lost success webhook for a
+ * destroy doesn't leave the tenant stuck looking un-deleted after its infra
+ * is gone.
  */
-async function reconcileCompletedRun(id: string, live: RunProgress) {
+async function reconcileCompletedRun(id: string, live: RunProgress, runId: number) {
   const status =
     live.runConclusion === "success"
       ? ("succeeded" as const)
@@ -113,6 +125,25 @@ async function reconcileCompletedRun(id: string, live: RunProgress) {
       .update(tenants)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(eq(tenants.id, updated.tenantId));
+  } else if (updated && status === "succeeded" && updated.kind === "deploy") {
+    try {
+      const outputs = await fetchDeploymentOutputsArtifact(runId);
+      if (outputs?.chatbotUrl || outputs?.albDnsName || outputs?.docsSignerUrl) {
+        await db
+          .update(tenants)
+          .set({
+            ...(outputs.chatbotUrl ? { chatbotUrl: outputs.chatbotUrl } : {}),
+            ...(outputs.albDnsName ? { albDnsName: outputs.albDnsName } : {}),
+            ...(outputs.docsSignerUrl ? { docsSignerUrl: outputs.docsSignerUrl } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(tenants.id, updated.tenantId));
+      }
+    } catch {
+      // Best-effort recovery only — the deployment is still correctly
+      // marked succeeded even if the artifact is missing/expired/unreadable
+      // (e.g. a run from before this feature shipped).
+    }
   }
 }
 
@@ -133,7 +164,7 @@ export async function GET(
   const { id } = await params;
 
   const [found] = await db
-    .select({ deployment: deployments })
+    .select({ deployment: deployments, cloudProvider: tenants.cloudProvider })
     .from(deployments)
     .innerJoin(tenants, eq(deployments.tenantId, tenants.id))
     .where(and(eq(deployments.id, id), eq(tenants.ownerUserId, session.user.id)));
@@ -152,7 +183,13 @@ export async function GET(
   if (!deployment.githubRunId) {
     if (ageMs > RUN_LOOKUP_GRACE_MS) {
       try {
-        const run = await findRunForDeployment(deployment.id, deployment.startedAt);
+        const workflowId =
+          deployment.kind === "destroy"
+            ? getDestroyWorkflowId()
+            : found.cloudProvider === "azure"
+              ? "deploy-tenant-azure.yml"
+              : getDeployWorkflowId();
+        const run = await findRunForDeployment(deployment.id, deployment.startedAt, workflowId);
         if (run) {
           await db
             .update(deployments)
@@ -181,7 +218,7 @@ export async function GET(
     const live = await fetchRunProgress(Number(deployment.githubRunId));
 
     if (live.runStatus === "completed") {
-      await reconcileCompletedRun(deployment.id, live);
+      await reconcileCompletedRun(deployment.id, live, Number(deployment.githubRunId));
       return serialize(await reload(deployment.id), live, { reconciled: true });
     }
 

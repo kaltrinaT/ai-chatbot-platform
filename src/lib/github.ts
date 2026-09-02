@@ -1,4 +1,6 @@
 import { Octokit } from "@octokit/rest";
+import AdmZip from "adm-zip";
+import { z } from "zod";
 
 let octokit: Octokit | null = null;
 
@@ -81,14 +83,56 @@ export async function fetchRunProgress(runId: number): Promise<RunProgress> {
   };
 }
 
+export type RunStep = {
+  name: string;
+  status: "queued" | "in_progress" | "completed";
+  conclusion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+/**
+ * Every step of every job for a run, in order — works for a still-running
+ * run (steps not yet started have null timestamps) just as well as a
+ * completed one, since GitHub retains step timing on finished runs too.
+ * Used for the deployment detail view's step-by-step timeline.
+ */
+export async function fetchRunSteps(runId: number): Promise<RunStep[]> {
+  const { owner, repo } = getChatbotRepo();
+  const client = getOctokit();
+
+  const { data } = await client.actions.listJobsForWorkflowRun({
+    owner,
+    repo,
+    run_id: runId,
+    filter: "latest",
+    per_page: 30,
+  });
+
+  return data.jobs.flatMap((job) =>
+    (job.steps ?? []).map((step) => ({
+      name: step.name,
+      status: step.status,
+      conclusion: step.conclusion,
+      startedAt: step.started_at ?? null,
+      completedAt: step.completed_at ?? null,
+    })),
+  );
+}
+
 /**
  * Locate the workflow run for a deployment when the early "run started"
  * callback never arrived. Relies on the workflow's `run-name:` embedding the
  * deployment ID, which GitHub exposes as `display_title`.
+ *
+ * `workflowId` must match whichever workflow file the deployment actually
+ * dispatched to (deploy-tenant.yml, deploy-tenant-azure.yml, or
+ * destroy-tenant.yml) — searching the wrong one silently never matches.
  */
 export async function findRunForDeployment(
   deploymentId: string,
   startedAt: Date,
+  workflowId: string,
 ): Promise<{ runId: number; htmlUrl: string } | null> {
   const { owner, repo } = getChatbotRepo();
   const client = getOctokit();
@@ -99,7 +143,7 @@ export async function findRunForDeployment(
   const { data } = await client.actions.listWorkflowRuns({
     owner,
     repo,
-    workflow_id: getDeployWorkflowId(),
+    workflow_id: workflowId,
     event: "workflow_dispatch",
     created: `>=${createdAfter}`,
     per_page: 30,
@@ -109,4 +153,43 @@ export async function findRunForDeployment(
     r.display_title.includes(deploymentId),
   );
   return match ? { runId: match.id, htmlUrl: match.html_url } : null;
+}
+
+const DeploymentOutputs = z.object({
+  chatbotUrl: z.string().optional(),
+  albDnsName: z.string().optional(),
+  docsSignerUrl: z.string().optional(),
+});
+export type DeploymentOutputs = z.infer<typeof DeploymentOutputs>;
+
+/**
+ * Recovers Terraform outputs (chatbot URL etc.) from the "Upload deployment
+ * outputs" artifact a deploy workflow uploads right after `terraform apply`.
+ * This is the fallback for when the workflow's direct webhook POST to the
+ * platform was lost — the artifact lives entirely in the platform's own CI,
+ * so reading it doesn't cross into the customer's AWS account.
+ */
+export async function fetchDeploymentOutputsArtifact(
+  runId: number,
+): Promise<DeploymentOutputs | null> {
+  const { owner, repo } = getChatbotRepo();
+  const client = getOctokit();
+
+  const { data } = await client.actions.listWorkflowRunArtifacts({ owner, repo, run_id: runId });
+  const artifact = data.artifacts.find(
+    (a) => a.name.startsWith("deployment-outputs") && !a.expired,
+  );
+  if (!artifact) return null;
+
+  const download = await client.actions.downloadArtifact({
+    owner,
+    repo,
+    artifact_id: artifact.id,
+    archive_format: "zip",
+  });
+  const zip = new AdmZip(Buffer.from(download.data as ArrayBuffer));
+  const entry = zip.getEntry("outputs.json");
+  if (!entry) return null;
+
+  return DeploymentOutputs.parse(JSON.parse(entry.getData().toString("utf8")));
 }

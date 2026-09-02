@@ -233,6 +233,27 @@ jobs:
           echo "chatbot_url=$(terraform output -raw chatbot_url)" >> "$GITHUB_OUTPUT"
           echo "docs_signer_url=$(terraform output -raw docs_signer_url)" >> "$GITHUB_OUTPUT"
 
+      # Durable copy of the outputs above, independent of the webhook below —
+      # if PLATFORM_BASE_URL is unreachable or the POST is otherwise lost,
+      # the platform's self-heal reconciliation recovers these from this
+      # artifact instead of losing them until the next redeploy.
+      - name: Upload deployment outputs
+        if: success()
+        run: |
+          cat > outputs.json <<EOF
+          {
+            "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
+            "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
+            "docsSignerUrl": "${{ steps.tf.outputs.docs_signer_url }}"
+          }
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: deployment-outputs-${{ inputs.deployment_id }}
+          path: outputs.json
+          retention-days: 90
+
       # ─────────────────────────────────────────────────────────────
       # 4. Callback to platform
       # ─────────────────────────────────────────────────────────────

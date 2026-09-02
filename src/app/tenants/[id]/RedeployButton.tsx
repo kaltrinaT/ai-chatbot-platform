@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
+import { RefreshCw } from "lucide-react";
 import { redeployTenant } from "./actions";
 
 export default function RedeployButton({
@@ -32,8 +33,9 @@ function SubmitButton({ disabled }: { disabled?: boolean }) {
       type="submit"
       disabled={disabled || pending}
       title={disabled ? "A deployment is already in progress" : undefined}
-      className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+      className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
     >
+      <RefreshCw className="h-4 w-4" />
       {pending ? "Redeploying…" : "Redeploy"}
     </button>
   );

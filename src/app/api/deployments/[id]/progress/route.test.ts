@@ -10,6 +10,7 @@ const {
   dbUpdateReturning,
   fetchRunProgress,
   findRunForDeployment,
+  fetchDeploymentOutputsArtifact,
 } = vi.hoisted(() => {
   const authMock = vi.fn();
   const dbOwnershipWhere = vi.fn();
@@ -28,6 +29,7 @@ const {
 
   const fetchRunProgress = vi.fn();
   const findRunForDeployment = vi.fn();
+  const fetchDeploymentOutputsArtifact = vi.fn();
 
   return {
     authMock,
@@ -38,6 +40,7 @@ const {
     dbUpdateReturning,
     fetchRunProgress,
     findRunForDeployment,
+    fetchDeploymentOutputsArtifact,
   };
 });
 
@@ -50,7 +53,13 @@ vi.mock("@/db", () => ({
     update: dbUpdate,
   },
 }));
-vi.mock("@/lib/github", () => ({ fetchRunProgress, findRunForDeployment }));
+vi.mock("@/lib/github", () => ({
+  fetchRunProgress,
+  findRunForDeployment,
+  fetchDeploymentOutputsArtifact,
+  getDeployWorkflowId: () => "deploy-tenant.yml",
+  getDestroyWorkflowId: () => "destroy-tenant.yml",
+}));
 
 import { GET } from "./route";
 
@@ -216,6 +225,9 @@ describe("GET /api/deployments/[id]/progress", () => {
         2,
         expect.objectContaining({ deletedAt: expect.any(Date) }),
       );
+      // Outputs recovery is a "deploy"-only concern — a destroy has nothing
+      // to recover.
+      expect(fetchDeploymentOutputsArtifact).not.toHaveBeenCalled();
     });
 
     it("does not touch tenants when reconciling a destroy deployment to a non-success conclusion", async () => {
@@ -233,7 +245,7 @@ describe("GET /api/deployments/[id]/progress", () => {
       expect(dbUpdate).toHaveBeenCalledTimes(1);
     });
 
-    it("does not touch tenants when reconciling an ordinary deploy to succeeded", async () => {
+    it("does not touch tenants when reconciling a deploy with no recoverable outputs artifact", async () => {
       dbOwnershipWhere.mockResolvedValue([
         { deployment: deploymentRow({ kind: "deploy", status: "running", githubRunId: "123" }) },
       ]);
@@ -242,9 +254,59 @@ describe("GET /api/deployments/[id]/progress", () => {
         deploymentRow({ kind: "deploy", tenantId: "tenant-1", status: "succeeded" }),
       ]);
       dbReloadWhere.mockResolvedValue([deploymentRow({ kind: "deploy", status: "succeeded" })]);
+      fetchDeploymentOutputsArtifact.mockResolvedValue(null);
 
       await callRoute();
 
+      expect(fetchDeploymentOutputsArtifact).toHaveBeenCalledWith(123);
+      expect(dbUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it("recovers chatbotUrl/albDnsName onto tenants when reconciling a deploy to succeeded", async () => {
+      dbOwnershipWhere.mockResolvedValue([
+        { deployment: deploymentRow({ kind: "deploy", status: "running", githubRunId: "123" }) },
+      ]);
+      fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "completed", runConclusion: "success" }));
+      dbUpdateReturning.mockResolvedValue([
+        deploymentRow({ kind: "deploy", tenantId: "tenant-1", status: "succeeded" }),
+      ]);
+      dbReloadWhere.mockResolvedValue([deploymentRow({ kind: "deploy", status: "succeeded" })]);
+      fetchDeploymentOutputsArtifact.mockResolvedValue({
+        chatbotUrl: "https://chat.example.com",
+        albDnsName: "alb.example.com",
+      });
+
+      await callRoute();
+
+      // Two db.update() calls: the deployments row, then the tenants row.
+      expect(dbUpdate).toHaveBeenCalledTimes(2);
+      expect(dbUpdateSet).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          chatbotUrl: "https://chat.example.com",
+          albDnsName: "alb.example.com",
+        }),
+      );
+    });
+
+    it("still reports the deployment succeeded when the outputs artifact fetch throws", async () => {
+      dbOwnershipWhere.mockResolvedValue([
+        { deployment: deploymentRow({ kind: "deploy", status: "running", githubRunId: "123" }) },
+      ]);
+      fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "completed", runConclusion: "success" }));
+      dbUpdateReturning.mockResolvedValue([
+        deploymentRow({ kind: "deploy", tenantId: "tenant-1", status: "succeeded" }),
+      ]);
+      dbReloadWhere.mockResolvedValue([deploymentRow({ kind: "deploy", status: "succeeded" })]);
+      fetchDeploymentOutputsArtifact.mockRejectedValue(new Error("artifact expired"));
+
+      const res = await callRoute();
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.deployment.status).toBe("succeeded");
+      // Only the deployments-row update — the failed recovery attempt never
+      // reaches a tenants update.
       expect(dbUpdate).toHaveBeenCalledTimes(1);
     });
   });
@@ -284,12 +346,28 @@ describe("GET /api/deployments/[id]/progress", () => {
       const json = await res.json();
 
       expect(res.status).toBe(200);
-      expect(findRunForDeployment).toHaveBeenCalledWith("dep-1", startedAt);
+      expect(findRunForDeployment).toHaveBeenCalledWith("dep-1", startedAt, "deploy-tenant.yml");
       expect(dbUpdateSet).toHaveBeenCalledWith(
         expect.objectContaining({ githubRunId: "555", githubRunUrl: "https://github.com/x/555" }),
       );
       expect(fetchRunProgress).toHaveBeenCalledWith(555);
       expect(json.live.runStatus).toBe("in_progress");
+    });
+
+    it("looks up a destroy deployment's run on the destroy workflow, not the deploy one", async () => {
+      const startedAt = new Date(Date.now() - GRACE_MS * 2);
+      dbOwnershipWhere.mockResolvedValue([
+        { deployment: deploymentRow({ kind: "destroy", status: "running", githubRunId: null, startedAt }) },
+      ]);
+      findRunForDeployment.mockResolvedValue({ runId: 777, htmlUrl: "https://github.com/x/777" });
+      dbReloadWhere.mockResolvedValue([
+        deploymentRow({ kind: "destroy", status: "running", githubRunId: "777", githubRunUrl: "https://github.com/x/777", startedAt }),
+      ]);
+      fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "in_progress" }));
+
+      await callRoute();
+
+      expect(findRunForDeployment).toHaveBeenCalledWith("dep-1", startedAt, "destroy-tenant.yml");
     });
 
     it("returns live=null (not stale yet) when no run can be found past the grace period", async () => {

@@ -46,7 +46,7 @@ export default function CostEstimateCard({
   const maxMid = Math.max(...est.lines.map((l) => (l.lowUsd + l.highUsd) / 2), 1);
 
   return (
-    <section className="mt-6 rounded-xl border p-5 shadow-sm">
+    <section className="rounded-xl border p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-gray-900">
