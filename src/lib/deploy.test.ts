@@ -18,6 +18,7 @@ const {
   getDestroyWorkflowId,
   getOctokit,
   ensureDocsSignerSecret,
+  generateDocsSignerSecret,
   deleteViaSigner,
 } = vi.hoisted(() => {
   const dbSelectWhere = vi.fn();
@@ -33,6 +34,7 @@ const {
   const getDestroyWorkflowId = vi.fn(() => "destroy-tenant.yml");
   const getOctokit = vi.fn(() => ({ actions: { createWorkflowDispatch } }));
   const ensureDocsSignerSecret = vi.fn();
+  const generateDocsSignerSecret = vi.fn();
   const deleteViaSigner = vi.fn();
 
   return {
@@ -47,6 +49,7 @@ const {
     getDestroyWorkflowId,
     getOctokit,
     ensureDocsSignerSecret,
+    generateDocsSignerSecret,
     deleteViaSigner,
   };
 });
@@ -73,6 +76,7 @@ vi.mock("@/lib/github", () => ({
   getOctokit,
 }));
 vi.mock("@/lib/aws", () => ({ ensureDocsSignerSecret }));
+vi.mock("@/lib/azure", () => ({ generateDocsSignerSecret }));
 vi.mock("@/lib/docsSigner", () => ({ deleteViaSigner }));
 
 import { db } from "@/db";
@@ -111,6 +115,7 @@ const baseAzureTenant = {
   domain: "chat.beta.com",
   vectorStore: "pgvector",
   pineconeApiKeyEncrypted: null,
+  docsSignerSecretEncrypted: "iv:tag:azuredocssignerct",
 };
 
 describe("triggerDeployment", () => {
@@ -123,6 +128,10 @@ describe("triggerDeployment", () => {
     ensureDocsSignerSecret.mockResolvedValue({
       docsSignerSecretArn: "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",
       docsSignerSecretEncrypted: "iv:tag:docssignerct",
+    });
+    generateDocsSignerSecret.mockReturnValue({
+      docsSignerSecretEncrypted: "iv:tag:azuredocssignerct",
+      docsSignerSecretPlaintext: "azure-plaintext-secret",
     });
     process.env.PLATFORM_CHATBOT_IMAGE_URI = "111111111111.dkr.ecr.us-east-1.amazonaws.com/chatbot";
     process.env.PLATFORM_FRONTEND_IMAGE_URI = "111111111111.dkr.ecr.us-east-1.amazonaws.com/frontend";
@@ -257,6 +266,8 @@ describe("triggerDeployment", () => {
     expect(call.inputs.azure_client_secret).toBe(`decrypted:${baseAzureTenant.azureClientSecretEncrypted}`);
     expect(call.inputs.llm_api_key).toBe(`decrypted:${baseAzureTenant.llmApiKeyEncrypted}`);
     expect(call.inputs.pinecone_api_key).toBe("");
+    expect(call.inputs.docs_signer_secret).toBe(`decrypted:${baseAzureTenant.docsSignerSecretEncrypted}`);
+    expect(generateDocsSignerSecret).not.toHaveBeenCalled();
 
     const config = JSON.parse(call.inputs.config);
     expect(config).toMatchObject({
@@ -265,6 +276,28 @@ describe("triggerDeployment", () => {
       vector_store: "pgvector",
       chatbot_version: "v2",
     });
+  });
+
+  it("lazily generates and stores the docs-signer secret for Azure tenants missing one", async () => {
+    dbSelectWhere.mockResolvedValue([{ ...baseAzureTenant, docsSignerSecretEncrypted: null }]);
+    dbInsertReturning.mockResolvedValue([{ id: "deploy-6", status: "pending" }]);
+    dbUpdateWhere.mockResolvedValue(undefined);
+    createWorkflowDispatch.mockResolvedValue({});
+
+    await triggerDeployment({
+      tenantId: baseAzureTenant.id,
+      chatbotVersion: "v1",
+      triggeredByUserId: "u1",
+    });
+
+    expect(generateDocsSignerSecret).toHaveBeenCalledWith();
+    expect(createWorkflowDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputs: expect.objectContaining({
+          docs_signer_secret: "decrypted:iv:tag:azuredocssignerct",
+        }),
+      }),
+    );
   });
 
   it("marks the deployment failed and rethrows when workflow dispatch fails", async () => {

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { decryptSecret } from "@/lib/crypto";
 import { getChatbotRepo, getDeployWorkflowId, getDestroyWorkflowId, getOctokit } from "@/lib/github";
 import { ensureDocsSignerSecret } from "@/lib/aws";
+import { generateDocsSignerSecret } from "@/lib/azure";
 import { deleteViaSigner } from "@/lib/docsSigner";
 
 type TriggerInput = {
@@ -84,6 +85,21 @@ export async function triggerDeployment({
       docsSignerSecretArn: docsSigner.docsSignerSecretArn,
       docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted,
     };
+  }
+  if (tenant.cloudProvider === "azure" && !tenant.docsSignerSecretEncrypted) {
+    // Azure tenants onboarded before the docs-signer feature shipped have no
+    // secret on file yet — generate and store it lazily on their next
+    // deploy, exactly like the AWS backfill above. No Azure API call here:
+    // see generateDocsSignerSecret in azure.ts for why.
+    const docsSigner = generateDocsSignerSecret();
+    await db
+      .update(tenants)
+      .set({
+        docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted,
+        updatedAt: new Date(),
+      })
+      .where(eq(tenants.id, tenant.id));
+    tenant = { ...tenant, docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted };
   }
 
   const [deployment] = await db
@@ -282,6 +298,13 @@ function buildAzureInputs(
   const pineconeApiKey = tenant.pineconeApiKeyEncrypted
     ? decryptSecret(tenant.pineconeApiKeyEncrypted)
     : "";
+  // Same reasoning as pineconeApiKey above: the docs-signer secret has
+  // nowhere to be written until Terraform creates the Key Vault, so the
+  // plaintext travels through the deploy pipeline as a masked input too
+  // (see generateDocsSignerSecret in azure.ts).
+  const docsSignerSecret = tenant.docsSignerSecretEncrypted
+    ? decryptSecret(tenant.docsSignerSecretEncrypted)
+    : "";
   return {
     deployment_id: deploymentId,
     tenant_slug: tenant.slug,
@@ -299,5 +322,6 @@ function buildAzureInputs(
     azure_client_secret: clientSecret,
     llm_api_key: llmApiKey,
     pinecone_api_key: pineconeApiKey,
+    docs_signer_secret: docsSignerSecret,
   };
 }

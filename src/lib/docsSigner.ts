@@ -6,17 +6,21 @@ type Tenant = typeof tenants.$inferSelect;
 export type PresignUploadResult = {
   objectKey: string;
   url: string;
-  fields: Record<string, string>;
+  // Present for AWS (S3 presigned-POST — the browser builds a multipart
+  // form from these). Absent for Azure (Blob SAS is a single URL the
+  // browser PUTs to directly — see UploadDocumentForm.tsx).
+  fields?: Record<string, string>;
 };
 
 /**
- * Calls the tenant's own docs-signer Lambda over plain HTTPS. This is the
- * ONLY way the platform ever touches tenant documents — no AWS SDK, no
- * AssumeRole, no AWS credential of any kind. Auth is a shared secret the
- * platform generated once during onboarding and wrote into the tenant's
- * Secrets Manager (see ensureDocsSignerSecret in aws.ts); the platform keeps
- * its own encrypted copy so it never needs to touch tenant AWS again to use
- * it.
+ * Calls the tenant's own docs-signer function (an AWS Lambda or an Azure
+ * Function, depending on cloudProvider) over plain HTTPS. This is the ONLY
+ * way the platform ever touches tenant documents — no AWS/Azure SDK, no
+ * assumed role or service-principal credential capable of reading/writing
+ * the bucket or container directly. Auth is a shared secret the platform
+ * generated once (see ensureDocsSignerSecret in aws.ts / generateDocsSignerSecret
+ * in azure.ts); the platform keeps its own encrypted copy so it never needs
+ * to touch tenant cloud credentials again to use it.
  */
 export async function callDocsSigner(
   tenant: Pick<Tenant, "docsSignerUrl" | "docsSignerSecretEncrypted">,

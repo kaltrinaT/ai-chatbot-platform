@@ -228,12 +228,149 @@ resource "azurerm_storage_account" "docs" {
   account_tier             = "Standard"
   account_replication_type = "LRS"
   tags                     = local.common_tags
+
+  # The browser PUTs document bytes directly to Blob Storage using a SAS
+  # minted by the docs-signer Function below — a cross-origin request from
+  # the platform's own origin, so it needs CORS. Mirrors
+  # aws_s3_bucket_cors_configuration.docs in infra/terraform/main.tf (Azure
+  # nests CORS inside the storage account resource rather than as a
+  # separate one).
+  blob_properties {
+    cors_rule {
+      allowed_origins    = [var.platform_origin]
+      allowed_methods    = ["PUT"]
+      allowed_headers    = ["*"]
+      exposed_headers    = ["*"]
+      max_age_in_seconds = 3000
+    }
+  }
 }
 
 resource "azurerm_storage_container" "docs" {
   name                  = "documents"
   storage_account_name  = azurerm_storage_account.docs.name
   container_access_type = "private"
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# Docs-signer Function — the ONLY component with write/delete access to the
+# docs container besides the tenant themselves. Its managed identity holds
+# a custom role limited to generateUserDelegationKey + blobs/delete (never
+# read, never list) so that even full possession of its credentials cannot
+# read a document's content. The platform reaches it over plain
+# authenticated HTTPS (shared-secret header, no Azure AD token) — the
+# platform itself never holds an Azure credential capable of touching this
+# storage account. Mirrors the docs-signer Lambda in infra/terraform/main.tf.
+#
+# NOTE: this Key Vault's access-policy authorization model (see above) is
+# vault-scoped, not per-secret — the access policy below grants the
+# Function's identity read access to every secret in this vault, not only
+# docs-signer-secret. Unlike AWS IAM (which scopes secretsmanager:GetSecretValue
+# to one ARN), Azure access policies have no per-secret equivalent short of
+# migrating the whole vault to the RBAC authorization model, which would
+# also change how every other existing secret consumer is authorized — out
+# of scope here. This is a deliberate, documented gap, not an oversight.
+# See DOCUMENT-MANAGEMENT.md.
+# ──────────────────────────────────────────────────────────────────────
+
+resource "azurerm_key_vault_secret" "docs_signer" {
+  name         = "docs-signer-secret"
+  value        = var.docs_signer_secret
+  key_vault_id = azurerm_key_vault.this.id
+}
+
+# Azure Functions requires its own storage account for internal bookkeeping
+# (triggers, logs). Kept separate from azurerm_storage_account.docs so the
+# docs-signer identity's storage role never needs to touch anything beyond
+# the tenant's actual documents container. Truncated to 22 chars (not 24,
+# like local.storage_name) so the "fn" suffix always survives truncation
+# and this account's name can never collide with the docs account's.
+resource "azurerm_storage_account" "function_runtime" {
+  name                     = "${substr(replace("chatbot${var.tenant_slug}", "-", ""), 0, 22)}fn"
+  resource_group_name      = azurerm_resource_group.this.name
+  location                 = azurerm_resource_group.this.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  tags                     = local.common_tags
+}
+
+resource "azurerm_service_plan" "docs_signer" {
+  name                = "${local.name}-docs-signer-plan"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  os_type             = "Linux"
+  sku_name            = "Y1" # Consumption — pay-per-execution, matches the Lambda's pricing model
+  tags                = local.common_tags
+}
+
+resource "azurerm_linux_function_app" "docs_signer" {
+  name                       = "${local.name}-docs-signer"
+  resource_group_name        = azurerm_resource_group.this.name
+  location                   = azurerm_resource_group.this.location
+  service_plan_id            = azurerm_service_plan.docs_signer.id
+  storage_account_name       = azurerm_storage_account.function_runtime.name
+  storage_account_access_key = azurerm_storage_account.function_runtime.primary_access_key
+  https_only                 = true
+  tags                       = local.common_tags
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  site_config {
+    application_stack {
+      node_version = "20"
+    }
+  }
+
+  app_settings = {
+    FUNCTIONS_WORKER_RUNTIME = "node"
+    DOCS_STORAGE_ACCOUNT     = azurerm_storage_account.docs.name
+    DOCS_CONTAINER           = azurerm_storage_container.docs.name
+    DOCS_PREFIX              = var.docs_prefix
+    MAX_UPLOAD_BYTES         = tostring(var.max_docs_upload_mb * 1024 * 1024)
+    # Resolved by the Functions platform itself before the code runs — the
+    # Function never calls the Key Vault SDK to read its own auth secret.
+    DOCS_SIGNER_SECRET = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.docs_signer.versionless_id})"
+  }
+}
+
+# Grants ONLY what the Function needs on the docs storage account: mint a
+# user-delegation key (to sign SAS tokens) and delete blobs. Never read,
+# never list — same shape as the Lambda's s3:PutObject/s3:DeleteObject-only
+# IAM policy. (PutObject itself isn't a role permission here at all: the
+# browser writes with a self-contained SAS token, not a call this identity
+# makes.)
+resource "azurerm_role_definition" "docs_signer" {
+  name        = "${local.name}-docs-signer"
+  scope       = azurerm_storage_account.docs.id
+  description = "Presign uploads (via user-delegation key) and delete blobs in this tenant's docs container. No read, no list."
+
+  permissions {
+    actions = [
+      "Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action",
+      "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete",
+    ]
+  }
+
+  assignable_scopes = [azurerm_storage_account.docs.id]
+}
+
+resource "azurerm_role_assignment" "docs_signer_storage" {
+  scope              = azurerm_storage_account.docs.id
+  role_definition_id = azurerm_role_definition.docs_signer.role_definition_resource_id
+  principal_id       = azurerm_linux_function_app.docs_signer.identity[0].principal_id
+}
+
+# See the note above the Key Vault secret resource: this grant is
+# vault-wide, not per-secret — the one place full AWS/Azure parity isn't
+# achievable with this vault's access-policy authorization model.
+resource "azurerm_key_vault_access_policy" "docs_signer_function" {
+  key_vault_id = azurerm_key_vault.this.id
+  tenant_id    = var.azure_tenant_id
+  object_id    = azurerm_linux_function_app.docs_signer.identity[0].principal_id
+
+  secret_permissions = ["Get"]
 }
 
 # ──────────────────────────────────────────────────────────────────────

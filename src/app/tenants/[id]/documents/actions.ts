@@ -27,10 +27,12 @@ async function requireOwnedTenant(tenantId: string, userId: string) {
 }
 
 /**
- * Requests a presigned upload URL from the tenant's own docs-signer Lambda
- * and records a "pending" row so the document shows up in the list
- * immediately. The platform never sees or stores the file's bytes — the
- * browser POSTs directly to S3 using the fields returned here.
+ * Requests a presigned upload URL from the tenant's own docs-signer function
+ * (an AWS Lambda or an Azure Function, depending on cloudProvider) and
+ * records a "pending" row so the document shows up in the list immediately.
+ * The platform never sees or stores the file's bytes — the browser uploads
+ * directly to the tenant's own cloud storage using what's returned here
+ * (see UploadDocumentForm.tsx for the two upload protocols).
  */
 export async function requestUploadUrl(
   tenantId: string,
@@ -76,10 +78,10 @@ async function requireOwnedDocument(documentId: string) {
 }
 
 /**
- * Called by the browser after the direct-to-S3 upload succeeds. Marks the
- * document uploaded and (per the auto-trigger decision) immediately kicks
- * off a reindex — note this is a full resync of every document under the
- * tenant's prefix, not just this one (see triggerReindex).
+ * Called by the browser after the direct-to-cloud-storage upload succeeds.
+ * Marks the document uploaded and (per the auto-trigger decision)
+ * immediately kicks off a reindex — note this is a full resync of every
+ * document under the tenant's prefix, not just this one (see triggerReindex).
  */
 export async function confirmUpload(documentId: string) {
   const { doc, tenant } = await requireOwnedDocument(documentId);
@@ -98,10 +100,11 @@ export async function confirmUpload(documentId: string) {
 }
 
 /**
- * Deletes a document from S3 (via the docs-signer Lambda, which does the
- * delete itself using its own narrow credentials) and from the platform's
- * own record. Note: this does not remove the document's already-embedded
- * vectors — the chatbot backend's /api/index only upserts, it never purges.
+ * Deletes a document from cloud storage (via the docs-signer function,
+ * which does the delete itself using its own narrowly-scoped credentials)
+ * and from the platform's own record. Note: this does not remove the
+ * document's already-embedded vectors — the chatbot backend's /api/index
+ * only upserts, it never purges.
  */
 export async function deleteDocument(documentId: string) {
   const { doc, tenant } = await requireOwnedDocument(documentId);

@@ -57,10 +57,21 @@ export const tenants = pgTable("tenants", {
   deploymentRoleArn: text("deployment_role_arn"),
   s3DocsBucket: text("s3_docs_bucket"),
   s3DocsPrefix: text("s3_docs_prefix"),
-  // ARN in the tenant's own Secrets Manager holding the docs-signer shared
-  // auth secret (written once during onboarding, like llmSecretArn) plus the
-  // platform's own encrypted copy, used to call the Lambda directly without
-  // ever touching tenant AWS credentials again after deploy.
+  // Shared by both clouds, populated asymmetrically:
+  //  - AWS: docsSignerSecretArn is the ARN of the secret written once into
+  //    the tenant's own Secrets Manager during onboarding (like
+  //    llmSecretArn) — only the ARN needs to travel through Terraform
+  //    afterward.
+  //  - Azure: docsSignerSecretArn stays null. The tenant's Key Vault doesn't
+  //    exist until Terraform creates it during deploy, so there is nothing
+  //    to write to (or reference by ARN) at onboarding time — see
+  //    generateDocsSignerSecret in azure.ts. The plaintext is instead
+  //    re-decrypted and resent as a masked deploy input on every deploy.
+  //  - Both clouds: docsSignerSecretEncrypted is the platform's own
+  //    AES-256-GCM copy, used to call the docs-signer function (Lambda or
+  //    Azure Function) directly without ever touching tenant cloud
+  //    credentials again. docsSignerUrl is the function's invoke URL,
+  //    populated by the same deployment-status webhook field either way.
   docsSignerSecretArn: text("docs_signer_secret_arn"),
   docsSignerSecretEncrypted: text("docs_signer_secret_encrypted"),
   docsSignerUrl: text("docs_signer_url"),

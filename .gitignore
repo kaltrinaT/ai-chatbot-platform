@@ -50,3 +50,7 @@ infra/terraform/.build/
 
 # docs-signer lambda deps (installed fresh by the workflow before zipping)
 infra/lambda/docs-signer/node_modules/
+infra/azure-functions/docs-signer/node_modules/
+infra/azure-functions/docs-signer/package-lock.json
+# local func-start config — always holds a real (test) shared secret
+infra/azure-functions/docs-signer/local.settings.json

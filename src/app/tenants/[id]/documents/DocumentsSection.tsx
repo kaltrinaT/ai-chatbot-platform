@@ -57,8 +57,8 @@ export default function DocumentsSection({
   return (
     <div className="space-y-6">
       <p className="text-xs text-gray-500">
-        Uploads go straight from your browser to your S3 bucket — the platform never receives or stores the
-        file contents. Deleting a document removes it from S3, but does not remove any answers already
+        Uploads go straight from your browser to your cloud storage — the platform never receives or stores
+        the file contents. Deleting a document removes it from storage, but does not remove any answers already
         derived from it until the chatbot&apos;s knowledge base fully re-embeds.
       </p>
 

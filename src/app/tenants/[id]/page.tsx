@@ -133,15 +133,12 @@ export default async function TenantDetailPage({
   const tenantDeploys = tenantDeploysRaw.map((r: DeployedByJoinRow) => r.deployment);
   const deployedByRows: DeployedByJoinRow[] = tenantDeploysRaw;
 
-  const documentsRaw =
-    tenant.cloudProvider === "aws"
-      ? await db
-          .select({ document: tenantDocuments, uploadedByName: users.name })
-          .from(tenantDocuments)
-          .leftJoin(users, eq(tenantDocuments.uploadedByUserId, users.id))
-          .where(eq(tenantDocuments.tenantId, tenant.id))
-          .orderBy(desc(tenantDocuments.createdAt))
-      : [];
+  const documentsRaw = await db
+    .select({ document: tenantDocuments, uploadedByName: users.name })
+    .from(tenantDocuments)
+    .leftJoin(users, eq(tenantDocuments.uploadedByUserId, users.id))
+    .where(eq(tenantDocuments.tenantId, tenant.id))
+    .orderBy(desc(tenantDocuments.createdAt));
   const documents = documentsRaw.map((r: UploadedByJoinRow) => r.document);
   const uploadedByRows: UploadedByJoinRow[] = documentsRaw;
 
@@ -153,7 +150,7 @@ export default async function TenantDetailPage({
   const status = tenant.deletedAt ? { label: "Deleted", tone: "gray" as const } : chatbotStatus(latestDeploy);
   const canOpen = !tenant.deletedAt && status.label === "Online" && Boolean(tenant.chatbotUrl);
   const cost = estimateMonthlyCost(tenant.cloudProvider, tenant.vectorStore);
-  const showDocumentsTab = tenant.cloudProvider === "aws" && !tenant.deletedAt;
+  const showDocumentsTab = !tenant.deletedAt;
   const visibleTabs = TABS.filter((t) => t.key !== "documents" || showDocumentsTab);
 
   function tabHref(key: TabKey): string {

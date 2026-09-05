@@ -13,7 +13,7 @@ export default function DeleteDocumentButton({ documentId }: { documentId: strin
     <form
       action={action}
       onSubmit={(e) => {
-        if (!confirm("Delete this document? This removes it from S3 immediately.")) {
+        if (!confirm("Delete this document? This removes it from cloud storage immediately.")) {
           e.preventDefault();
         }
       }}

@@ -133,6 +133,22 @@ describe("presignUpload", () => {
       sizeBytes: 2048,
     });
   });
+
+  it("round-trips an Azure-shaped response (no fields — a single SAS URL, not a presigned-POST)", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({ objectKey: "docs/uuid-file.pdf", url: "https://acct.blob.core.windows.net/documents/docs/uuid-file.pdf?sv=..." }),
+    });
+
+    const result = await presignUpload(tenant, {
+      fileName: "file.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 2048,
+    });
+
+    expect(result.objectKey).toBe("docs/uuid-file.pdf");
+    expect(result.fields).toBeUndefined();
+  });
 });
 
 describe("deleteViaSigner", () => {

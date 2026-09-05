@@ -8,6 +8,7 @@ import { tenants } from "@/db/schema";
 import { triggerDeployment } from "@/lib/deploy";
 import { encryptSecret } from "@/lib/crypto";
 import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "@/lib/aws";
+import { generateDocsSignerSecret } from "@/lib/azure";
 
 // ── Shared fields ─────────────────────────────────────────────────────
 const SharedInput = z.object({
@@ -176,6 +177,7 @@ export async function createTenantAndDeploy(
     // LLM key is passed directly to the workflow from the encrypted DB value;
     // Terraform creates the Key Vault and stores it there during deploy.
     llmSecretArn = null;
+    docsSignerSecretEncrypted = generateDocsSignerSecret().docsSignerSecretEncrypted;
   }
 
   const insertValues =
@@ -219,6 +221,7 @@ export async function createTenantAndDeploy(
           azureClientId: parsed.azureClientId,
           azureClientSecretEncrypted,
           azureRegion: parsed.azureRegion,
+          docsSignerSecretEncrypted,
         };
 
   const [tenant] = await db.insert(tenants).values(insertValues).returning();

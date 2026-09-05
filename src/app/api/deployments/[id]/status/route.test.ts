@@ -170,6 +170,26 @@ describe("POST /api/deployments/[id]/status", () => {
       });
     });
 
+    it("updates the tenant row when status is succeeded and Azure infra names are provided", async () => {
+      await callRoute({
+        body: {
+          status: "succeeded",
+          azureResourceGroup: "chatbot-acme",
+          azureStorageAccount: "chatbotacme",
+          azureStorageContainer: "documents",
+          azureKeyVaultName: "cb-acme-kv",
+        },
+      });
+
+      expect(db.update).toHaveBeenCalledTimes(2);
+      expect(setArgsForUpdateCall(1)).toMatchObject({
+        azureResourceGroup: "chatbot-acme",
+        azureStorageAccount: "chatbotacme",
+        azureStorageContainer: "documents",
+        azureKeyVaultName: "cb-acme-kv",
+      });
+    });
+
     it("sets tenants.deletedAt (not URL fields) when a destroy deployment succeeds", async () => {
       dbUpdateReturning.mockResolvedValue([{ id: "dep-1", tenantId: "tenant-1", kind: "destroy" }]);
 

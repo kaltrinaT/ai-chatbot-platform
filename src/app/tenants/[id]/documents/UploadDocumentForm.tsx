@@ -24,12 +24,25 @@ export default function UploadDocumentForm({ tenantId }: { tenantId: string }) {
         file.size,
       );
 
-      const formData = new FormData();
-      for (const [key, value] of Object.entries(fields)) formData.append(key, value);
-      formData.append("file", file);
-
-      const res = await fetch(url, { method: "POST", body: formData });
-      if (!res.ok) throw new Error(`Upload to S3 failed (${res.status})`);
+      let res: Response;
+      if (fields) {
+        // AWS — S3 presigned POST: policy fields first, file bytes last.
+        const formData = new FormData();
+        for (const [key, value] of Object.entries(fields)) formData.append(key, value);
+        formData.append("file", file);
+        res = await fetch(url, { method: "POST", body: formData });
+      } else {
+        // Azure — Blob SAS: raw PUT of the file bytes, blob type header required.
+        res = await fetch(url, {
+          method: "PUT",
+          headers: {
+            "x-ms-blob-type": "BlockBlob",
+            "Content-Type": file.type || "application/octet-stream",
+          },
+          body: file,
+        });
+      }
+      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
 
       setUploads((u) =>
         u.map((x) => (x.name === label ? { ...x, status: "reindexing" } : x)),

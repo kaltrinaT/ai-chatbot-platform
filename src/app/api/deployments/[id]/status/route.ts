@@ -13,6 +13,13 @@ const StatusUpdate = z.object({
   albDnsName: z.string().optional(),
   chatbotUrl: z.string().url().optional(),
   docsSignerUrl: z.string().url().optional(),
+  // Azure only — deterministic resource names Terraform assigns during
+  // deploy, surfaced so the Infrastructure tab can show real values for
+  // Azure tenants the same way it already does for AWS (s3DocsBucket etc.).
+  azureResourceGroup: z.string().optional(),
+  azureStorageAccount: z.string().optional(),
+  azureStorageContainer: z.string().optional(),
+  azureKeyVaultName: z.string().optional(),
 });
 
 function authorized(req: Request): boolean {
@@ -65,7 +72,13 @@ export async function POST(
       .where(eq(tenants.id, updated.tenantId));
   } else if (
     parsed.data.status === "succeeded" &&
-    (parsed.data.albDnsName || parsed.data.chatbotUrl || parsed.data.docsSignerUrl)
+    (parsed.data.albDnsName ||
+      parsed.data.chatbotUrl ||
+      parsed.data.docsSignerUrl ||
+      parsed.data.azureResourceGroup ||
+      parsed.data.azureStorageAccount ||
+      parsed.data.azureStorageContainer ||
+      parsed.data.azureKeyVaultName)
   ) {
     await db
       .update(tenants)
@@ -73,6 +86,12 @@ export async function POST(
         ...(parsed.data.albDnsName ? { albDnsName: parsed.data.albDnsName } : {}),
         ...(parsed.data.chatbotUrl ? { chatbotUrl: parsed.data.chatbotUrl } : {}),
         ...(parsed.data.docsSignerUrl ? { docsSignerUrl: parsed.data.docsSignerUrl } : {}),
+        ...(parsed.data.azureResourceGroup ? { azureResourceGroup: parsed.data.azureResourceGroup } : {}),
+        ...(parsed.data.azureStorageAccount ? { azureStorageAccount: parsed.data.azureStorageAccount } : {}),
+        ...(parsed.data.azureStorageContainer
+          ? { azureStorageContainer: parsed.data.azureStorageContainer }
+          : {}),
+        ...(parsed.data.azureKeyVaultName ? { azureKeyVaultName: parsed.data.azureKeyVaultName } : {}),
         updatedAt: new Date(),
       })
       .where(eq(tenants.id, updated.tenantId));

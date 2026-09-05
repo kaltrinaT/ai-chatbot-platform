@@ -10,6 +10,7 @@ const {
   assumeTenantRole,
   writeTenantSecret,
   ensureDocsSignerSecret,
+  generateDocsSignerSecret,
   redirectMock,
 } = vi.hoisted(() => {
     const authMock = vi.fn();
@@ -19,6 +20,7 @@ const {
     const assumeTenantRole = vi.fn();
     const writeTenantSecret = vi.fn();
     const ensureDocsSignerSecret = vi.fn();
+    const generateDocsSignerSecret = vi.fn();
     const redirectMock = vi.fn((url: string) => {
       throw new Error(`REDIRECT:${url}`);
     });
@@ -30,6 +32,7 @@ const {
       assumeTenantRole,
       writeTenantSecret,
       ensureDocsSignerSecret,
+      generateDocsSignerSecret,
       redirectMock,
     };
   });
@@ -42,6 +45,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/deploy", () => ({ triggerDeployment }));
 vi.mock("@/lib/crypto", () => ({ encryptSecret }));
 vi.mock("@/lib/aws", () => ({ assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret }));
+vi.mock("@/lib/azure", () => ({ generateDocsSignerSecret }));
 
 import { db } from "@/db";
 import { createTenantAndDeploy } from "./actions";
@@ -100,6 +104,10 @@ describe("createTenantAndDeploy", () => {
     ensureDocsSignerSecret.mockResolvedValue({
       docsSignerSecretArn: "arn:aws:secretsmanager:us-east-1:123456789012:secret:acme-co/docs-signer-secret",
       docsSignerSecretEncrypted: "enc:docs-signer-secret",
+    });
+    generateDocsSignerSecret.mockReturnValue({
+      docsSignerSecretEncrypted: "enc:azure-docs-signer-secret",
+      docsSignerSecretPlaintext: "azure-plaintext-secret",
     });
   });
 
@@ -240,12 +248,13 @@ describe("createTenantAndDeploy", () => {
       expect(ensureDocsSignerSecret).toHaveBeenCalledWith(
         expect.objectContaining({ roleArn: validAws.deploymentRoleArn, slug: "acme-co" }),
       );
+      expect(generateDocsSignerSecret).not.toHaveBeenCalled();
       expect(triggerDeployment).toHaveBeenCalledWith(
         expect.objectContaining({ tenantId: "tenant-1", triggeredByUserId: "user-1" }),
       );
     });
 
-    it("does not touch AWS APIs for an Azure tenant, and encrypts the client secret", async () => {
+    it("does not touch AWS APIs for an Azure tenant, generates a docs-signer secret instead, and encrypts the client secret", async () => {
       await expect(createTenantAndDeploy(null, formData(validAzure))).rejects.toThrow(
         "REDIRECT:/tenants/tenant-1",
       );
@@ -253,6 +262,7 @@ describe("createTenantAndDeploy", () => {
       expect(assumeTenantRole).not.toHaveBeenCalled();
       expect(writeTenantSecret).not.toHaveBeenCalled();
       expect(ensureDocsSignerSecret).not.toHaveBeenCalled();
+      expect(generateDocsSignerSecret).toHaveBeenCalledWith();
       expect(encryptSecret).toHaveBeenCalledWith(validAzure.azureClientSecret);
       expect(triggerDeployment).toHaveBeenCalled();
     });

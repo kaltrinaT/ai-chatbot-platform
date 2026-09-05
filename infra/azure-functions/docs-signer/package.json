@@ -1,0 +1,12 @@
+{
+  "name": "docs-signer",
+  "private": true,
+  "type": "module",
+  "description": "Per-tenant Azure Function that mints user-delegation Blob SAS tokens for document uploads and performs deletes, using its own Managed Identity scoped to generateUserDelegationKey + blob delete only — never read, never list. The platform never calls Azure for documents; it only calls this Function's HTTP trigger over HTTPS with a shared secret. Mirrors infra/lambda/docs-signer.",
+  "main": "src/index.js",
+  "dependencies": {
+    "@azure/functions": "^4.5.0",
+    "@azure/storage-blob": "^12.26.0",
+    "@azure/identity": "^4.13.1"
+  }
+}
