@@ -146,12 +146,21 @@ describe("triggerDeployment", () => {
     ).rejects.toThrow(/Tenant missing not found/);
   });
 
-  it("throws when an AWS tenant image URI env vars are missing", async () => {
+  it("throws when the platform image URI env vars are missing (AWS tenant)", async () => {
     dbSelectWhere.mockResolvedValue([baseAwsTenant]);
     delete process.env.PLATFORM_CHATBOT_IMAGE_URI;
 
     await expect(
       triggerDeployment({ tenantId: baseAwsTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" }),
+    ).rejects.toThrow(/PLATFORM_CHATBOT_IMAGE_URI is not set/);
+  });
+
+  it("throws when the platform image URI env vars are missing (Azure tenant)", async () => {
+    dbSelectWhere.mockResolvedValue([baseAzureTenant]);
+    delete process.env.PLATFORM_CHATBOT_IMAGE_URI;
+
+    await expect(
+      triggerDeployment({ tenantId: baseAzureTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" }),
     ).rejects.toThrow(/PLATFORM_CHATBOT_IMAGE_URI is not set/);
   });
 
@@ -267,6 +276,12 @@ describe("triggerDeployment", () => {
     expect(call.inputs.llm_api_key).toBe(`decrypted:${baseAzureTenant.llmApiKeyEncrypted}`);
     expect(call.inputs.pinecone_api_key).toBe("");
     expect(call.inputs.docs_signer_secret).toBe(`decrypted:${baseAzureTenant.docsSignerSecretEncrypted}`);
+    expect(call.inputs.your_ecr_image).toBe(
+      "111111111111.dkr.ecr.us-east-1.amazonaws.com/chatbot:v2",
+    );
+    expect(call.inputs.your_frontend_ecr_image).toBe(
+      "111111111111.dkr.ecr.us-east-1.amazonaws.com/frontend:v2",
+    );
     expect(generateDocsSignerSecret).not.toHaveBeenCalled();
 
     const config = JSON.parse(call.inputs.config);
@@ -276,6 +291,8 @@ describe("triggerDeployment", () => {
       vector_store: "pgvector",
       chatbot_version: "v2",
     });
+    expect(config).not.toHaveProperty("your_ecr_image");
+    expect(config).not.toHaveProperty("your_frontend_ecr_image");
   });
 
   it("lazily generates and stores the docs-signer secret for Azure tenants missing one", async () => {

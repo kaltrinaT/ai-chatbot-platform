@@ -95,8 +95,8 @@ be recovered — see Known Limitation #2 in `SECURITY.md`.
               │    3. terraform apply                    │
               │                                          │
               │  deploy-tenant-azure.yml (Azure):        │
-              │    1. Build images from source           │
-              │    2. Push to customer ACR               │
+              │    1. Pull image from platform ECR       │
+              │    2. Replicate to customer ACR          │
               │    3. terraform apply                    │
               │                                          │
               │  Both: POST /api/deployments/{id}/       │
@@ -294,8 +294,9 @@ CUSTOMER AZURE SUBSCRIPTION
 Resource Group: chatbot-{slug}
 │
 ├── Container Registry: chatbot{slug}acr  (Basic SKU, admin enabled)
-│   │  images are BUILT FROM SOURCE in deploy-tenant-azure.yml and pushed
-│   │  here (AWS instead replicates prebuilt images from the platform ECR)
+│   │  images are the platform's prebuilt golden images, pulled from the
+│   │  platform ECR and replicated here by deploy-tenant-azure.yml — same
+│   │  model AWS uses to replicate into the customer's ECR
 │   ├── image: chatbot{slug}acr.azurecr.io/chatbot-backend:{version}
 │   └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
 │

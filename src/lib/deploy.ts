@@ -24,17 +24,18 @@ export async function triggerDeployment({
   const { owner, repo } = getChatbotRepo();
   const ref = process.env.CHATBOT_DEPLOY_REF ?? "main";
 
-  // AWS replicates prebuilt images from the platform ECR; Azure builds from
-  // source in the workflow, so the image URIs are only required for AWS.
+  // Both AWS and Azure replicate the same platform-owned golden image into
+  // the tenant's own registry (ECR or ACR) rather than building the
+  // frontend/backend from source per deploy.
   const imageBase = process.env.PLATFORM_CHATBOT_IMAGE_URI;
-  if (tenant.cloudProvider === "aws" && !imageBase) {
+  if (!imageBase) {
     throw new Error(
       "PLATFORM_CHATBOT_IMAGE_URI is not set. Should be the source image URI in your ECR, without a tag."
     );
   }
 
   const frontendImageBase = process.env.PLATFORM_FRONTEND_IMAGE_URI;
-  if (tenant.cloudProvider === "aws" && !frontendImageBase) {
+  if (!frontendImageBase) {
     throw new Error(
       "PLATFORM_FRONTEND_IMAGE_URI is not set. Should be the source chat-UI image URI in your ECR, without a tag."
     );
@@ -116,8 +117,8 @@ export async function triggerDeployment({
 
   const inputs =
     tenant.cloudProvider === "azure"
-      ? buildAzureInputs(tenant, deployment.id, chatbotVersion)
-      : buildAwsInputs(tenant, deployment.id, chatbotVersion, imageBase!, frontendImageBase!);
+      ? buildAzureInputs(tenant, deployment.id, chatbotVersion, imageBase, frontendImageBase)
+      : buildAwsInputs(tenant, deployment.id, chatbotVersion, imageBase, frontendImageBase);
 
   try {
     await octokit.actions.createWorkflowDispatch({
@@ -284,7 +285,9 @@ function buildAwsInputs(
 function buildAzureInputs(
   tenant: Awaited<ReturnType<typeof db.select>>["0"] & { cloudProvider: string },
   deploymentId: string,
-  chatbotVersion: string
+  chatbotVersion: string,
+  imageBase: string,
+  frontendImageBase: string
 ): Record<string, string> {
   const clientSecret = tenant.azureClientSecretEncrypted
     ? decryptSecret(tenant.azureClientSecretEncrypted)
@@ -323,5 +326,7 @@ function buildAzureInputs(
     llm_api_key: llmApiKey,
     pinecone_api_key: pineconeApiKey,
     docs_signer_secret: docsSignerSecret,
+    your_ecr_image: `${imageBase}:${chatbotVersion}`,
+    your_frontend_ecr_image: `${frontendImageBase}:${chatbotVersion}`,
   };
 }

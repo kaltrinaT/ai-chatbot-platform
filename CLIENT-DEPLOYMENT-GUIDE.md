@@ -171,7 +171,7 @@ Same as the AWS section — one dedicated index provisioned per tenant, always i
 | Pinecone API key | Only if you picked Pinecone |
 
 ### 9. Submit and wait
-Your secrets are encrypted and passed to the Azure deploy workflow, which builds the chatbot images from source, provisions the resource group/ACR/Key Vault/Container App, and writes your keys into Key Vault. Watch progress on the tenant page.
+Your secrets are encrypted and passed to the Azure deploy workflow, which replicates the platform's chatbot images into your ACR, provisions the resource group/ACR/Key Vault/Container App, and writes your keys into Key Vault. Watch progress on the tenant page.
 
 ### 10. Access your chatbot
 Azure Container Apps automatically provisions a managed HTTPS endpoint on the `*.azurecontainerapps.io` FQDN shown on the tenant page — unlike AWS, HTTPS works out of the box here, no extra configuration needed.
