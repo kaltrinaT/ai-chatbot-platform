@@ -174,10 +174,16 @@ jobs:
           # means no Pinecone resources are actually created and this value
           # is never used for anything real.
           TF_VAR_pinecone_api_key: ${{ inputs.pinecone_api_key || 'unused' }}
+          # Required (no default) even though this bootstrap apply doesn't
+          # create the Key Vault secret — Terraform resolves every variable
+          # regardless of -target, and prompts (hanging the job) if one is
+          # missing.
+          TF_VAR_docs_signer_secret: ${{ inputs.docs_signer_secret }}
         run: |
           terraform apply -auto-approve \
             -target=azurerm_resource_group.this \
             -target=azurerm_container_registry.this \
+            -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
             -var="tenant_slug=${{ inputs.tenant_slug }}" \
             -var="azure_subscription_id=${{ steps.cfg.outputs.azure_subscription_id }}" \
             -var="azure_tenant_id=${{ steps.cfg.outputs.azure_tenant_id }}" \
