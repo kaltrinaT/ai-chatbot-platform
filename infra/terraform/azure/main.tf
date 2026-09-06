@@ -347,8 +347,13 @@ resource "azurerm_role_definition" "docs_signer" {
   description = "Presign uploads (via user-delegation key) and delete blobs in this tenant's docs container. No read, no list."
 
   permissions {
+    # Minting the delegation key is a control-plane action; operating on blob
+    # contents is a data-plane one. Azure rejects the role definition outright
+    # if a data action is listed under `actions`.
     actions = [
       "Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action",
+    ]
+    data_actions = [
       "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete",
     ]
   }
