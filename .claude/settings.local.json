@@ -32,7 +32,19 @@
       "Bash(node .scratch-deploy-check.mjs)",
       "Bash(rm .scratch-deploy-check.mjs)",
       "Bash(netstat -ano)",
-      "Bash(tasklist //FI \"PID eq 5516\" //FI \"PID eq 3172\")"
+      "Bash(tasklist //FI \"PID eq 5516\" //FI \"PID eq 3172\")",
+      "Bash(az policy *)",
+      "PowerShell(az resource list --resource-group chatbot-tedtttt83959 --query \"[].{name:name, type:type}\" -o table 2>&1)",
+      "PowerShell(az group show --name chatbot-tedtttt83959 --query \"{name:name, location:location}\" -o table 2>&1)",
+      "PowerShell(az role assignment list --assignee b2ed660e-1508-439c-8f12-2187fb40d3db --all --query \"[].{role:roleDefinitionName, scope:scope}\" -o table)",
+      "PowerShell(az provider operation show --namespace Microsoft.Storage --query \"resourceTypes[?name=='storageAccounts/blobServices/containers/blobs'].operations[?contains\\(name,'delete'\\)].{name:name, isDataAction:isDataAction}\" -o json 2>&1)",
+      "PowerShell(az provider operation show --namespace Microsoft.Storage --query \"resourceTypes[?name=='storageAccounts/blobServices'].operations[?contains\\(name,'generateUserDelegationKey'\\)].{name:name, isDataAction:isDataAction}\" -o json 2>&1)",
+      "Bash(terraform -chdir=infra/terraform/azure init -backend=false -input=false)",
+      "Bash(terraform -chdir=infra/terraform/azure validate)",
+      "Bash(terraform -chdir=infra/terraform/azure fmt -check)",
+      "PowerShell(az storage account blob-service-properties show --account-name chatbottedtttt83959 -g chatbot-tedtttt83959 --query \"cors\" -o json)",
+      "PowerShell(az role definition list --custom-role-only true --name \"chatbot-tedtttt83959-docs-signer\" --query \"[0].{name:roleName, actions:permissions[0].actions, dataActions:permissions[0].dataActions, updatedOn:updatedOn}\" -o json)",
+      "PowerShell(az role definition list --custom-role-only true --name \"chatbot-tedtttt83959-docs-signer\" --query \"[0].{dataActions:permissions[0].dataActions, updatedOn:updatedOn}\" -o json)"
     ]
   }
 }
