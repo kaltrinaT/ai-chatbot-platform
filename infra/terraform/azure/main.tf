@@ -336,11 +336,15 @@ resource "azurerm_linux_function_app" "docs_signer" {
 }
 
 # Grants ONLY what the Function needs on the docs storage account: mint a
-# user-delegation key (to sign SAS tokens) and delete blobs. Never read,
-# never list — same shape as the Lambda's s3:PutObject/s3:DeleteObject-only
-# IAM policy. (PutObject itself isn't a role permission here at all: the
-# browser writes with a self-contained SAS token, not a call this identity
-# makes.)
+# user-delegation key (to sign SAS tokens), write blobs, and delete them.
+# Never read, never list — the same shape as the Lambda's
+# s3:PutObject/s3:DeleteObject-only IAM policy.
+#
+# blobs/write is required even though the Function never uploads anything
+# itself: a user-delegation SAS is capped by the RBAC permissions of the
+# identity that signed it, so without write here the browser's PUT fails with
+# AuthorizationPermissionMismatch. Same principle as the Lambda needing
+# s3:PutObject to issue a presigned POST it never uses itself.
 resource "azurerm_role_definition" "docs_signer" {
   name        = "${local.name}-docs-signer"
   scope       = azurerm_storage_account.docs.id
@@ -354,6 +358,7 @@ resource "azurerm_role_definition" "docs_signer" {
       "Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action",
     ]
     data_actions = [
+      "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write",
       "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete",
     ]
   }
