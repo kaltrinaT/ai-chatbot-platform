@@ -71,13 +71,14 @@ resource "azurerm_container_registry" "this" {
 # Key Vault — stores LLM API key; Container App reads it at runtime
 # ──────────────────────────────────────────────────────────────────────
 
-// Access policies are deliberately NOT declared inline here. The docs-signer
-// Function's grant has to be a separate azurerm_key_vault_access_policy
-// resource (its identity doesn't exist until the Function App is created,
-// which in turn needs this vault's secret URI), and azurerm cannot manage
-// policies both ways at once — an inline block reconciles the vault's policy
-// list on every apply and silently deletes the separately-managed grant,
-// leaving the Function unable to resolve its Key Vault reference.
+// Only the deploying identity gets data-plane access, and it is declared
+// inline. Nothing else may add an azurerm_key_vault_access_policy resource to
+// this vault: azurerm reconciles the whole policy list from this block on
+// every apply, so a separately-managed grant gets silently deleted (which is
+// exactly what happened to the docs-signer Function, leaving it unable to
+// resolve a Key Vault reference and rejecting every request). The Function
+// therefore receives its secret as a direct app setting instead of a
+// reference — see azurerm_linux_function_app.docs_signer.
 resource "azurerm_key_vault" "this" {
   name                = local.kv_name
   location            = azurerm_resource_group.this.location
@@ -85,25 +86,19 @@ resource "azurerm_key_vault" "this" {
   tenant_id           = var.azure_tenant_id
   sku_name            = "standard"
   tags                = local.common_tags
-}
 
-// Data-plane access for whoever runs this deploy, so the secrets below can be
-// written. Every azurerm_key_vault_secret depends on this explicitly —
-// without it Terraform may try to write a secret before the grant exists.
-resource "azurerm_key_vault_access_policy" "deployer" {
-  key_vault_id = azurerm_key_vault.this.id
-  tenant_id    = var.azure_tenant_id
-  object_id    = data.azurerm_client_config.current.object_id
+  access_policy {
+    tenant_id = var.azure_tenant_id
+    object_id = data.azurerm_client_config.current.object_id
 
-  secret_permissions = ["Get", "Set", "Delete", "List", "Purge"]
+    secret_permissions = ["Get", "Set", "Delete", "List", "Purge"]
+  }
 }
 
 resource "azurerm_key_vault_secret" "llm_api_key" {
   name         = "llm-api-key"
   value        = var.llm_api_key
   key_vault_id = azurerm_key_vault.this.id
-
-  depends_on = [azurerm_key_vault_access_policy.deployer]
 }
 
 resource "azurerm_key_vault_secret" "pinecone_api_key" {
@@ -112,16 +107,12 @@ resource "azurerm_key_vault_secret" "pinecone_api_key" {
   name         = "pinecone-api-key"
   value        = var.pinecone_api_key
   key_vault_id = azurerm_key_vault.this.id
-
-  depends_on = [azurerm_key_vault_access_policy.deployer]
 }
 
 resource "azurerm_key_vault_secret" "storage_key" {
   name         = "storage-key"
   value        = azurerm_storage_account.docs.primary_access_key
   key_vault_id = azurerm_key_vault.this.id
-
-  depends_on = [azurerm_key_vault_access_policy.deployer]
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -232,8 +223,6 @@ resource "azurerm_key_vault_secret" "vector_db_url" {
     azurerm_postgresql_flexible_server_database.vectors[0].name,
   )
   key_vault_id = azurerm_key_vault.this.id
-
-  depends_on = [azurerm_key_vault_access_policy.deployer]
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -296,8 +285,6 @@ resource "azurerm_key_vault_secret" "docs_signer" {
   name         = "docs-signer-secret"
   value        = var.docs_signer_secret
   key_vault_id = azurerm_key_vault.this.id
-
-  depends_on = [azurerm_key_vault_access_policy.deployer]
 }
 
 # Azure Functions requires its own storage account for internal bookkeeping
@@ -350,9 +337,15 @@ resource "azurerm_linux_function_app" "docs_signer" {
     DOCS_CONTAINER           = azurerm_storage_container.docs.name
     DOCS_PREFIX              = var.docs_prefix
     MAX_UPLOAD_BYTES         = tostring(var.max_docs_upload_mb * 1024 * 1024)
-    # Resolved by the Functions platform itself before the code runs — the
-    # Function never calls the Key Vault SDK to read its own auth secret.
-    DOCS_SIGNER_SECRET = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.docs_signer.versionless_id})"
+    # Passed directly rather than as a "@Microsoft.KeyVault(SecretUri=...)"
+    # reference. A reference would need this Function's identity to hold a
+    # Key Vault access policy, and azurerm rebuilds the vault's policy list
+    # from the inline block on every apply — deleting that grant and leaving
+    # the Function with an empty secret that rejects every request. The value
+    # is still written to Key Vault (azurerm_key_vault_secret.docs_signer) so
+    # the customer can see and rotate it; this is only how it reaches the
+    # Function's environment.
+    DOCS_SIGNER_SECRET = var.docs_signer_secret
   }
 }
 
@@ -393,16 +386,11 @@ resource "azurerm_role_assignment" "docs_signer_storage" {
   principal_id       = azurerm_linux_function_app.docs_signer.identity[0].principal_id
 }
 
-# See the note above the Key Vault secret resource: this grant is
-# vault-wide, not per-secret — the one place full AWS/Azure parity isn't
-# achievable with this vault's access-policy authorization model.
-resource "azurerm_key_vault_access_policy" "docs_signer_function" {
-  key_vault_id = azurerm_key_vault.this.id
-  tenant_id    = var.azure_tenant_id
-  object_id    = azurerm_linux_function_app.docs_signer.identity[0].principal_id
-
-  secret_permissions = ["Get"]
-}
+# The Function deliberately has NO Key Vault access: it receives its auth
+# secret as an app setting, so its identity is scoped to the storage account
+# alone (see azurerm_role_definition.docs_signer above). This also removes
+# the vault-wide "Get" it used to hold — access policies can't be scoped to a
+# single secret, so that grant had exposed every other secret in the vault.
 
 # ──────────────────────────────────────────────────────────────────────
 # Log Analytics + Container Apps environment

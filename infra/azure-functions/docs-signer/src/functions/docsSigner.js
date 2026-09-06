@@ -10,9 +10,9 @@ import { DefaultAzureCredential } from "@azure/identity";
 const STORAGE_ACCOUNT = process.env.DOCS_STORAGE_ACCOUNT;
 const CONTAINER = process.env.DOCS_CONTAINER;
 const DOCS_PREFIX = process.env.DOCS_PREFIX ?? "";
-// Resolved by the Azure Functions platform BEFORE this code ever runs, via
-// the "@Microsoft.KeyVault(SecretUri=...)" app setting (see main.tf) —
-// unlike the Lambda, this Function never calls the Key Vault SDK itself.
+// Set directly as an app setting by Terraform (see main.tf) — unlike the
+// Lambda, this Function never reads a secret store at runtime, and its
+// identity has no Key Vault access at all.
 const DOCS_SIGNER_SECRET = process.env.DOCS_SIGNER_SECRET ?? "";
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES ?? 25 * 1024 * 1024);
 
