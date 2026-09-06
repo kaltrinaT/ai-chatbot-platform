@@ -100,6 +100,26 @@ export async function confirmUpload(documentId: string) {
 }
 
 /**
+ * Called by the browser when the direct-to-cloud-storage upload fails, so a
+ * document the tenant never actually received doesn't linger in the list.
+ * Only ever removes a row still awaiting its upload — the status guard means
+ * a confirmUpload that landed first always wins.
+ *
+ * No storage cleanup is needed or possible here: the upload failed, so
+ * there's nothing to delete, and the platform can't check either way (it has
+ * no read or list permission on the tenant's documents).
+ */
+export async function abandonUpload(documentId: string) {
+  const { doc, tenant } = await requireOwnedDocument(documentId);
+
+  await db
+    .delete(tenantDocuments)
+    .where(and(eq(tenantDocuments.id, doc.id), eq(tenantDocuments.status, "pending")));
+
+  revalidatePath(`/tenants/${tenant.id}`);
+}
+
+/**
  * Deletes a document from cloud storage (via the docs-signer function,
  * which does the delete itself using its own narrowly-scoped credentials)
  * and from the platform's own record. Note: this does not remove the

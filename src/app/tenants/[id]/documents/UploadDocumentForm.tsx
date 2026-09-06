@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload } from "lucide-react";
-import { requestUploadUrl, confirmUpload } from "./actions";
+import { requestUploadUrl, confirmUpload, abandonUpload } from "./actions";
 
 type UploadState = { name: string; status: "uploading" | "reindexing" | "done" | "error"; error?: string };
 
@@ -16,13 +16,16 @@ export default function UploadDocumentForm({ tenantId }: { tenantId: string }) {
     const label = file.name;
     setUploads((u) => [...u, { name: label, status: "uploading" }]);
 
+    let documentId: string | undefined;
     try {
-      const { documentId, url, fields } = await requestUploadUrl(
+      const requested = await requestUploadUrl(
         tenantId,
         file.name,
         file.type || "application/octet-stream",
         file.size,
       );
+      const { url, fields } = requested;
+      documentId = requested.documentId;
 
       let res: Response;
       if (fields) {
@@ -48,7 +51,7 @@ export default function UploadDocumentForm({ tenantId }: { tenantId: string }) {
         u.map((x) => (x.name === label ? { ...x, status: "reindexing" } : x)),
       );
 
-      const confirmed = await confirmUpload(documentId);
+      const confirmed = await confirmUpload(requested.documentId);
       setUploads((u) =>
         u.map((x) =>
           x.name === label
@@ -59,6 +62,11 @@ export default function UploadDocumentForm({ tenantId }: { tenantId: string }) {
         ),
       );
     } catch (err) {
+      // Drop the pending row this upload created, so a document the tenant's
+      // storage never received doesn't sit in the list forever. Best-effort:
+      // the upload error is what the user needs to see, not a cleanup failure.
+      if (documentId) await abandonUpload(documentId).catch(() => undefined);
+
       setUploads((u) =>
         u.map((x) =>
           x.name === label
