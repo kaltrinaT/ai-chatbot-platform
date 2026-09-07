@@ -462,6 +462,13 @@ resource "azurerm_container_app" "this" {
   }
 
   template {
+    # Tenant images are pushed to a mutable tag (chatbot_version, usually
+    # "latest"), so image_uri is byte-identical across deploys and Terraform
+    # would plan no change — leaving the app serving the digest it first
+    # pulled, however many times the image is rebuilt. Varying the revision
+    # suffix per deploy forces a new revision, which re-pulls the tag.
+    revision_suffix = var.revision_suffix != "" ? var.revision_suffix : null
+
     min_replicas = 1
     max_replicas = 3
 

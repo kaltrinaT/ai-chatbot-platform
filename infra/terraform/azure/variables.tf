@@ -159,6 +159,17 @@ variable "platform_origin" {
   type        = string
 }
 
+variable "revision_suffix" {
+  description = "Unique per-deploy suffix for the Container App revision. Required to roll the app onto a rebuilt image, since the image tag itself doesn't change between deploys. Empty keeps the current revision."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.revision_suffix == "" || can(regex("^[a-z0-9][a-z0-9-]{0,42}[a-z0-9]$", var.revision_suffix))
+    error_message = "revision_suffix must be lowercase alphanumeric with hyphens, not starting or ending with a hyphen."
+  }
+}
+
 variable "docs_prefix" {
   description = "Optional prefix inside the documents container. Empty string disables the prefix scope."
   type        = string
