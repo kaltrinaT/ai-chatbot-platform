@@ -233,6 +233,7 @@ jobs:
             -var="image_uri=${{ steps.names.outputs.image_uri }}" \
             -var="frontend_image_uri=${{ steps.names.outputs.frontend_uri }}" \
             -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
+            -var="extra_cors_origin=${{ vars.EXTRA_CORS_ORIGIN }}" \
             -var="revision_suffix=r${{ github.run_id }}-${{ github.run_attempt }}"
 
       - name: Read Terraform outputs

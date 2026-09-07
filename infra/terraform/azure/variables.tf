@@ -170,6 +170,17 @@ variable "revision_suffix" {
   }
 }
 
+variable "extra_cors_origin" {
+  description = "Additional origin allowed to upload to the docs container, alongside platform_origin. Intended for a developer machine (e.g. http://localhost:3000) while testing; empty for normal tenant deploys."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.extra_cors_origin == "" || can(regex("^https?://", var.extra_cors_origin))
+    error_message = "extra_cors_origin must be empty or a scheme-qualified origin, e.g. http://localhost:3000."
+  }
+}
+
 variable "docs_prefix" {
   description = "Optional prefix inside the documents container. Empty string disables the prefix scope."
   type        = string

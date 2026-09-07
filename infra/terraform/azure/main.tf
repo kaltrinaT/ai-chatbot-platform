@@ -245,7 +245,10 @@ resource "azurerm_storage_account" "docs" {
   # separate one).
   blob_properties {
     cors_rule {
-      allowed_origins    = [var.platform_origin]
+      # compact() drops extra_cors_origin when it's empty, so a tenant
+      # deploy allows exactly the platform's own origin unless one is
+      # explicitly configured.
+      allowed_origins    = compact([var.platform_origin, var.extra_cors_origin])
       allowed_methods    = ["PUT"]
       allowed_headers    = ["*"]
       exposed_headers    = ["*"]
