@@ -82,6 +82,7 @@ variable "llm_model" {
   default     = ""
 }
 
+
 variable "llm_api_key" {
   description = "LLM API key retrieved from Key Vault by the workflow."
   type        = string

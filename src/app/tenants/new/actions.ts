@@ -1,10 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { tenants } from "@/db/schema";
+import { tenants, tenantDrafts } from "@/db/schema";
 import { triggerDeployment } from "@/lib/deploy";
 import { encryptSecret } from "@/lib/crypto";
 import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "@/lib/aws";
@@ -38,6 +39,7 @@ const SharedInput = z.object({
   vectorStore: z.enum(["pinecone", "pgvector"]).default("pinecone"),
   // Required only for vectorStore = "pinecone"; enforced by the refine below.
   pineconeApiKey: z.string().optional(),
+
 });
 
 
@@ -58,16 +60,24 @@ const AwsInput = SharedInput.extend({
 });
 
 // ── Azure fields ──────────────────────────────────────────────────────
-const AzureInput = SharedInput.extend({
-  cloudProvider: z.literal("azure"),
-  azureSubscriptionId: z
+
+// All three Azure identifiers are UUIDs, and the deploy's own Terraform
+// validates them as such. Checking here too means a value pasted into the
+// wrong box is rejected on the form, rather than surfacing minutes later as
+// an opaque Entra error (AADSTS700016) from the middle of a workflow run.
+const azureUuid = (label: string) =>
+  z
     .string()
     .regex(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      "Must be a valid UUID"
-    ),
-  azureTenantId: z.string().min(1, "Required"),
-  azureClientId: z.string().min(1, "Required"),
+      `${label} must be a valid UUID`
+    );
+
+const AzureInput = SharedInput.extend({
+  cloudProvider: z.literal("azure"),
+  azureSubscriptionId: azureUuid("Subscription ID"),
+  azureTenantId: azureUuid("Tenant ID"),
+  azureClientId: azureUuid("Client ID"),
   azureClientSecret: z.string().min(1, "Required"),
   azureRegion: z.string().min(1, "Required"),
 });
@@ -81,7 +91,20 @@ const TenantInput = z
     path: ["pineconeApiKey"],
   });
 
-export type FormState = { errors: Record<string, string> } | null;
+/**
+ * `errors` is always present (empty on success) so callers can read it without
+ * narrowing; `deployed` appears only once the tenant row exists and its first
+ * deployment has been dispatched.
+ *
+ * The success path deliberately does NOT redirect: the wizard's final step
+ * renders live deployment progress in place, so navigating away would drop the
+ * user out of the flow the moment their deploy starts. The tenant page remains
+ * reachable from that step (and is still where a returning user goes).
+ */
+export type FormState = {
+  errors: Record<string, string>;
+  deployed?: { tenantId: string; deploymentId: string; startedAt: string };
+} | null;
 
 export async function createTenantAndDeploy(
   _prev: FormState,
@@ -226,11 +249,96 @@ export async function createTenantAndDeploy(
 
   const [tenant] = await db.insert(tenants).values(insertValues).returning();
 
-  await triggerDeployment({
+  const deployment = await triggerDeployment({
     tenantId: tenant.id,
     chatbotVersion: parsed.chatbotVersion,
     triggeredByUserId: session.user.id,
   });
 
-  redirect(`/tenants/${tenant.id}`);
+  // The wizard was saved as a draft while it was being filled in; the tenant
+  // it was a draft OF now exists, so the draft has served its purpose.
+  const draftId = formData.get("draftId");
+  if (typeof draftId === "string" && draftId) {
+    await db
+      .delete(tenantDrafts)
+      .where(and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id)));
+  }
+
+  return {
+    errors: {},
+    deployed: {
+      tenantId: tenant.id,
+      deploymentId: deployment.id,
+      startedAt: deployment.startedAt.toISOString(),
+    },
+  };
+}
+
+// Wizard fields that are customer credentials. Stripped before a draft is
+// persisted: a draft is an unfinished form with no deployment behind it, and
+// storing plaintext keys in the control plane for it would undercut the whole
+// "secrets live in the customer's cloud" property. Re-entered on resume.
+const DRAFT_SECRET_FIELDS = ["llmApiKey", "pineconeApiKey", "azureClientSecret"] as const;
+
+export type DraftState = { draftId: string; savedAt: string } | { error: string } | null;
+
+/**
+ * Upserts the wizard's non-secret state. Called by "Save Draft" rather than on
+ * every keystroke, so it is a normal action and not debounced server chatter.
+ */
+export async function saveTenantDraft(
+  _prev: DraftState,
+  formData: FormData
+): Promise<DraftState> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/signin");
+
+  const data: Record<string, unknown> = {};
+  for (const [key, value] of formData.entries()) {
+    if (typeof value !== "string") continue;
+    if ((DRAFT_SECRET_FIELDS as readonly string[]).includes(key)) continue;
+    if (key === "draftId" || key === "step") continue;
+    if (value === "") continue;
+    data[key] = value;
+  }
+
+  const rawStep = Number(formData.get("step"));
+  const step = Number.isInteger(rawStep) && rawStep >= 1 && rawStep <= 5 ? rawStep : 1;
+  const name = typeof data.name === "string" ? data.name : null;
+  const existingId = formData.get("draftId");
+
+  try {
+    if (typeof existingId === "string" && existingId) {
+      const [updated] = await db
+        .update(tenantDrafts)
+        .set({ data, step, name, updatedAt: new Date() })
+        .where(
+          and(eq(tenantDrafts.id, existingId), eq(tenantDrafts.ownerUserId, session.user.id))
+        )
+        .returning();
+      // Falls through to an insert when the id doesn't belong to this user or
+      // no longer exists, rather than silently reporting a save that didn't
+      // happen.
+      if (updated) {
+        return { draftId: updated.id, savedAt: updated.updatedAt.toISOString() };
+      }
+    }
+
+    const [created] = await db
+      .insert(tenantDrafts)
+      .values({ ownerUserId: session.user.id, data, step, name })
+      .returning();
+    return { draftId: created.id, savedAt: created.updatedAt.toISOString() };
+  } catch {
+    return { error: "Could not save the draft. Your entries are still on this page." };
+  }
+}
+
+export async function deleteTenantDraft(draftId: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/signin");
+
+  await db
+    .delete(tenantDrafts)
+    .where(and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id)));
 }

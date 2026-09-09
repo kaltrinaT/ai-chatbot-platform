@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { insertValuesReturningChain } from "@/test/db-chains";
 import { buildFormData } from "@/test/form-data";
 
 const {
   authMock,
+  dbInsertValues,
   dbInsertReturning,
   triggerDeployment,
   encryptSecret,
@@ -15,6 +15,13 @@ const {
 } = vi.hoisted(() => {
     const authMock = vi.fn();
     const dbInsertReturning = vi.fn();
+    // Declared here (rather than via insertValuesReturningChain) so tests can
+    // assert on the row actually handed to drizzle, not just that it inserted.
+    // The signature is supplied as a type argument so `mock.calls` is typed
+    // without the implementation needing an unused parameter.
+    const dbInsertValues = vi.fn<(row: unknown) => { returning: typeof dbInsertReturning }>(
+      () => ({ returning: dbInsertReturning }),
+    );
     const triggerDeployment = vi.fn();
     const encryptSecret = vi.fn((v: string) => `enc:${v}`);
     const assumeTenantRole = vi.fn();
@@ -26,6 +33,7 @@ const {
     });
     return {
       authMock,
+      dbInsertValues,
       dbInsertReturning,
       triggerDeployment,
       encryptSecret,
@@ -40,7 +48,12 @@ const {
 vi.mock("next/navigation", () => ({ redirect: redirectMock }));
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/db", () => ({
-  db: { insert: vi.fn(() => insertValuesReturningChain(dbInsertReturning)) },
+  db: {
+    insert: vi.fn(() => ({ values: dbInsertValues })),
+    // Only reached when the wizard submits a draftId; stubbed so the
+    // post-deploy draft cleanup doesn't blow up the success-path tests.
+    delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+  },
 }));
 vi.mock("@/lib/deploy", () => ({ triggerDeployment }));
 vi.mock("@/lib/crypto", () => ({ encryptSecret }));
@@ -52,6 +65,12 @@ import { createTenantAndDeploy } from "./actions";
 
 function formData(fields: Record<string, string | undefined>): FormData {
   return buildFormData(fields);
+}
+
+/** The row handed to `db.insert(tenants).values(...)` by the last call. */
+function insertedValues(): Record<string, unknown> {
+  const calls = dbInsertValues.mock.calls;
+  return calls[calls.length - 1][0] as Record<string, unknown>;
 }
 
 const validAws = {
@@ -82,8 +101,8 @@ const validAzure = {
   llmModel: "claude-sonnet",
   vectorStore: "pgvector",
   azureSubscriptionId: "12345678-1234-1234-1234-123456789012",
-  azureTenantId: "az-tenant-1",
-  azureClientId: "az-client-1",
+  azureTenantId: "22222222-2222-2222-2222-222222222222",
+  azureClientId: "33333333-3333-3333-3333-333333333333",
   azureClientSecret: "az-secret-1",
   azureRegion: "eastus",
 };
@@ -93,7 +112,10 @@ describe("createTenantAndDeploy", () => {
     vi.clearAllMocks();
     authMock.mockResolvedValue({ user: { id: "user-1" } });
     dbInsertReturning.mockResolvedValue([{ id: "tenant-1" }]);
-    triggerDeployment.mockResolvedValue({ id: "deploy-1" });
+    triggerDeployment.mockResolvedValue({
+      id: "deploy-1",
+      startedAt: new Date("2026-01-01T00:00:00Z"),
+    });
     encryptSecret.mockImplementation((v: string) => `enc:${v}`);
     assumeTenantRole.mockResolvedValue({
       accessKeyId: "a",
@@ -143,13 +165,15 @@ describe("createTenantAndDeploy", () => {
     });
 
     it("accepts an empty domain (optional field)", async () => {
-      const result = await createTenantAndDeploy(null, formData({ ...validAws, domain: "" })).catch(
-        (e) => e,
-      );
-      // Empty domain is valid, so this should proceed to the redirect throw,
-      // not return a validation-error object.
-      expect(result).toBeInstanceOf(Error);
-      expect((result as Error).message).toMatch(/^REDIRECT:/);
+      const result = await createTenantAndDeploy(null, formData({ ...validAws, domain: "" }));
+      // Empty domain is valid, so this should deploy rather than return a
+      // validation-error object.
+      expect(result?.errors).toEqual({});
+      expect(result?.deployed).toEqual({
+        tenantId: "tenant-1",
+        deploymentId: "deploy-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      });
     });
 
     it("rejects an unrecognized llmProvider", async () => {
@@ -177,9 +201,9 @@ describe("createTenantAndDeploy", () => {
       const result = await createTenantAndDeploy(
         null,
         formData({ ...validAws, vectorStore: "pgvector", pineconeApiKey: undefined }),
-      ).catch((e) => e);
-      expect(result).toBeInstanceOf(Error);
-      expect((result as Error).message).toMatch(/^REDIRECT:/);
+      );
+      expect(result?.errors).toEqual({});
+      expect(result?.deployed).toBeDefined();
     });
 
     it("rejects an unrecognized cloudProvider", async () => {
@@ -226,6 +250,24 @@ describe("createTenantAndDeploy", () => {
       expect(result?.errors.azureSubscriptionId).toMatch(/valid UUID/);
     });
 
+    it("rejects an azureClientId that isn't a UUID", async () => {
+      // A slug or secret pasted into the client ID box otherwise reaches Azure
+      // and fails mid-deploy as AADSTS700016 ("application not found").
+      const result = await createTenantAndDeploy(
+        null,
+        formData({ ...validAzure, azureClientId: "test2206" }),
+      );
+      expect(result?.errors.azureClientId).toMatch(/valid UUID/);
+    });
+
+    it("rejects an azureTenantId that isn't a UUID", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({ ...validAzure, azureTenantId: "my-directory" }),
+      );
+      expect(result?.errors.azureTenantId).toMatch(/valid UUID/);
+    });
+
     it("rejects a missing azureClientSecret", async () => {
       const result = await createTenantAndDeploy(
         null,
@@ -236,10 +278,13 @@ describe("createTenantAndDeploy", () => {
   });
 
   describe("successful submission", () => {
-    it("assumes the tenant role and writes both secrets for an AWS + pinecone tenant, then redirects", async () => {
-      await expect(createTenantAndDeploy(null, formData(validAws))).rejects.toThrow(
-        "REDIRECT:/tenants/tenant-1",
-      );
+    it("assumes the tenant role and writes both secrets for an AWS + pinecone tenant, then returns the deployment", async () => {
+      const result = await createTenantAndDeploy(null, formData(validAws));
+      expect(result?.deployed).toEqual({
+        tenantId: "tenant-1",
+        deploymentId: "deploy-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      });
 
       expect(assumeTenantRole).toHaveBeenCalledWith(
         expect.objectContaining({ roleArn: validAws.deploymentRoleArn, region: "us-east-1" }),
@@ -255,9 +300,8 @@ describe("createTenantAndDeploy", () => {
     });
 
     it("does not touch AWS APIs for an Azure tenant, generates a docs-signer secret instead, and encrypts the client secret", async () => {
-      await expect(createTenantAndDeploy(null, formData(validAzure))).rejects.toThrow(
-        "REDIRECT:/tenants/tenant-1",
-      );
+      const result = await createTenantAndDeploy(null, formData(validAzure));
+      expect(result?.deployed).toBeDefined();
 
       expect(assumeTenantRole).not.toHaveBeenCalled();
       expect(writeTenantSecret).not.toHaveBeenCalled();
@@ -268,14 +312,28 @@ describe("createTenantAndDeploy", () => {
     });
 
     it("writes only the LLM secret (not a Pinecone secret) for an AWS + pgvector tenant", async () => {
-      await expect(
-        createTenantAndDeploy(
-          null,
-          formData({ ...validAws, vectorStore: "pgvector", pineconeApiKey: undefined }),
-        ),
-      ).rejects.toThrow("REDIRECT:/tenants/tenant-1");
+      const result = await createTenantAndDeploy(
+        null,
+        formData({ ...validAws, vectorStore: "pgvector", pineconeApiKey: undefined }),
+      );
+      expect(result?.deployed).toBeDefined();
 
       expect(writeTenantSecret).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("unrecognised fields", () => {
+    // The wizard posts its whole value map as hidden inputs, so a stale key
+    // left over from a resumed draft must not reach the insert.
+    it("ignores form fields that are not part of the schema", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({ ...validAws, llmTemperature: "0.2", somethingRemoved: "x" }),
+      );
+
+      expect(result?.deployed).toBeDefined();
+      expect(insertedValues()).not.toHaveProperty("llmTemperature");
+      expect(insertedValues()).not.toHaveProperty("somethingRemoved");
     });
   });
 });

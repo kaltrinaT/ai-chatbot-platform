@@ -81,6 +81,7 @@ variable "llm_model" {
   default     = ""
 }
 
+
 variable "vector_store" {
   description = "Where embeddings live: \"pinecone\" (customer's own Pinecone project) or \"pgvector\" (RDS PostgreSQL inside this VPC)."
   type        = string

@@ -94,6 +94,7 @@ export const tenants = pgTable("tenants", {
   llmModel: text("llm_model"),
   llmBaseUrl: text("llm_base_url"),
 
+
   // ── Vector store ──────────────────────────────────────────────────────
   vectorStore: vectorStoreEnum("vector_store").notNull().default("pinecone"),
   // Only set when vectorStore = "pinecone" — the CUSTOMER's own key.
@@ -173,6 +174,37 @@ export const tenantDocuments = pgTable("tenant_documents", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * A partially-completed onboarding wizard, saved by "Save Draft".
+ *
+ * Deliberately NOT a `tenants` row with nullable columns: a draft has no
+ * cloud resources, must never be deployable, and would otherwise have to
+ * relax the notNull constraints that keep a real tenant well-formed.
+ *
+ * `data` holds only NON-SECRET wizard fields. The LLM key, Pinecone key and
+ * Azure client secret are stripped before saving (see DRAFT_SECRET_FIELDS in
+ * the wizard's actions) and must be re-entered when the draft is resumed.
+ * Persisting them would put plaintext customer credentials in the control
+ * plane's own database for an object with no deployment behind it yet —
+ * exactly the thing the "secrets live in the customer's cloud" design avoids.
+ */
+export const tenantDrafts = pgTable("tenant_drafts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+
+  // Mirrors the wizard's "Chatbot Name" when set, so the drafts list can show
+  // something recognisable before the tenant exists.
+  name: text("name"),
+  data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
+  // Which wizard step the user left off on, so resuming lands them there.
+  step: integer("step").notNull().default(1),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const users = pgTable("users", {
   id: text("id")
     .primaryKey()
@@ -241,4 +273,8 @@ export const tenantDocumentsRelations = relations(tenantDocuments, ({ one }) => 
     fields: [tenantDocuments.uploadedByUserId],
     references: [users.id],
   }),
+}));
+
+export const tenantDraftsRelations = relations(tenantDrafts, ({ one }) => ({
+  owner: one(users, { fields: [tenantDrafts.ownerUserId], references: [users.id] }),
 }));
