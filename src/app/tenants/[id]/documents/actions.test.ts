@@ -42,7 +42,8 @@ vi.mock("@/lib/reindex", () => ({ triggerReindex }));
 vi.mock("next/cache", () => ({ revalidatePath }));
 
 import { db } from "@/db";
-import { requestUploadUrl, confirmUpload, deleteDocument } from "./actions";
+import { tenantDocuments } from "@/db/schema";
+import { requestUploadUrl, confirmUpload, abandonUpload, deleteDocument } from "./actions";
 
 const tenantRow = {
   id: "tenant-1",
@@ -178,6 +179,49 @@ describe("confirmUpload", () => {
     });
     // The document is still marked uploaded even though reindexing failed.
     expect(dbUpdateWhere).toHaveBeenCalled();
+  });
+});
+
+describe("abandonUpload", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.mockResolvedValue({ user: { id: "user-1" } });
+    dbSelectWhere.mockResolvedValueOnce([docRow]).mockResolvedValueOnce([tenantRow]);
+    dbDeleteWhere.mockResolvedValue(undefined);
+  });
+
+  it("throws 'Document not found' when the document row does not exist", async () => {
+    dbSelectWhere.mockReset();
+    dbSelectWhere.mockResolvedValueOnce([]);
+
+    await expect(abandonUpload("doc-1")).rejects.toThrow("Document not found");
+    expect(dbDeleteWhere).not.toHaveBeenCalled();
+  });
+
+  it("throws 'Tenant not found' when the caller does not own the document's tenant", async () => {
+    dbSelectWhere.mockReset();
+    dbSelectWhere.mockResolvedValueOnce([docRow]).mockResolvedValueOnce([]);
+
+    await expect(abandonUpload("doc-1")).rejects.toThrow("Tenant not found");
+    expect(dbDeleteWhere).not.toHaveBeenCalled();
+  });
+
+  it("deletes the row from tenantDocuments and revalidates the tenant page", async () => {
+    await abandonUpload("doc-1");
+
+    expect(db.delete).toHaveBeenCalledWith(tenantDocuments);
+    expect(dbDeleteWhere).toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith("/tenants/tenant-1");
+  });
+
+  // No storage cleanup is possible for an abandoned upload (nothing was ever
+  // received) and no vectors exist yet to reindex — asserting these were
+  // never called guards against a future edit accidentally wiring them in.
+  it("never calls the docs-signer or triggers a reindex", async () => {
+    await abandonUpload("doc-1");
+
+    expect(deleteViaSigner).not.toHaveBeenCalled();
+    expect(triggerReindex).not.toHaveBeenCalled();
   });
 });
 

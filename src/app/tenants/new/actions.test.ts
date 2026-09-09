@@ -5,6 +5,8 @@ const {
   authMock,
   dbInsertValues,
   dbInsertReturning,
+  dbUpdateValues,
+  dbUpdateReturning,
   triggerDeployment,
   encryptSecret,
   assumeTenantRole,
@@ -22,6 +24,14 @@ const {
     const dbInsertValues = vi.fn<(row: unknown) => { returning: typeof dbInsertReturning }>(
       () => ({ returning: dbInsertReturning }),
     );
+    const dbUpdateReturning = vi.fn();
+    // Same rationale as dbInsertValues: kept as a stable mock (not a fresh
+    // chain per call) so saveTenantDraft's update-path tests can inspect the
+    // row it actually passed to drizzle, e.g. confirming secret fields never
+    // reach `.set(...)`.
+    const dbUpdateValues = vi.fn<
+      (row: unknown) => { where: () => { returning: typeof dbUpdateReturning } }
+    >(() => ({ where: () => ({ returning: dbUpdateReturning }) }));
     const triggerDeployment = vi.fn();
     const encryptSecret = vi.fn((v: string) => `enc:${v}`);
     const assumeTenantRole = vi.fn();
@@ -35,6 +45,8 @@ const {
       authMock,
       dbInsertValues,
       dbInsertReturning,
+      dbUpdateValues,
+      dbUpdateReturning,
       triggerDeployment,
       encryptSecret,
       assumeTenantRole,
@@ -50,6 +62,7 @@ vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/db", () => ({
   db: {
     insert: vi.fn(() => ({ values: dbInsertValues })),
+    update: vi.fn(() => ({ set: dbUpdateValues })),
     // Only reached when the wizard submits a draftId; stubbed so the
     // post-deploy draft cleanup doesn't blow up the success-path tests.
     delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
@@ -61,7 +74,8 @@ vi.mock("@/lib/aws", () => ({ assumeTenantRole, writeTenantSecret, ensureDocsSig
 vi.mock("@/lib/azure", () => ({ generateDocsSignerSecret }));
 
 import { db } from "@/db";
-import { createTenantAndDeploy } from "./actions";
+import { tenantDrafts } from "@/db/schema";
+import { createTenantAndDeploy, saveTenantDraft, deleteTenantDraft } from "./actions";
 
 function formData(fields: Record<string, string | undefined>): FormData {
   return buildFormData(fields);
@@ -70,6 +84,12 @@ function formData(fields: Record<string, string | undefined>): FormData {
 /** The row handed to `db.insert(tenants).values(...)` by the last call. */
 function insertedValues(): Record<string, unknown> {
   const calls = dbInsertValues.mock.calls;
+  return calls[calls.length - 1][0] as Record<string, unknown>;
+}
+
+/** The row handed to `db.update(tenantDrafts).set(...)` by the last call. */
+function updatedValues(): Record<string, unknown> {
+  const calls = dbUpdateValues.mock.calls;
   return calls[calls.length - 1][0] as Record<string, unknown>;
 }
 
@@ -320,6 +340,23 @@ describe("createTenantAndDeploy", () => {
 
       expect(writeTenantSecret).toHaveBeenCalledTimes(1);
     });
+
+    it("deletes the wizard's draft row once the tenant it was for now exists", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({ ...validAws, draftId: "draft-1" }),
+      );
+
+      expect(result?.deployed).toBeDefined();
+      expect(db.delete).toHaveBeenCalledWith(tenantDrafts);
+    });
+
+    it("does not touch tenantDrafts when the submission carries no draftId", async () => {
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.deployed).toBeDefined();
+      expect(db.delete).not.toHaveBeenCalled();
+    });
   });
 
   describe("unrecognised fields", () => {
@@ -335,5 +372,133 @@ describe("createTenantAndDeploy", () => {
       expect(insertedValues()).not.toHaveProperty("llmTemperature");
       expect(insertedValues()).not.toHaveProperty("somethingRemoved");
     });
+  });
+});
+
+describe("saveTenantDraft", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.mockResolvedValue({ user: { id: "user-1" } });
+    dbInsertReturning.mockResolvedValue([
+      { id: "draft-1", updatedAt: new Date("2026-01-01T00:00:00Z") },
+    ]);
+    dbUpdateReturning.mockResolvedValue([
+      { id: "draft-1", updatedAt: new Date("2026-01-02T00:00:00Z") },
+    ]);
+  });
+
+  it("redirects to /signin when there is no authenticated session", async () => {
+    authMock.mockResolvedValue(null);
+
+    await expect(saveTenantDraft(null, formData({ name: "Acme" }))).rejects.toThrow(
+      "REDIRECT:/signin",
+    );
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  // The headline security property of this action: a draft has no deployment
+  // behind it, so persisting a plaintext credential here would leak a real
+  // customer secret into the control-plane database for no reason.
+  it.each(["llmApiKey", "pineconeApiKey", "azureClientSecret"] as const)(
+    "never persists %s, even though it was submitted",
+    async (secretField) => {
+      await saveTenantDraft(
+        null,
+        formData({ name: "Acme", [secretField]: "super-secret-value" }),
+      );
+
+      expect(insertedValues().data).not.toHaveProperty(secretField);
+    },
+  );
+
+  it("excludes step and empty-string fields from the persisted data", async () => {
+    // No draftId here on purpose — the insert path is what's under test, and
+    // submitting one would route this into the update branch instead.
+    await saveTenantDraft(null, formData({ name: "Acme", step: "2", domain: "" }));
+
+    const data = insertedValues().data as Record<string, unknown>;
+    expect(data).not.toHaveProperty("step");
+    expect(data).not.toHaveProperty("domain");
+    expect(data.name).toBe("Acme");
+  });
+
+  it("sets name to null when the form has no name field", async () => {
+    await saveTenantDraft(null, formData({ slug: "acme-co" }));
+
+    expect(insertedValues().name).toBeNull();
+  });
+
+  it.each([
+    ["1", 1],
+    ["5", 5],
+    [undefined, 1],
+    ["0", 1],
+    ["6", 1],
+    ["not-a-number", 1],
+  ])("normalizes step %s to %i", async (rawStep, expectedStep) => {
+    await saveTenantDraft(null, formData({ name: "Acme", step: rawStep }));
+
+    expect(insertedValues().step).toBe(expectedStep);
+  });
+
+  it("inserts a new draft when no draftId is given", async () => {
+    const result = await saveTenantDraft(null, formData({ name: "Acme" }));
+
+    expect(db.insert).toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+    expect(result).toEqual({ draftId: "draft-1", savedAt: "2026-01-01T00:00:00.000Z" });
+  });
+
+  it("updates an existing draft in place when draftId belongs to the session user", async () => {
+    const result = await saveTenantDraft(
+      null,
+      formData({ name: "Acme Renamed", draftId: "draft-1" }),
+    );
+
+    expect(db.update).toHaveBeenCalledWith(tenantDrafts);
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(updatedValues().name).toBe("Acme Renamed");
+    expect(result).toEqual({ draftId: "draft-1", savedAt: "2026-01-02T00:00:00.000Z" });
+  });
+
+  it("falls through to an insert when the update matches no row (wrong owner or stale id)", async () => {
+    dbUpdateReturning.mockResolvedValue([]);
+
+    const result = await saveTenantDraft(
+      null,
+      formData({ name: "Acme", draftId: "someone-elses-draft" }),
+    );
+
+    expect(db.update).toHaveBeenCalled();
+    expect(db.insert).toHaveBeenCalled();
+    expect(result).toEqual({ draftId: "draft-1", savedAt: "2026-01-01T00:00:00.000Z" });
+  });
+
+  it("returns an error instead of throwing when the db operation fails", async () => {
+    dbInsertReturning.mockRejectedValue(new Error("connection reset"));
+
+    const result = await saveTenantDraft(null, formData({ name: "Acme" }));
+
+    expect(result).toEqual({ error: "Could not save the draft. Your entries are still on this page." });
+  });
+});
+
+describe("deleteTenantDraft", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.mockResolvedValue({ user: { id: "user-1" } });
+  });
+
+  it("redirects to /signin when there is no authenticated session", async () => {
+    authMock.mockResolvedValue(null);
+
+    await expect(deleteTenantDraft("draft-1")).rejects.toThrow("REDIRECT:/signin");
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes from the tenantDrafts table", async () => {
+    await deleteTenantDraft("draft-1");
+
+    expect(db.delete).toHaveBeenCalledWith(tenantDrafts);
   });
 });

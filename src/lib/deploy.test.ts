@@ -164,6 +164,15 @@ describe("triggerDeployment", () => {
     ).rejects.toThrow(/PLATFORM_CHATBOT_IMAGE_URI is not set/);
   });
 
+  it("throws when only PLATFORM_FRONTEND_IMAGE_URI is missing", async () => {
+    dbSelectWhere.mockResolvedValue([baseAwsTenant]);
+    delete process.env.PLATFORM_FRONTEND_IMAGE_URI;
+
+    await expect(
+      triggerDeployment({ tenantId: baseAwsTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" }),
+    ).rejects.toThrow(/PLATFORM_FRONTEND_IMAGE_URI is not set/);
+  });
+
   it("throws when an AWS tenant has no llmSecretArn", async () => {
     dbSelectWhere.mockResolvedValue([{ ...baseAwsTenant, llmSecretArn: null }]);
 

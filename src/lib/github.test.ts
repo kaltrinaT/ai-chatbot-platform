@@ -203,6 +203,109 @@ describe("github", () => {
     });
   });
 
+  describe("fetchRunSteps", () => {
+    it("flattens steps across jobs, in order, mapping each field", async () => {
+      listJobsForWorkflowRun.mockResolvedValue({
+        data: {
+          jobs: [
+            {
+              name: "build",
+              steps: [
+                {
+                  name: "checkout",
+                  status: "completed",
+                  conclusion: "success",
+                  started_at: "2026-01-01T00:00:00Z",
+                  completed_at: "2026-01-01T00:00:05Z",
+                },
+              ],
+            },
+            {
+              name: "deploy",
+              steps: [
+                {
+                  name: "terraform apply",
+                  status: "in_progress",
+                  conclusion: null,
+                  started_at: "2026-01-01T00:01:00Z",
+                  completed_at: null,
+                },
+                {
+                  name: "notify",
+                  status: "queued",
+                  conclusion: null,
+                  started_at: null,
+                  completed_at: null,
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+      const { fetchRunSteps } = await import("./github");
+      const steps = await fetchRunSteps(1);
+
+      expect(steps).toEqual([
+        {
+          name: "checkout",
+          status: "completed",
+          conclusion: "success",
+          startedAt: "2026-01-01T00:00:00Z",
+          completedAt: "2026-01-01T00:00:05Z",
+        },
+        {
+          name: "terraform apply",
+          status: "in_progress",
+          conclusion: null,
+          startedAt: "2026-01-01T00:01:00Z",
+          completedAt: null,
+        },
+        {
+          name: "notify",
+          status: "queued",
+          conclusion: null,
+          startedAt: null,
+          completedAt: null,
+        },
+      ]);
+    });
+
+    it("treats a job with no steps property as contributing zero steps", async () => {
+      listJobsForWorkflowRun.mockResolvedValue({
+        data: { jobs: [{ name: "build" }, { name: "deploy", steps: [] }] },
+      });
+
+      const { fetchRunSteps } = await import("./github");
+      const steps = await fetchRunSteps(1);
+
+      expect(steps).toEqual([]);
+    });
+
+    it("returns an empty array when the run has no jobs", async () => {
+      listJobsForWorkflowRun.mockResolvedValue({ data: { jobs: [] } });
+
+      const { fetchRunSteps } = await import("./github");
+      expect(await fetchRunSteps(1)).toEqual([]);
+    });
+
+    it("requests only the latest attempt for the given run", async () => {
+      listJobsForWorkflowRun.mockResolvedValue({ data: { jobs: [] } });
+
+      const { fetchRunSteps } = await import("./github");
+      await fetchRunSteps(42);
+
+      expect(listJobsForWorkflowRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          owner: "acme",
+          repo: "chatbot",
+          run_id: 42,
+          filter: "latest",
+        }),
+      );
+    });
+  });
+
   describe("findRunForDeployment", () => {
     it("matches a run whose display_title contains the deployment id", async () => {
       listWorkflowRuns.mockResolvedValue({

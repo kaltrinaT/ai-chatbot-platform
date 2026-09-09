@@ -370,6 +370,31 @@ describe("GET /api/deployments/[id]/progress", () => {
       expect(findRunForDeployment).toHaveBeenCalledWith("dep-1", startedAt, "destroy-tenant.yml");
     });
 
+    it("looks up an azure tenant's deploy run on the azure workflow, not the AWS one", async () => {
+      const startedAt = new Date(Date.now() - GRACE_MS * 2);
+      dbOwnershipWhere.mockResolvedValue([
+        {
+          deployment: deploymentRow({ kind: "deploy", status: "running", githubRunId: null, startedAt }),
+          cloudProvider: "azure",
+        },
+      ]);
+      findRunForDeployment.mockResolvedValue({ runId: 888, htmlUrl: "https://github.com/x/888" });
+      dbReloadWhere.mockResolvedValue([
+        deploymentRow({
+          kind: "deploy",
+          status: "running",
+          githubRunId: "888",
+          githubRunUrl: "https://github.com/x/888",
+          startedAt,
+        }),
+      ]);
+      fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "in_progress" }));
+
+      await callRoute();
+
+      expect(findRunForDeployment).toHaveBeenCalledWith("dep-1", startedAt, "deploy-tenant-azure.yml");
+    });
+
     it("returns live=null (not stale yet) when no run can be found past the grace period", async () => {
       const startedAt = new Date(Date.now() - GRACE_MS * 2);
       dbOwnershipWhere.mockResolvedValue([
