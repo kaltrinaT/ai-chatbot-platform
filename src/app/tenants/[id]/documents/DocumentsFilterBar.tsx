@@ -2,15 +2,8 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search, RefreshCw } from "lucide-react";
-import UploadDocumentForm from "./UploadDocumentForm";
 
-export default function DocumentsFilterBar({
-  tenantId,
-  typeOptions,
-}: {
-  tenantId: string;
-  typeOptions: string[];
-}) {
+export default function DocumentsFilterBar({ typeOptions }: { typeOptions: string[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -83,7 +76,6 @@ export default function DocumentsFilterBar({
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </button>
-        <UploadDocumentForm tenantId={tenantId} />
       </div>
     </div>
   );

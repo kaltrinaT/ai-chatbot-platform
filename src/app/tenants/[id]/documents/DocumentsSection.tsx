@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import DocumentsStatsRow from "./DocumentsStatsRow";
 import DocumentsFilterBar from "./DocumentsFilterBar";
 import DocumentsTable from "./DocumentsTable";
+import UploadDocumentForm from "./UploadDocumentForm";
 import {
   computeDocumentStats,
   documentTypeLabel,
@@ -64,8 +65,17 @@ export default function DocumentsSection({
 
       <DocumentsStatsRow stats={stats} />
 
+      <div className="rounded-lg border bg-white p-4">
+        <h3 className="text-sm font-semibold text-gray-900">Add documents</h3>
+        <p className="mt-1 mb-3 text-xs text-gray-500">
+          PDF, Word, Markdown, CSV, HTML or plain text, up to 25 MB each. Progress and any errors appear
+          below the button.
+        </p>
+        <UploadDocumentForm tenantId={tenantId} />
+      </div>
+
       <div className="rounded-lg border bg-white">
-        <DocumentsFilterBar tenantId={tenantId} typeOptions={typeOptions} />
+        <DocumentsFilterBar typeOptions={typeOptions} />
 
         {documents.length === 0 ? (
           <p className="p-6 text-sm text-gray-500">No documents uploaded yet.</p>
