@@ -37,12 +37,20 @@ vi.mock("@/db", () => ({
     delete: vi.fn(() => deleteWhereChain(dbDeleteWhere)),
   },
 }));
-vi.mock("@/lib/docsSigner", () => ({ presignUpload, deleteViaSigner }));
+// Stubs the two calls, but keeps the real DocsSignerError — the action
+// branches on `instanceof`, so a stubbed-out class would make every signer
+// failure look like an unexpected one.
+vi.mock("@/lib/docsSigner", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/docsSigner")>()),
+  presignUpload,
+  deleteViaSigner,
+}));
 vi.mock("@/lib/reindex", () => ({ triggerReindex }));
 vi.mock("next/cache", () => ({ revalidatePath }));
 
 import { db } from "@/db";
 import { tenantDocuments } from "@/db/schema";
+import { DocsSignerError } from "@/lib/docsSigner";
 import { requestUploadUrl, confirmUpload, abandonUpload, deleteDocument } from "./actions";
 
 const tenantRow = {
@@ -64,6 +72,9 @@ const docRow = {
 describe("requestUploadUrl", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The action logs the real cause of a presign failure; keep that out of
+    // the test output while still exercising the path that writes it.
+    vi.spyOn(console, "error").mockImplementation(() => {});
     authMock.mockResolvedValue({ user: { id: "user-1" } });
     dbSelectWhere.mockResolvedValue([tenantRow]);
     presignUpload.mockResolvedValue({
@@ -74,30 +85,33 @@ describe("requestUploadUrl", () => {
     dbInsertReturning.mockResolvedValue([{ id: "doc-1" }]);
   });
 
-  it("throws when there is no authenticated session", async () => {
+  // Every failure below is RETURNED, not thrown: a thrown Server Function
+  // error reaches the browser as React's redacted placeholder, which would
+  // put the tenant owner right back where this bug started.
+  it("returns a failure when there is no authenticated session", async () => {
     authMock.mockResolvedValue(null);
 
-    await expect(requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024)).rejects.toThrow(
-      "Not authenticated",
-    );
+    const result = await requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024);
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/session has expired/i) });
     expect(presignUpload).not.toHaveBeenCalled();
   });
 
-  it("throws 'Tenant not found' when the query returns nothing (wrong owner or missing tenant)", async () => {
+  it("returns 'Tenant not found' when the query returns nothing (wrong owner or missing tenant)", async () => {
     dbSelectWhere.mockResolvedValue([]);
 
-    await expect(requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024)).rejects.toThrow(
-      "Tenant not found",
-    );
+    const result = await requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024);
+
+    expect(result).toEqual({ ok: false, error: "Tenant not found." });
     expect(presignUpload).not.toHaveBeenCalled();
   });
 
-  it("throws when the tenant has no docsSignerUrl yet (deploy not finished)", async () => {
+  it("returns a failure when the tenant has no docsSignerUrl yet (deploy not finished)", async () => {
     dbSelectWhere.mockResolvedValue([{ ...tenantRow, docsSignerUrl: null }]);
 
-    await expect(requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024)).rejects.toThrow(
-      /aren't available yet/,
-    );
+    const result = await requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024);
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/aren't available yet/) });
     expect(presignUpload).not.toHaveBeenCalled();
   });
 
@@ -110,10 +124,61 @@ describe("requestUploadUrl", () => {
       sizeBytes: 1024,
     });
     expect(result).toEqual({
+      ok: true,
       documentId: "doc-1",
       url: "https://s3.amazonaws.com/bucket",
       fields: { key: "docs/uuid-file.pdf" },
     });
+  });
+
+  it("surfaces the signer's own reason for a 400, unwrapped from its JSON body", async () => {
+    presignUpload.mockRejectedValue(
+      new DocsSignerError(400, '{"error":"unsupported content type: application/octet-stream"}'),
+    );
+
+    const result = await requestUploadUrl("tenant-1", "notes.md", "application/octet-stream", 12);
+
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "The tenant's docs-signer refused this file: unsupported content type: application/octet-stream.",
+    });
+    // No pending row for an upload that was never authorised.
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  // A Lambda Function URL with no resource-based policy answers 403 with this
+  // body, before the handler's own secret check runs. Reporting it as a
+  // credential problem would send the reader after the wrong thing entirely.
+  it("distinguishes a 403 from the cloud from the signer's own 401", async () => {
+    presignUpload.mockRejectedValue(
+      new DocsSignerError(403, '{"Message":"Forbidden. For troubleshooting Function URL authorization issues, see: https://docs.aws.amazon.com/lambda/latest/dg/urls-auth.html"}'),
+    );
+
+    const result = await requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024);
+
+    expect(result).toMatchObject({ ok: false });
+    const { error } = result as { error: string };
+    expect(error).toMatch(/invoke permission is missing/i);
+    expect(error).not.toMatch(/shared secret/i);
+  });
+
+  it("explains a 401 as a shared-secret mismatch rather than repeating the status", async () => {
+    presignUpload.mockRejectedValue(new DocsSignerError(401, '{"error":"unauthorized"}'));
+
+    const result = await requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024);
+
+    expect(result).toMatchObject({ ok: false });
+    expect((result as { error: string }).error).toMatch(/shared secret/i);
+  });
+
+  it("does not forward an unexpected error's message to the browser", async () => {
+    presignUpload.mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.1:5432"));
+
+    const result = await requestUploadUrl("tenant-1", "file.pdf", "application/pdf", 1024);
+
+    expect(result).toMatchObject({ ok: false });
+    expect((result as { error: string }).error).not.toContain("ECONNREFUSED");
   });
 
   it("records the uploader and the object key minted by the signer, with pending status", async () => {

@@ -405,6 +405,26 @@ resource "aws_lambda_function_url" "docs_signer" {
   authorization_type = "NONE"
 }
 
+# Required, and easy to miss: authorization_type = "NONE" only says the URL
+# does not want SigV4. It does not by itself let anyone through. Lambda still
+# checks the function's resource-based policy on every Function URL request,
+# and with no statement permitting the invoke it answers 403 "Forbidden. For
+# troubleshooting Function URL authorization issues..." before the handler
+# ever runs — so the shared-secret check inside index.mjs never gets a say.
+# (The console adds this statement for you when you create a public Function
+# URL by hand; Terraform does not.)
+#
+# principal = "*" is scoped by function_url_auth_type: it grants exactly one
+# action, on this one function, through its Function URL. The secret header
+# checked in the handler remains the actual authentication.
+resource "aws_lambda_permission" "docs_signer_url" {
+  statement_id           = "AllowDocsSignerFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.docs_signer.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
 # ──────────────────────────────────────────────────────────────────────
 # Vector store — exactly one of the two blocks below is created, chosen by
 # var.vector_store.

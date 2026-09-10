@@ -3,6 +3,43 @@ import type { tenants } from "@/db/schema";
 
 type Tenant = typeof tenants.$inferSelect;
 
+/**
+ * A non-2xx response from a tenant's docs-signer. Carries the status and body
+ * separately so callers can turn them into something a tenant owner can act
+ * on — the message alone is for logs. `message` is kept byte-identical to what
+ * this used to throw as a plain Error.
+ */
+export class DocsSignerError extends Error {
+  readonly status: number;
+  readonly detail: string;
+
+  constructor(status: number, detail: string) {
+    super(`docs-signer returned ${status}${detail ? `: ${detail}` : ""}`);
+    this.name = "DocsSignerError";
+    this.status = status;
+    this.detail = detail;
+  }
+
+  /**
+   * The signer's own `error` string, unwrapped from the `{"error": "..."}`
+   * body both the Lambda and the Azure Function reply with. Falls back to the
+   * raw body for anything else (an API Gateway or Functions host error page,
+   * say, which is not JSON at all).
+   */
+  get reason(): string {
+    try {
+      const parsed: unknown = JSON.parse(this.detail);
+      if (parsed && typeof parsed === "object" && "error" in parsed) {
+        const { error } = parsed as { error: unknown };
+        if (typeof error === "string") return error;
+      }
+    } catch {
+      // Not JSON — the raw body is the best available description.
+    }
+    return this.detail;
+  }
+}
+
 export type PresignUploadResult = {
   objectKey: string;
   url: string;
@@ -45,7 +82,7 @@ export async function callDocsSigner(
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`docs-signer returned ${res.status}${detail ? `: ${detail}` : ""}`);
+    throw new DocsSignerError(res.status, detail);
   }
 
   return res.json();

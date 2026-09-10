@@ -5,7 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { tenants, tenantDocuments } from "@/db/schema";
-import { presignUpload, deleteViaSigner } from "@/lib/docsSigner";
+import { presignUpload, deleteViaSigner, DocsSignerError } from "@/lib/docsSigner";
 import { triggerReindex } from "@/lib/reindex";
 
 async function requireSessionUserId(): Promise<string> {
@@ -27,6 +27,63 @@ async function requireOwnedTenant(tenantId: string, userId: string) {
 }
 
 /**
+ * Why this returns a failure instead of throwing one: a Server Function that
+ * throws reaches the browser as React's redacted placeholder ("An error
+ * occurred in the Server Components render…"), which tells a tenant owner
+ * nothing about which of the many things behind an upload link actually
+ * broke. Per Next's error-handling guide, expected failures are modelled as
+ * return values; only genuine bugs are left to throw.
+ */
+export type UploadUrlResult =
+  | { ok: true; documentId: string; url: string; fields?: Record<string, string> }
+  | { ok: false; error: string };
+
+/**
+ * Turns a presign failure into something the tenant owner can act on. The
+ * signer's own 4xx bodies are safe to pass through — they describe the file
+ * the caller just chose, and carry neither the signer URL nor the shared
+ * secret. Anything else is deliberately NOT forwarded: an unexpected error
+ * (a driver error carrying a connection string, say) stays in the server log.
+ */
+function describePresignFailure(err: unknown): string {
+  if (err instanceof DocsSignerError) {
+    // The handler answers 401 for a bad secret and never 403, so a 403 comes
+    // from the cloud in front of it rejecting the call before the handler
+    // runs — on AWS, a Function URL with no resource-based policy allowing
+    // lambda:InvokeFunctionUrl. No secret the platform holds can fix that.
+    if (err.status === 403) {
+      return (
+        `The tenant's cloud refused to invoke the docs-signer at all (403), before its own ` +
+        `authentication ran. The function's invoke permission is missing — redeploy the tenant.`
+      );
+    }
+    if (err.status === 401) {
+      return (
+        `The tenant's docs-signer rejected the platform's credentials (401). ` +
+        `The shared secret the platform holds no longer matches the one the function checks against — ` +
+        `redeploying the tenant reissues both halves.`
+      );
+    }
+    if (err.status === 400) {
+      return `The tenant's docs-signer refused this file: ${err.reason || "no reason given"}.`;
+    }
+    return `The tenant's docs-signer returned ${err.status}${err.reason ? `: ${err.reason}` : ""}.`;
+  }
+
+  // AbortSignal.timeout rejects with a TimeoutError; a cold Lambda that has to
+  // fetch its secret from Secrets Manager is the usual way to spend 10s.
+  if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+    return "The tenant's docs-signer didn't respond within 10 seconds. Try the upload again.";
+  }
+
+  if (err instanceof Error && err.message.includes("deploy has not completed")) {
+    return err.message;
+  }
+
+  return "Couldn't reach the tenant's docs-signer. The platform's server log has the reason.";
+}
+
+/**
  * Requests a presigned upload URL from the tenant's own docs-signer function
  * (an AWS Lambda or an Azure Function, depending on cloudProvider) and
  * records a "pending" row so the document shows up in the list immediately.
@@ -39,14 +96,41 @@ export async function requestUploadUrl(
   fileName: string,
   contentType: string,
   sizeBytes: number,
-) {
-  const userId = await requireSessionUserId();
-  const tenant = await requireOwnedTenant(tenantId, userId);
+): Promise<UploadUrlResult> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "Your session has expired. Sign in again and retry the upload." };
+  }
+  const userId = session.user.id;
+
+  const [tenant] = await db
+    .select()
+    .from(tenants)
+    .where(
+      and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt)),
+    );
+
+  if (!tenant) return { ok: false, error: "Tenant not found." };
   if (!tenant.docsSignerUrl) {
-    throw new Error("Documents aren't available yet — wait for the first deploy to finish.");
+    return {
+      ok: false,
+      error: "Documents aren't available yet — wait for the first deploy to finish.",
+    };
   }
 
-  const presigned = await presignUpload(tenant, { fileName, contentType, sizeBytes });
+  let presigned;
+  try {
+    presigned = await presignUpload(tenant, { fileName, contentType, sizeBytes });
+  } catch (err) {
+    // The only place the real cause is recorded — everything above returns a
+    // summary, so without this line a production failure leaves no trace.
+    console.error(
+      `[requestUploadUrl] presign failed for tenant ${tenant.id} ` +
+        `(${fileName}, ${contentType}, ${sizeBytes} bytes)`,
+      err,
+    );
+    return { ok: false, error: describePresignFailure(err) };
+  }
 
   const [doc] = await db
     .insert(tenantDocuments)
@@ -61,7 +145,7 @@ export async function requestUploadUrl(
     })
     .returning();
 
-  return { documentId: doc.id, url: presigned.url, fields: presigned.fields };
+  return { ok: true, documentId: doc.id, url: presigned.url, fields: presigned.fields };
 }
 
 async function requireOwnedDocument(documentId: string) {

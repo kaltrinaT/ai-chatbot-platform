@@ -76,21 +76,33 @@ jobs:
     steps:
       # Report the run ID to the platform immediately so the tenant page can
       # poll live progress. Best-effort: a platform outage must not fail the
-      # customer's deploy.
+      # customer's deploy, hence continue-on-error.
+      #
+      # Every callback below checks the HTTP status rather than trusting
+      # curl's exit code. Plain `curl -sS` exits 0 for any response it managed
+      # to receive, including a 404 or a tunnel's "endpoint offline" page, so
+      # a callback that never reached the platform used to leave a green step
+      # and a deployment row stuck on "running" with nothing to explain it.
       - name: Notify platform — run started
         continue-on-error: true
         run: |
-          curl -sS --max-time 15 -X POST \
-            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
-            -H "content-type: application/json" \
-            -d @- \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          cat > /tmp/callback.json <<EOF
           {
             "status": "running",
             "githubRunId": "${{ github.run_id }}",
             "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
           EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'running' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+            exit 1
+          fi
+          echo "Platform acknowledged the run-started callback."
 
       - uses: actions/checkout@v4
 
@@ -257,14 +269,17 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # 4. Callback to platform
       # ─────────────────────────────────────────────────────────────
+      # A lost terminal callback is annotated but never fails the step. The
+      # infrastructure really is deployed at this point, and failing here
+      # would flip the run's conclusion to failure — which the platform's own
+      # reconciliation reads back as a FAILED deployment, turning a lost
+      # callback into an actively wrong status. The annotation surfaces it at
+      # the top of the run instead, and the tenant page's poller repairs the
+      # row from the run's real conclusion regardless.
       - name: Notify platform — success
         if: success()
         run: |
-          curl -sS -X POST \
-            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
-            -H "content-type: application/json" \
-            -d @- \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          cat > /tmp/callback.json <<EOF
           {
             "status": "succeeded",
             "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
@@ -274,15 +289,21 @@ jobs:
             "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
           EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'succeeded' to PLATFORM_BASE_URL — the deploy worked but the platform was not told. $(head -c 300 /tmp/callback.out)"
+          else
+            echo "Platform acknowledged the success callback."
+          fi
 
       - name: Notify platform — failure
         if: failure()
         run: |
-          curl -sS -X POST \
-            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
-            -H "content-type: application/json" \
-            -d @- \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          cat > /tmp/callback.json <<EOF
           {
             "status": "failed",
             "errorMessage": "Workflow run ${{ github.run_id }} failed; see GitHub Actions logs.",
@@ -290,3 +311,11 @@ jobs:
             "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
           EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'failed' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+          fi

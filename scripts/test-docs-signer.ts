@@ -10,28 +10,64 @@ neonConfig.webSocketConstructor = ws;
 
 /**
  * End-to-end check of a tenant's docs-signer (presign -> upload -> delete),
- * driven the same way the platform's own server actions drive it.
+ * driven the same way the platform's own server actions drive it. Handles
+ * both clouds: AWS answers a presign with S3 presigned-POST fields the upload
+ * has to be a multipart POST of, Azure with a single SAS URL to PUT to.
+ *
+ * This is the way to see what the signer actually said — the platform's own
+ * UI only ever shows a summary, and a thrown Server Function error is
+ * redacted by React before it reaches the browser at all.
  *
  * Usage:
- *   npx tsx scripts/test-docs-signer.ts <slug>
+ *   npx tsx scripts/test-docs-signer.ts <slug|tenant-id> [--presign-only]
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function main() {
-  const [slug] = process.argv.slice(2);
-  if (!slug) {
-    console.error("Usage: npx tsx scripts/test-docs-signer.ts <slug>");
+  const args = process.argv.slice(2);
+  const presignOnly = args.includes("--presign-only");
+  const [ref] = args.filter((a) => !a.startsWith("--"));
+  if (!ref) {
+    console.error("Usage: npx tsx scripts/test-docs-signer.ts <slug|tenant-id> [--presign-only]");
     process.exit(1);
   }
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const db = drizzle(pool);
-  const [t] = await db.select().from(tenants).where(eq(tenants.slug, slug));
-  if (!t?.docsSignerUrl || !t.docsSignerSecretEncrypted) {
-    console.error("Tenant missing docsSignerUrl or docsSignerSecretEncrypted.");
+  // A tenant id is what the dashboard URL carries, so accept either that or
+  // the slug rather than making the caller go look the other one up.
+  const [t] = await db
+    .select()
+    .from(tenants)
+    .where(UUID_RE.test(ref) ? eq(tenants.id, ref) : eq(tenants.slug, ref));
+  if (!t) {
+    console.error(`No tenant matches ${ref}.`);
+    await pool.end();
+    process.exit(1);
+  }
+  console.log(`tenant ${t.slug} (${t.cloudProvider})`);
+  if (!t.docsSignerUrl || !t.docsSignerSecretEncrypted) {
+    console.error(
+      `Tenant is missing ${!t.docsSignerUrl ? "docsSignerUrl" : "docsSignerSecretEncrypted"}.`,
+    );
     await pool.end();
     process.exit(1);
   }
 
-  const secret = decryptSecret(t.docsSignerSecretEncrypted);
+  // Decryption is the first thing the platform does on every documents call,
+  // and it fails outright when PLATFORM_ENCRYPTION_KEY here is not the key
+  // this row was encrypted with — worth naming rather than stack-tracing.
+  let secret: string;
+  try {
+    secret = decryptSecret(t.docsSignerSecretEncrypted);
+  } catch (err) {
+    console.error(
+      "Could not decrypt docsSignerSecretEncrypted with this PLATFORM_ENCRYPTION_KEY:",
+      err instanceof Error ? err.message : err,
+    );
+    await pool.end();
+    process.exit(1);
+  }
   const call = (body: unknown) =>
     fetch(t.docsSignerUrl!, {
       method: "POST",
@@ -53,16 +89,37 @@ async function main() {
     await pool.end();
     process.exit(1);
   }
-  const { objectKey, url } = JSON.parse(presignText) as { objectKey: string; url: string };
-  console.log(`   objectKey: ${objectKey}`);
-  console.log(`   sas host:  ${new URL(url).host}`);
+  const { objectKey, url, fields } = JSON.parse(presignText) as {
+    objectKey: string;
+    url: string;
+    fields?: Record<string, string>;
+  };
+  console.log(`   objectKey:   ${objectKey}`);
+  console.log(`   upload host: ${new URL(url).host}`);
+  console.log(`   protocol:    ${fields ? "S3 presigned POST" : "Azure Blob SAS PUT"}`);
 
-  console.log("2. PUT the blob with the SAS ...");
-  const putRes = await fetch(url, {
-    method: "PUT",
-    headers: { "x-ms-blob-type": "BlockBlob", "content-type": "text/plain" },
-    body: "docs-signer smoke test\n",
-  });
+  if (presignOnly) {
+    console.log("--presign-only: stopping before writing anything.");
+    await pool.end();
+    return;
+  }
+
+  console.log("2. upload the test object ...");
+  const body = "docs-signer smoke test\n";
+  let putRes: Response;
+  if (fields) {
+    // Mirrors UploadDocumentForm.tsx: policy fields first, bytes last.
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, value);
+    form.append("file", new Blob([body], { type: "text/plain" }));
+    putRes = await fetch(url, { method: "POST", body: form });
+  } else {
+    putRes = await fetch(url, {
+      method: "PUT",
+      headers: { "x-ms-blob-type": "BlockBlob", "content-type": "text/plain" },
+      body,
+    });
+  }
   console.log(`   status ${putRes.status}`);
   if (!putRes.ok) console.log(`   body: ${(await putRes.text()).slice(0, 400)}`);
 

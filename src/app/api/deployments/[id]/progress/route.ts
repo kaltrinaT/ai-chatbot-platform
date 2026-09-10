@@ -4,13 +4,13 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { deployments, tenants } from "@/db/schema";
 import {
-  fetchDeploymentOutputsArtifact,
   fetchRunProgress,
   findRunForDeployment,
   getDeployWorkflowId,
   getDestroyWorkflowId,
   type RunProgress,
 } from "@/lib/github";
+import { ACTIVE_STATUSES, reconcileCompletedRun } from "@/lib/reconcile";
 
 /**
  * Session-authed live view of a deployment. While the deployment is active it
@@ -18,8 +18,6 @@ import {
  * GitHub reports the run completed but the workflow's completion webhook was
  * never received (self-heals deployments stuck in "running").
  */
-
-const ACTIVE_STATUSES = ["pending", "running"] as const;
 
 // Past the workflow's own 30-minute timeout; if we still can't tie the row to
 // a run by then, the dispatch was lost and the deployment can never finish.
@@ -76,75 +74,6 @@ async function failStuckDeployment(id: string, message: string) {
     .update(deployments)
     .set({ status: "failed", errorMessage: message, finishedAt: new Date() })
     .where(and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES])));
-}
-
-/**
- * GitHub says the run completed but our row is still active — the completion
- * webhook was lost. Flip the row to the mapped terminal status. The write is
- * guarded on status so a concurrently-arriving real webhook wins.
- *
- * For a successful deploy, also best-effort recovers tenants.chatbotUrl /
- * albDnsName / docsSignerUrl from the "Upload deployment outputs" artifact
- * the workflow uploads right after `terraform apply` — the same recovery
- * path used for status/githubRunId above, just for Terraform outputs. This
- * stays within the platform's own CI (an artifact it already has read access
- * to), not the customer's AWS account, so it doesn't cross the control-plane
- * boundary. Redundant-but-harmless when the direct webhook already landed
- * (same values); the only cost of a lost webhook is now one extra API call
- * instead of a permanently-missing URL.
- *
- * tenants.deletedAt is the destroy equivalent — unlike a URL, it needs no
- * output value from the run, just "now()", so a lost success webhook for a
- * destroy doesn't leave the tenant stuck looking un-deleted after its infra
- * is gone.
- */
-async function reconcileCompletedRun(id: string, live: RunProgress, runId: number) {
-  const status =
-    live.runConclusion === "success"
-      ? ("succeeded" as const)
-      : live.runConclusion === "cancelled"
-        ? ("cancelled" as const)
-        : ("failed" as const);
-
-  const [updated] = await db
-    .update(deployments)
-    .set({
-      status,
-      finishedAt: new Date(live.updatedAt),
-      ...(status === "succeeded"
-        ? {}
-        : {
-            errorMessage: `Reconciled from GitHub: run concluded '${live.runConclusion ?? "unknown"}'; the completion webhook was not received. See the run logs.`,
-          }),
-    })
-    .where(and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES])))
-    .returning();
-
-  if (updated && status === "succeeded" && updated.kind === "destroy") {
-    await db
-      .update(tenants)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(eq(tenants.id, updated.tenantId));
-  } else if (updated && status === "succeeded" && updated.kind === "deploy") {
-    try {
-      const outputs = await fetchDeploymentOutputsArtifact(runId);
-      if (outputs?.chatbotUrl || outputs?.albDnsName || outputs?.docsSignerUrl) {
-        await db
-          .update(tenants)
-          .set({
-            ...(outputs.chatbotUrl ? { chatbotUrl: outputs.chatbotUrl } : {}),
-            ...(outputs.albDnsName ? { albDnsName: outputs.albDnsName } : {}),
-            ...(outputs.docsSignerUrl ? { docsSignerUrl: outputs.docsSignerUrl } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(tenants.id, updated.tenantId));
-      }
-    } catch {
-      // Best-effort recovery only — the deployment is still correctly
-      // marked succeeded even if the artifact is missing/expired/unreadable
-      // (e.g. a run from before this feature shipped).
-    }
-  }
 }
 
 async function reload(id: string): Promise<DeploymentRow> {

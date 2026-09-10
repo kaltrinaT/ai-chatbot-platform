@@ -22,6 +22,7 @@ import { tenants, deployments, tenantDocuments, users } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { estimateMonthlyCost } from "@/lib/pricing";
 import RedeployButton from "./RedeployButton";
+import DeploymentProgress from "./DeploymentProgress";
 import DeleteTenantButton from "./DeleteTenantButton";
 import CostEstimateCard from "./CostEstimateCard";
 import DocumentsSection from "./documents/DocumentsSection";
@@ -142,9 +143,14 @@ export default async function TenantDetailPage({
   const documents = documentsRaw.map((r: UploadedByJoinRow) => r.document);
   const uploadedByRows: UploadedByJoinRow[] = documentsRaw;
 
-  const isDeploying = tenantDeploys.some(
+  // Newest still-active deployment, if any (tenantDeploys is startedAt desc).
+  // Worth having as a row and not just a boolean: DeploymentProgress below
+  // needs its id to poll, and that poll is what reconciles a deployment whose
+  // completion webhook never arrived.
+  const activeDeploy = tenantDeploys.find(
     (d: { status: string }) => d.status === "pending" || d.status === "running",
   );
+  const isDeploying = Boolean(activeDeploy);
 
   const latestDeploy = tenantDeploys[0];
   const status = tenant.deletedAt ? { label: "Deleted", tone: "gray" as const } : chatbotStatus(latestDeploy);
@@ -440,6 +446,28 @@ export default async function TenantDetailPage({
             </div>
           </div>
         </div>
+
+        {/*
+          Live progress for a deployment in flight. This also carries the only
+          self-heal path for a deployment whose completion webhook was lost:
+          /api/deployments/[id]/progress asks GitHub whether the run finished
+          and repairs the row, but it is pull-based, so it runs only while
+          something polls it. Until now the sole caller was the onboarding
+          wizard's last step, which meant a redeploy started from this page
+          had no reconciliation at all and sat on "Deploying" forever.
+
+          Deliberately above the tab strip rather than inside the overview
+          tab: a redeploy can be kicked off from any tab (the button is in the
+          header), and the documents tab is exactly where someone waits for
+          one to land.
+        */}
+        {activeDeploy && (
+          <DeploymentProgress
+            deploymentId={activeDeploy.id}
+            startedAt={activeDeploy.startedAt.toISOString()}
+            initialRunUrl={activeDeploy.githubRunUrl}
+          />
+        )}
 
         {tenant.deletedAt && (
           <div className="mt-6 rounded border border-gray-300 bg-gray-50 p-4 text-sm text-gray-700">

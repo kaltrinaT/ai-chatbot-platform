@@ -64,17 +64,22 @@ jobs:
       - name: Notify platform — run started
         continue-on-error: true
         run: |
-          curl -sS --max-time 15 -X POST \
-            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
-            -H "content-type: application/json" \
-            -d @- \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          cat > /tmp/callback.json <<EOF
           {
             "status": "running",
             "githubRunId": "${{ github.run_id }}",
             "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
           EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'running' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+            exit 1
+          fi
 
       - uses: actions/checkout@v4
 
@@ -168,26 +173,26 @@ jobs:
       - name: Notify platform — success
         if: success()
         run: |
-          curl -sS -X POST \
-            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
-            -H "content-type: application/json" \
-            -d @- \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          cat > /tmp/callback.json <<EOF
           {
             "status": "succeeded",
             "githubRunId": "${{ github.run_id }}",
             "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
           EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'succeeded' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+          fi
 
       - name: Notify platform — failure
         if: failure()
         run: |
-          curl -sS -X POST \
-            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
-            -H "content-type: application/json" \
-            -d @- \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status" <<EOF
+          cat > /tmp/callback.json <<EOF
           {
             "status": "failed",
             "errorMessage": "Destroy workflow run ${{ github.run_id }} failed; see GitHub Actions logs.",
@@ -195,3 +200,11 @@ jobs:
             "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
           EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'failed' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+          fi

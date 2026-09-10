@@ -39,10 +39,16 @@ export default function UploadDocumentForm({ tenantId }: { tenantId: string }) {
           file.size,
         );
       } catch (err) {
+        // Only a genuine bug reaches here, and in production its message is
+        // React's redacted placeholder — the reason is in the server log.
         throw new Error(
           `Couldn't get an upload link from the platform. ${err instanceof Error ? err.message : String(err)}`,
         );
       }
+
+      // Everything the action expects to go wrong arrives as a real sentence.
+      if (!requested.ok) throw new Error(requested.error);
+
       documentId = requested.documentId;
       const { url, fields } = requested;
 
