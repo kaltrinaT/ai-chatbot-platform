@@ -22,6 +22,8 @@
  */
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const BUCKET = process.env.BUCKET;
 if (!BUCKET) {
@@ -34,6 +36,10 @@ if (!BUCKET) {
 // loop; a tenant bucket holding 100k versions is not a thing this platform
 // creates.
 const MAX_PASSES = 100;
+
+// Outside the checkout on purpose: the runner's working directory is the repo,
+// and a batch file dropped there shows up as an untracked change.
+const BATCH_FILE = join(tmpdir(), "s3-delete-batch.json");
 
 /** Runs an AWS CLI command. Returns parsed JSON, or null if the call failed. */
 function aws(args, { quiet = false } = {}) {
@@ -64,8 +70,8 @@ for (let pass = 0; pass < MAX_PASSES; pass++) {
   }));
   if (items.length === 0) break;
 
-  writeFileSync("delete.json", JSON.stringify({ Objects: items, Quiet: true }));
-  if (aws(["s3api", "delete-objects", "--bucket", BUCKET, "--delete", "file://delete.json"]) === null) {
+  writeFileSync(BATCH_FILE, JSON.stringify({ Objects: items, Quiet: true }));
+  if (aws(["s3api", "delete-objects", "--bucket", BUCKET, "--delete", `file://${BATCH_FILE}`]) === null) {
     break;
   }
   removed += items.length;
