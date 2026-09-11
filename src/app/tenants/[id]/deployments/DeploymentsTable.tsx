@@ -27,7 +27,7 @@ export default function DeploymentsTable({
           <tr className="border-b text-xs text-gray-500">
             <th className="px-4 py-2 font-medium">Deployment</th>
             <th className="px-4 py-2 font-medium">Status</th>
-            <th className="px-4 py-2 font-medium">Environment</th>
+            <th className="px-4 py-2 font-medium">Region</th>
             <th className="px-4 py-2 font-medium">Started At</th>
             <th className="px-4 py-2 font-medium">Duration</th>
             <th className="px-4 py-2 font-medium">Deployed By</th>
@@ -54,11 +54,7 @@ export default function DeploymentsTable({
                     {status.label}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-xs text-gray-600">
-                  <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
-                  Production
-                  <div className="text-gray-400">{region}</div>
-                </td>
+                <td className="px-4 py-3 text-xs text-gray-600">{region}</td>
                 <td className="px-4 py-3 text-xs text-gray-500">{d.startedAt.toLocaleString()}</td>
                 <td className="px-4 py-3 text-xs text-gray-600">
                   {formatDuration(d.startedAt, d.finishedAt)}

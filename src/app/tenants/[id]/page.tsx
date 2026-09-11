@@ -21,6 +21,7 @@ import { db } from "@/db";
 import { tenants, deployments, tenantDocuments, users } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { estimateMonthlyCost } from "@/lib/pricing";
+import { docsBucketName } from "@/lib/reindex";
 import RedeployButton from "./RedeployButton";
 import DeploymentProgress from "./DeploymentProgress";
 import DeleteTenantButton from "./DeleteTenantButton";
@@ -190,7 +191,7 @@ export default async function TenantDetailPage({
             { label: "Backend Service", value: `chatbot-${tenant.slug}` },
             { label: "Frontend Service", value: `chatbot-${tenant.slug}-frontend` },
             { label: "Load Balancer", value: tenant.albDnsName ?? `chatbot-${tenant.slug}-alb` },
-            { label: "Documents Storage", value: tenant.s3DocsBucket ?? `chatbot-${tenant.slug}-docs` },
+            { label: "Documents Storage", value: docsBucketName(tenant) },
           ],
           vectorStoreLabel: tenant.vectorStore === "pgvector" ? "Amazon RDS (pgvector)" : "Pinecone (external)",
           secretsCount: [tenant.llmSecretArn, tenant.pineconeSecretArn, tenant.docsSignerSecretArn].filter(Boolean)
@@ -250,7 +251,7 @@ export default async function TenantDetailPage({
             resource: "Document Storage",
             service: "Amazon S3",
             purpose: "Stores uploaded knowledge-base documents",
-            identifier: tenant.s3DocsBucket ?? `chatbot-${tenant.slug}-docs`,
+            identifier: docsBucketName(tenant),
           },
           {
             resource: "Runtime Secrets",
@@ -567,7 +568,6 @@ export default async function TenantDetailPage({
                       "—"
                     )}
                   </SummaryRow>
-                  <SummaryRow label="Environment">Production</SummaryRow>
                   <SummaryRow label="Runtime">{runtimeLabel}</SummaryRow>
                   <SummaryRow label="Documents Storage">{docsStorageLabel}</SummaryRow>
                   <SummaryRow label="Secrets">{secretsLabel}</SummaryRow>

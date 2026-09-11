@@ -52,7 +52,7 @@ export default async function DeploymentDetailsPanel({
         <DetailRow label="Started">{deployment.startedAt.toLocaleString()}</DetailRow>
         <DetailRow label="Completed">{deployment.finishedAt ? deployment.finishedAt.toLocaleString() : "—"}</DetailRow>
         <DetailRow label="Duration">{formatDuration(deployment.startedAt, deployment.finishedAt)}</DetailRow>
-        <DetailRow label="Environment">{`Production (${region})`}</DetailRow>
+        <DetailRow label="Region">{region}</DetailRow>
         <DetailRow label="Version">v{deployment.chatbotVersion}</DetailRow>
         <DetailRow label="GitHub Run">
           {deployment.githubRunUrl ? (
