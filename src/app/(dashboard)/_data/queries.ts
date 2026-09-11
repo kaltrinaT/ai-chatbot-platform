@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { tenants, deployments, tenantDocuments } from "@/db/schema";
+import { tenants, deployments, tenantDocuments, tenantDrafts } from "@/db/schema";
 import { and, eq, desc, ilike, isNull, isNotNull, or } from "drizzle-orm";
 
 export type TenantRow = typeof tenants.$inferSelect;
@@ -62,6 +62,19 @@ export async function getAllDeploys(ownerId: string): Promise<DeployJoinRow[]> {
     .innerJoin(tenants, eq(deployments.tenantId, tenants.id))
     .where(eq(tenants.ownerUserId, ownerId))
     .orderBy(desc(deployments.startedAt));
+}
+
+export type DraftRow = typeof tenantDrafts.$inferSelect;
+
+// Unfinished onboarding forms. Without this the wizard's "Save Draft" is a
+// one-way door: a draft is only resumable via /tenants/new?draft=<id>, and
+// nothing else in the UI ever surfaces that id.
+export async function getDraftsForOwner(ownerId: string): Promise<DraftRow[]> {
+  return db
+    .select()
+    .from(tenantDrafts)
+    .where(eq(tenantDrafts.ownerUserId, ownerId))
+    .orderBy(desc(tenantDrafts.updatedAt));
 }
 
 export type DocJoinRow = { document: typeof tenantDocuments.$inferSelect; tenantName: string };

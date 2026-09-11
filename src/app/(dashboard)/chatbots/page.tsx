@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { auth } from "@/auth";
-import { getAllDeploys, getAllDocs, getTenantsForOwner } from "../_data/queries";
+import { getAllDeploys, getAllDocs, getDraftsForOwner, getTenantsForOwner } from "../_data/queries";
 import {
   computeChatbotsPageStats,
   filterAndSortTenants,
@@ -14,6 +14,7 @@ import ChatbotsStatsRow from "../_components/ChatbotsStatsRow";
 import ChatbotsFilterBar from "../_components/ChatbotsFilterBar";
 import ChatbotsTable from "../_components/ChatbotsTable";
 import ChatbotsGrid from "../_components/ChatbotsGrid";
+import DraftsCard from "../_components/DraftsCard";
 import DashboardShell from "../_components/DashboardShell";
 
 const PAGE_SIZE = 20;
@@ -84,10 +85,11 @@ export default async function ChatbotsPage({
   const pageHref = (p: number) => buildHref({ page: p });
   const tabHref = (deleted: boolean) => buildHref({ tab: deleted, page: 1 });
 
-  const [matchingTenants, allDeploys, allDocs] = await Promise.all([
+  const [matchingTenants, allDeploys, allDocs, drafts] = await Promise.all([
     getTenantsForOwner(ownerId, { showDeleted, search: q, cloud, llmProvider, vectorStore }),
     getAllDeploys(ownerId),
     getAllDocs(ownerId),
+    getDraftsForOwner(ownerId),
   ]);
   const latestByTenant = latestDeployByTenant(allDeploys);
   const stats = computeChatbotsPageStats(matchingTenants, latestByTenant, allDocs);
@@ -118,6 +120,10 @@ export default async function ChatbotsPage({
         </header>
 
         <ChatbotsStatsRow stats={stats} />
+
+        {/* Drafts are unfinished tenants, so they belong with the active list
+            rather than under the Deleted tab. Renders nothing when empty. */}
+        {!showDeleted && <DraftsCard drafts={drafts} />}
 
         <div className="rounded-lg border bg-white">
           <div className="flex items-center gap-1 border-b px-4 pt-3">
