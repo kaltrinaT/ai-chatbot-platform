@@ -36,9 +36,12 @@ on:
       llm_secret_arn:
         required: true
         type: string
+      # Optional: a tenant onboarded before the docs-signer shipped has no such
+      # secret, and must still be destroyable. See buildDestroyInputs.
       docs_signer_secret_arn:
-        required: true
+        required: false
         type: string
+        default: ""
       llm_model:
         required: false
         type: string

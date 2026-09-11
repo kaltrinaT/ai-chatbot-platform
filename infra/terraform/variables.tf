@@ -137,10 +137,16 @@ variable "llm_secret_arn" {
 variable "docs_signer_secret_arn" {
   description = "ARN of the Secrets Manager secret holding the docs-signer Lambda's shared auth secret. Written once by the platform during onboarding, like llm_secret_arn — Terraform only ever references the ARN, never the value."
   type        = string
+  default     = ""
 
+  # Empty is permitted for ONE case: destroying a tenant onboarded before the
+  # docs-signer shipped, which has no such secret to name. A deploy always
+  # carries a real ARN, because triggerDeployment backfills one before
+  # dispatching (see the docsSignerSecretArn branch in src/lib/deploy.ts), so
+  # the empty case never reaches an apply.
   validation {
-    condition     = can(regex("^arn:aws:secretsmanager:[a-z]{2}-[a-z]+-[0-9]:[0-9]{12}:secret:.+$", var.docs_signer_secret_arn))
-    error_message = "docs_signer_secret_arn must be a valid Secrets Manager ARN."
+    condition     = var.docs_signer_secret_arn == "" || can(regex("^arn:aws:secretsmanager:[a-z]{2}-[a-z]+-[0-9]:[0-9]{12}:secret:.+$", var.docs_signer_secret_arn))
+    error_message = "docs_signer_secret_arn must be empty or a valid Secrets Manager ARN."
   }
 }
 

@@ -244,7 +244,12 @@ function buildAwsDestroyInputs(tenant: TenantRow, deploymentId: string): Record<
     llm_model: tenant.llmModel ?? "",
     vector_store: tenant.vectorStore,
     pinecone_secret_arn: tenant.pineconeSecretArn ?? "",
-    docs_signer_secret_arn: tenant.docsSignerSecretArn!,
+    // Nullable here, unlike on the deploy path below, where triggerDeployment
+    // has already backfilled it. A tenant onboarded before the docs-signer
+    // shipped has no secret to name, and asserting non-null dropped the key
+    // from the dispatch entirely, which GitHub rejects as a missing required
+    // input — making exactly those legacy tenants impossible to tear down.
+    docs_signer_secret_arn: tenant.docsSignerSecretArn ?? "",
   };
 }
 
