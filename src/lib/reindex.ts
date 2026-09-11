@@ -3,6 +3,22 @@ import type { tenants } from "@/db/schema";
 type Tenant = typeof tenants.$inferSelect;
 
 /**
+ * The tenant's document bucket.
+ *
+ * `tenants.s3DocsBucket` exists in the schema but nothing ever writes to it —
+ * not onboarding, not the deployment webhook, not the reconcile path — so it
+ * is null for every tenant. The name is deterministic anyway: Terraform
+ * creates `chatbot-${var.tenant_slug}-docs` (infra/terraform/main.tf), and the
+ * tenant page has always derived it that way.
+ *
+ * Deriving it here too is what stops a reindex posting `"bucket": null` to the
+ * chatbot backend, which answers 500.
+ */
+export function docsBucketName(tenant: Pick<Tenant, "slug" | "s3DocsBucket">): string {
+  return tenant.s3DocsBucket ?? `chatbot-${tenant.slug}-docs`;
+}
+
+/**
  * Triggers the tenant's own chatbot backend to (re)load documents from S3
  * into its vector store. Per CHATBOT-LOGIC.md, POST /api/index does a full
  * resync of everything under the prefix — it does not incrementally embed
@@ -23,7 +39,7 @@ export async function triggerReindex(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         tenant_id: tenant.slug,
-        bucket: tenant.s3DocsBucket,
+        bucket: docsBucketName(tenant),
         prefix: tenant.s3DocsPrefix ?? "",
       }),
       signal: AbortSignal.timeout(120_000),

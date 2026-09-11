@@ -1,9 +1,40 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { triggerReindex } from "./reindex";
+import { triggerReindex, docsBucketName } from "./reindex";
+
+describe("docsBucketName", () => {
+  it("uses the stored bucket when there is one", () => {
+    expect(docsBucketName({ slug: "acme-co", s3DocsBucket: "custom-bucket" })).toBe("custom-bucket");
+  });
+
+  // s3DocsBucket is null for every real tenant: the column exists but nothing
+  // writes to it. Without this fallback a reindex posts "bucket": null and the
+  // chatbot backend answers 500.
+  it("derives Terraform's name when the column is null, as it always is", () => {
+    expect(docsBucketName({ slug: "acme-co", s3DocsBucket: null })).toBe("chatbot-acme-co-docs");
+  });
+});
 
 describe("triggerReindex", () => {
   beforeEach(() => {
     global.fetch = vi.fn();
+  });
+
+  it("never sends a null bucket, even when the column is unset", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+
+    await triggerReindex({
+      slug: "acme-co",
+      chatbotUrl: "http://chatbot-acme-co.us-east-1.elb.amazonaws.com",
+      s3DocsBucket: null,
+      s3DocsPrefix: null,
+    });
+
+    const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      tenant_id: "acme-co",
+      bucket: "chatbot-acme-co-docs",
+      prefix: "",
+    });
   });
 
   it("returns ok:false without calling fetch when the tenant has no chatbotUrl", async () => {
