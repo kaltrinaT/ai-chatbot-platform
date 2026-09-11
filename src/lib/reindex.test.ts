@@ -14,9 +14,18 @@ describe("docsBucketName", () => {
   });
 });
 
+const tenant = () => ({
+  slug: "acme-co",
+  chatbotUrl: "http://chatbot.example.com",
+  s3DocsBucket: "b",
+  s3DocsPrefix: "",
+});
+
 describe("triggerReindex", () => {
   beforeEach(() => {
     global.fetch = vi.fn();
+    // The failure path logs the real error; keep it out of the test output.
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   it("never sends a null bucket, even when the column is unset", async () => {
@@ -95,29 +104,62 @@ describe("triggerReindex", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("returns ok:false with the status code when the backend responds with an error", async () => {
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, status: 502 });
-
-    const result = await triggerReindex({
-      slug: "acme-co",
-      chatbotUrl: "http://chatbot.example.com",
-      s3DocsBucket: "b",
-      s3DocsPrefix: "",
+  it("returns the status code and the backend's own explanation", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => '{"detail":"Configuration error: ids[0] must be a string"}',
     });
 
-    expect(result).toEqual({ ok: false, error: "Reindex endpoint returned 502" });
+    const result = await triggerReindex(tenant());
+
+    // The body is where the backend says what went wrong. Reporting only the
+    // status number sent us chasing the wrong layer for hours.
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining("Configuration error: ids[0] must be a string"),
+    });
+    expect((result as { error: string }).error).toContain("500");
   });
 
-  it("returns ok:false with the error message when fetch itself rejects (network error)", async () => {
-    (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fetch failed"));
-
-    const result = await triggerReindex({
-      slug: "acme-co",
-      chatbotUrl: "http://chatbot.example.com",
-      s3DocsBucket: "b",
-      s3DocsPrefix: "",
+  it("still reports the status when the error body cannot be read", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 502,
+      text: async () => {
+        throw new Error("stream consumed");
+      },
     });
 
-    expect(result).toEqual({ ok: false, error: "fetch failed" });
+    expect(await triggerReindex(tenant())).toEqual({
+      ok: false,
+      error: "Reindex endpoint returned 502",
+    });
+  });
+
+  // Node reports every transport-level problem as the bare string "fetch
+  // failed" and puts the reason in `cause`. Surfacing only the message told
+  // the operator nothing at all.
+  it("unwraps the cause instead of reporting a bare 'fetch failed'", async () => {
+    const err = new Error("fetch failed");
+    err.cause = Object.assign(new Error("getaddrinfo ENOTFOUND chatbot.example.com"), {
+      code: "ENOTFOUND",
+    });
+    (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(err);
+
+    const result = await triggerReindex(tenant());
+
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("ENOTFOUND") });
+    expect((result as { error: string }).error).not.toBe("fetch failed");
+  });
+
+  it("names a timeout as a timeout, since the backend may still be working", async () => {
+    const err = new Error("The operation was aborted due to timeout");
+    err.name = "TimeoutError";
+    (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(err);
+
+    const result = await triggerReindex(tenant());
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/did not finish within 120s/) });
   });
 });

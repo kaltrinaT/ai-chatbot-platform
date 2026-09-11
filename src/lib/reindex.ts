@@ -18,6 +18,12 @@ export function docsBucketName(tenant: Pick<Tenant, "slug" | "s3DocsBucket">): s
   return tenant.s3DocsBucket ?? `chatbot-${tenant.slug}-docs`;
 }
 
+// Indexing is synchronous over HTTP and scales with the number of documents
+// under the prefix, since /api/index resyncs all of them rather than just the
+// one that changed. Kept below the tenant ALB's idle timeout (180s, see
+// aws_lb.this) so the caller is what gives up rather than the proxy.
+const REINDEX_TIMEOUT_MS = 120_000;
+
 /**
  * Triggers the tenant's own chatbot backend to (re)load documents from S3
  * into its vector store. Per CHATBOT-LOGIC.md, POST /api/index does a full
@@ -42,13 +48,45 @@ export async function triggerReindex(
         bucket: docsBucketName(tenant),
         prefix: tenant.s3DocsPrefix ?? "",
       }),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(REINDEX_TIMEOUT_MS),
     });
     if (!res.ok) {
-      return { ok: false, error: `Reindex endpoint returned ${res.status}` };
+      const detail = await res.text().catch(() => "");
+      return {
+        ok: false,
+        error: `Reindex endpoint returned ${res.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`,
+      };
     }
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    console.error(`[triggerReindex] ${tenant.slug} -> ${tenant.chatbotUrl}/api/index failed`, err);
+    return { ok: false, error: describeFetchFailure(err) };
   }
+}
+
+/**
+ * Node's fetch reports every transport-level problem as the single word
+ * "fetch failed" and hides the reason in `cause`, which the caller used to
+ * throw away. A DNS failure, a refused connection, a reset mid-upload and an
+ * aborted request all looked identical, and none of them said anything.
+ */
+function describeFetchFailure(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+
+  // AbortSignal.timeout fires this, and it is worth naming separately: the
+  // request was fine, the backend was just slower than we allow.
+  if (err.name === "TimeoutError") {
+    return `Reindex did not finish within ${REINDEX_TIMEOUT_MS / 1000}s. It may still be running.`;
+  }
+  if (err.name === "AbortError") {
+    return "Reindex request was aborted before it completed.";
+  }
+
+  const cause = err.cause as { code?: string; message?: string } | undefined;
+  const code = cause?.code;
+  if (code) {
+    return `Could not reach the chatbot backend (${code}).`;
+  }
+  const detail = cause?.message ?? err.message;
+  return `Could not reach the chatbot backend: ${detail}`;
 }
