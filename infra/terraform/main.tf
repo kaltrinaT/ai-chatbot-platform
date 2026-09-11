@@ -289,7 +289,10 @@ resource "aws_s3_bucket_cors_configuration" "docs" {
 
   cors_rule {
     allowed_methods = ["POST"]
-    allowed_origins = [var.platform_origin]
+    # compact() drops extra_cors_origin when it's empty, so a tenant deploy
+    # allows exactly the platform's own origin and nothing more. Mirrors
+    # azure_storage_account.docs in infra/terraform/azure/main.tf.
+    allowed_origins = compact([var.platform_origin, var.extra_cors_origin])
     allowed_headers = ["*"]
     max_age_seconds = 3000
   }

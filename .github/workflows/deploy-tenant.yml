@@ -235,7 +235,8 @@ jobs:
             -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
             -var "domain=${{ inputs.domain }}" \
             -var "docs_signer_secret_arn=${{ inputs.docs_signer_secret_arn }}" \
-            -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
+            -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
+            -var "extra_cors_origin=${{ vars.EXTRA_CORS_ORIGIN }}"
 
       # The one piece of tenant infrastructure Terraform cannot express here.
       #

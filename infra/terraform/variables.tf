@@ -149,6 +149,19 @@ variable "platform_origin" {
   type        = string
 }
 
+# Mirrors extra_cors_origin in infra/terraform/azure/variables.tf — the two
+# clouds should agree on which origins may upload, and only Azure had this.
+variable "extra_cors_origin" {
+  description = "Additional origin allowed to upload to the docs bucket, alongside platform_origin. Intended for a developer machine (e.g. http://localhost:3000) while testing; empty for normal tenant deploys."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.extra_cors_origin == "" || can(regex("^https?://", var.extra_cors_origin))
+    error_message = "extra_cors_origin must be empty or a scheme-qualified origin, e.g. http://localhost:3000."
+  }
+}
+
 variable "max_docs_upload_mb" {
   description = "Maximum single-document upload size in MB, enforced by the docs-signer Lambda's S3 presigned-POST policy."
   type        = number
