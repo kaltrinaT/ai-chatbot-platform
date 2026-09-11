@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1060" width="1240" height="1060" role="img" aria-label="Azure deployment pipeline end to end: nothing exists in the subscription beforehand, so every secret travels with the run and Terraform must apply twice, once to create the registry and again once the images are pushed.">
+  <rect x="0" y="0" width="1240" height="1060" fill="#ffffff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f343d"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#146b58"/>
+    </marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b93a1"/>
+    </marker>
+  </defs>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="52" font-size="16" font-weight="bold">Azure — one tenant, from form submission to a running chatbot</text>
+    <text x="60" y="74" font-size="11.5" fill="#5b6270">The subscription is empty until the run starts, which forces both of this pipeline's distinguishing features: secrets in the run, and two applies.</text>
+
+    <text x="60" y="112" font-size="11" font-weight="bold" fill="#5b6270">WHAT THE PLATFORM AND THE RUN DO, IN ORDER</text>
+    <text x="650" y="112" font-size="11" font-weight="bold" fill="#146b58">WHAT EXISTS IN THE CUSTOMER'S AZURE SUBSCRIPTION</text>
+
+    <!-- onboarding -->
+    <rect x="60" y="126" width="540" height="94" rx="4" fill="#eef3fb" stroke="#1f4e9c" stroke-width="1.4"/>
+    <text x="76" y="150" font-size="12" font-weight="bold" fill="#1f4e9c">At onboarding, before any run exists</text>
+    <text x="76" y="170" font-size="10.5" fill="#3d4350">The platform generates the signer secret and encrypts it, along with the LLM key,</text>
+    <text x="76" y="186" font-size="10.5" fill="#3d4350">the Pinecone key and the service principal's client secret. All stay in its database.</text>
+    <text x="76" y="206" font-size="10.5" fill="#a13b12">No Azure call is possible here — there is no vault to write to, and no ARN to keep.</text>
+
+    <line x1="602" y1="173" x2="646" y2="173" stroke="#8b93a1" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#am)"/>
+
+    <rect x="650" y="126" width="530" height="94" rx="4" fill="#f6f7f9" stroke="#9aa1ad" stroke-width="1.4" stroke-dasharray="6 4"/>
+    <text x="666" y="150" font-size="12" font-weight="bold" fill="#5b6270">Nothing at all</text>
+    <text x="666" y="170" font-size="10.5" fill="#5b6270">Not a resource group, not a vault, not a registry.</text>
+    <text x="666" y="186" font-size="10.5" fill="#5b6270">The platform holds a service principal for this subscription and nothing more,</text>
+    <text x="666" y="206" font-size="10.5" fill="#5b6270">so every secret it will need must travel with the run that creates their home.</text>
+
+    <!-- run steps -->
+    <g font-size="12" font-weight="bold">
+      <text x="104" y="268">Mask every secret input, then notify the platform that the run started</text>
+      <text x="104" y="320">Unpack the config bundle</text>
+      <text x="104" y="372">Compute the deterministic resource names</text>
+      <text x="104" y="424">Pull both golden images from the platform's own registry</text>
+      <text x="104" y="476">Sign in to the subscription with its own service principal</text>
+      <text x="104" y="528">terraform init, against state held in the platform's bucket</text>
+      <text x="104" y="580">terraform apply, first pass — targeted</text>
+      <text x="104" y="632">Sign in to the new registry, retag and push both images</text>
+      <text x="104" y="684">terraform apply, second pass — the full graph</text>
+      <text x="104" y="736">Read the outputs, then push the signer's function code</text>
+      <text x="104" y="788">Upload the outputs as a run artifact and notify the platform</text>
+    </g>
+    <g font-size="10.5" fill="#5b6270">
+      <text x="104" y="284">four masked values: the client secret, the LLM key, the Pinecone key, the signer secret</text>
+      <text x="104" y="336">a dispatch takes only ten inputs, so the non-secret settings arrive as one JSON blob</text>
+      <text x="104" y="388">registry, storage account and vault names are derived from the slug, within Azure's limits</text>
+      <text x="104" y="440">an Azure deploy still authenticates to AWS for this step, and for the state backend below</text>
+      <text x="104" y="492">the credential the platform decrypted and sent as a masked input at dispatch</text>
+      <text x="104" y="544">azure/tenants/{slug}/terraform.tfstate — still an S3 bucket, on the platform's side</text>
+      <text x="104" y="596">resource group and container registry only, with placeholder image URIs</text>
+      <text x="104" y="648">the registry had to exist first; this is the step the two applies exist to separate</text>
+      <text x="104" y="700">vault and its secrets, storage, database, workspace, environment, apps — real image URIs now</text>
+      <text x="104" y="752">Terraform creates the function app; its code is deployed separately, right here</text>
+      <text x="104" y="804">succeeded or failed, carrying the chatbot URL and the signer URL</text>
+    </g>
+
+    <g fill="#ffffff" stroke="#2f343d" stroke-width="1.2">
+      <circle cx="78" cy="264" r="13"/>
+      <circle cx="78" cy="316" r="13"/>
+      <circle cx="78" cy="368" r="13"/>
+      <circle cx="78" cy="420" r="13"/>
+      <circle cx="78" cy="472" r="13"/>
+      <circle cx="78" cy="524" r="13"/>
+      <circle cx="78" cy="628" r="13"/>
+      <circle cx="78" cy="732" r="13"/>
+      <circle cx="78" cy="784" r="13"/>
+    </g>
+    <circle cx="78" cy="576" r="13" fill="#fbeee5" stroke="#a13b12" stroke-width="1.6"/>
+    <circle cx="78" cy="680" r="13" fill="#fbeee5" stroke="#a13b12" stroke-width="1.6"/>
+    <g font-size="11" text-anchor="middle" font-weight="bold">
+      <text x="78" y="268">1</text>
+      <text x="78" y="320">2</text>
+      <text x="78" y="372">3</text>
+      <text x="78" y="424">4</text>
+      <text x="78" y="476">5</text>
+      <text x="78" y="528">6</text>
+      <text x="78" y="580" fill="#a13b12">7</text>
+      <text x="78" y="632">8</text>
+      <text x="78" y="684" fill="#a13b12">9</text>
+      <text x="78" y="736">10</text>
+      <text x="78" y="788">11</text>
+    </g>
+
+    <line x1="78" y1="240" x2="78" y2="251" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="277" x2="78" y2="303" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="329" x2="78" y2="355" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="381" x2="78" y2="407" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="433" x2="78" y2="459" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="485" x2="78" y2="511" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="537" x2="78" y2="563" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="589" x2="78" y2="615" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="641" x2="78" y2="667" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="693" x2="78" y2="719" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="745" x2="78" y2="771" stroke="#c3c8d1" stroke-width="1.2"/>
+
+    <!-- first apply result -->
+    <rect x="650" y="248" width="530" height="72" rx="4" fill="#e9f3ef" stroke="#146b58" stroke-width="1.4"/>
+    <text x="666" y="272" font-size="12" font-weight="bold" fill="#146b58">Resource group and container registry</text>
+    <text x="666" y="292" font-size="10.5" fill="#3d4350">created alone, ahead of everything else, because the next step needs somewhere to push</text>
+    <text x="666" y="310" font-size="10.5" fill="#5b6270">the container app is still described with a placeholder image at this point</text>
+    <polyline points="602,576 618,576 618,284 646,284" fill="none" stroke="#a13b12" stroke-width="1.6" marker-end="url(#a)"/>
+
+    <!-- push result -->
+    <rect x="650" y="336" width="530" height="66" rx="4" fill="#e9f3ef" stroke="#146b58" stroke-width="1.4"/>
+    <text x="666" y="358" font-size="12" font-weight="bold" fill="#146b58">Both images, inside the tenant's registry</text>
+    <text x="666" y="378" font-size="10.5" fill="#3d4350">chatbot-backend and chatbot-frontend, tagged with this deployment's version</text>
+    <text x="666" y="394" font-size="10.5" fill="#5b6270">only now can a container app be created that actually starts</text>
+    <polyline points="602,628 634,628 634,370 646,370" fill="none" stroke="#146b58" stroke-width="1.4" marker-end="url(#ag)"/>
+
+    <!-- second apply result -->
+    <line x1="602" y1="680" x2="646" y2="680" stroke="#a13b12" stroke-width="1.6" marker-end="url(#a)"/>
+    <rect x="650" y="430" width="530" height="332" rx="4" fill="#e9f3ef" stroke="#146b58" stroke-width="1.6"/>
+    <text x="666" y="454" font-size="12" font-weight="bold" fill="#146b58">Everything else, created by the second apply</text>
+    <g font-size="10.5" fill="#3d4350">
+      <text x="666" y="478">Key Vault, and the secrets written into it in the same apply that creates it</text>
+      <text x="666" y="502">Storage account and a private blob container for the knowledge base</text>
+      <text x="666" y="526">Log Analytics workspace and the Container Apps environment bound to it</text>
+      <text x="666" y="550">Container App: frontend and backend in one replica, sharing localhost</text>
+      <text x="666" y="574">App secrets referencing the vault, plus the registry password</text>
+      <text x="666" y="598">docs-signer Function App, its plan and its own runtime storage account</text>
+      <text x="666" y="622">A custom role scoped to the storage account: delegate, write, delete. No read, no list.</text>
+      <text x="666" y="646">PostgreSQL Flexible Server with the vector extension allow-listed — when chosen</text>
+      <text x="666" y="670">A Pinecone index in the customer's own project — when that store was chosen instead</text>
+    </g>
+    <text x="666" y="700" font-size="10.5" fill="#a13b12" font-weight="bold">Each secret arrives as a Terraform variable, so its plaintext is present in the runner's</text>
+    <text x="666" y="716" font-size="10.5" fill="#a13b12" font-weight="bold">memory during this step. Masking keeps it out of the log, not out of the process.</text>
+    <text x="666" y="740" font-size="10.5" fill="#5b6270">The function app exists here but cannot serve yet: its code is pushed at step 10.</text>
+
+    <!-- outcome -->
+    <rect x="60" y="838" width="1120" height="86" rx="4" fill="#eef3fb" stroke="#1f4e9c" stroke-width="1.4"/>
+    <text x="76" y="862" font-size="12" font-weight="bold" fill="#1f4e9c">What the platform knows when the run ends</text>
+    <text x="76" y="884" font-size="10.5" fill="#3d4350">The chatbot URL and signer URL, plus the resource group, storage account, container and vault names Terraform assigned — the names it could not know before the run.</text>
+    <text x="76" y="904" font-size="10.5" fill="#3d4350">As on AWS it keeps no standing access, and reaches documents only through the signer URL using the shared secret it generated at onboarding.</text>
+
+    <text x="60" y="960" font-size="11" fill="#5b6270">Two differences from the AWS pipeline are structural rather than cosmetic. Terraform runs twice because a registry must exist before an image can be pushed into it, and a container</text>
+    <text x="60" y="980" font-size="11" fill="#5b6270">app cannot be created against an image that is not there. Every tenant secret passes through the runner, because the vault that will hold it is created by the very same run.</text>
+    <text x="60" y="1002" font-size="11" fill="#5b6270">One incidental dependency is worth noting for the evaluation: an Azure deployment still authenticates to AWS twice, for the source images and for the Terraform state backend.</text>
+  </g>
+</svg>

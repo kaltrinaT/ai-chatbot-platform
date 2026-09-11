@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 660" width="1240" height="660" role="img" aria-label="Normalised compute price: Azure allocates less CPU and memory than AWS yet costs more per month, so its price per allocated vCPU is substantially higher even after folding in the AWS load balancer.">
+  <rect x="0" y="0" width="1240" height="660" fill="#ffffff"/>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="44" font-size="16" font-weight="bold">The two clouds are not sized the same, so the bills are not comparable until they are normalised</text>
+    <text x="60" y="66" font-size="11.5" fill="#5b6270">Price per allocated vCPU-month, from the deployed sizing defaults. The right-hand pair folds the AWS load balancer in, since Azure's price already includes ingress.</text>
+
+    <!-- legend -->
+    <g>
+      <rect x="200" y="82" width="12" height="12" rx="2" fill="#2a78d6"/>
+      <text x="220" y="93" font-size="11" fill="#3d4350">AWS</text>
+      <rect x="290" y="82" width="12" height="12" rx="2" fill="#eb6834"/>
+      <text x="310" y="93" font-size="11" fill="#3d4350">Azure</text>
+    </g>
+
+    <!-- grid -->
+    <g stroke="#e1e0d9" stroke-width="1">
+      <line x1="200" y1="390" x2="700" y2="390"/>
+      <line x1="200" y1="310" x2="700" y2="310"/>
+      <line x1="200" y1="230" x2="700" y2="230"/>
+      <line x1="200" y1="150" x2="700" y2="150"/>
+    </g>
+    <g font-size="10.5" fill="#898781" text-anchor="end">
+      <text x="192" y="474">0</text>
+      <text x="192" y="394">20</text>
+      <text x="192" y="314">40</text>
+      <text x="192" y="234">60</text>
+      <text x="192" y="154">$80</text>
+    </g>
+    <line x1="200" y1="470" x2="700" y2="470" stroke="#c3c2b7" stroke-width="1.5"/>
+
+    <!-- group 1 -->
+    <rect x="274" y="326" width="62" height="144" fill="#2a78d6"/>
+    <rect x="344" y="155.3" width="62" height="314.7" fill="#eb6834"/>
+    <text x="305" y="318" font-size="12.5" font-weight="bold" text-anchor="middle">$36</text>
+    <text x="375" y="147" font-size="12.5" font-weight="bold" text-anchor="middle">$79</text>
+
+    <!-- group 2 -->
+    <rect x="494" y="268.4" width="62" height="201.6" fill="#2a78d6"/>
+    <rect x="564" y="155.3" width="62" height="314.7" fill="#eb6834"/>
+    <text x="525" y="260" font-size="12.5" font-weight="bold" text-anchor="middle">$50</text>
+    <text x="595" y="147" font-size="12.5" font-weight="bold" text-anchor="middle">$79</text>
+
+    <!-- group labels -->
+    <g text-anchor="middle">
+      <text x="340" y="494" font-size="12.5" font-weight="bold">Compute price only</text>
+      <text x="560" y="494" font-size="12.5" font-weight="bold">Compute plus ingress</text>
+      <text x="340" y="512" font-size="10.5" fill="#52514e">the container lines alone</text>
+      <text x="560" y="512" font-size="10.5" fill="#52514e">AWS load balancer added; Azure unchanged</text>
+    </g>
+    <text x="450" y="540" font-size="11" fill="#52514e" text-anchor="middle">US$ per allocated vCPU per month</text>
+
+    <!-- table -->
+    <line x1="760" y1="110" x2="760" y2="470" stroke="#e1e0d9" stroke-width="1"/>
+    <text x="790" y="124" font-size="11" font-weight="bold" fill="#5b6270">WHAT EACH DEPLOYMENT ACTUALLY ALLOCATES</text>
+    <text x="1060" y="150" font-size="11" font-weight="bold" fill="#2a78d6" text-anchor="end">AWS</text>
+    <text x="1200" y="150" font-size="11" font-weight="bold" fill="#eb6834" text-anchor="end">Azure</text>
+    <line x1="790" y1="158" x2="1200" y2="158" stroke="#c3c2b7" stroke-width="1"/>
+    <g font-size="11" fill="#3d4350">
+      <text x="790" y="182">Backend container</text>
+      <text x="790" y="212">Frontend container</text>
+      <text x="790" y="242">Total allocated</text>
+      <text x="790" y="272">Monthly compute price</text>
+      <text x="790" y="302">Price per allocated vCPU</text>
+    </g>
+    <g font-size="11" text-anchor="end">
+      <text x="1060" y="182">1 vCPU · 2 GB</text>
+      <text x="1200" y="182">0.5 vCPU · 1 GiB</text>
+      <text x="1060" y="212">0.25 vCPU · 0.5 GB</text>
+      <text x="1200" y="212">0.25 vCPU · 0.5 GiB</text>
+      <text x="1060" y="242" font-weight="bold">1.25 vCPU · 2.5 GB</text>
+      <text x="1200" y="242" font-weight="bold">0.75 vCPU · 1.5 GiB</text>
+      <text x="1060" y="272">$45</text>
+      <text x="1200" y="272">$59</text>
+      <text x="1060" y="302" font-weight="bold">$36</text>
+      <text x="1200" y="302" font-weight="bold">$79</text>
+    </g>
+    <line x1="790" y1="318" x2="1200" y2="318" stroke="#c3c2b7" stroke-width="1"/>
+
+    <text x="790" y="344" font-size="11" font-weight="bold" fill="#a13b12">Worth checking before the campaign runs</text>
+    <g font-size="10.5" fill="#5b6270">
+      <text x="790" y="366">The backend loads a sentence-transformer model into memory</text>
+      <text x="790" y="382">on its first request. The chatbot's own notes put the minimum</text>
+      <text x="790" y="398">recommended task memory at 4 GB; these defaults allocate</text>
+      <text x="790" y="414">2 GB on AWS and 1 GiB on Azure.</text>
+      <text x="790" y="438">If a cold start fails or is slow in the deployment campaign,</text>
+      <text x="790" y="454">this is the first thing to look at — and it would affect the</text>
+      <text x="790" y="470">Azure cell harder than the AWS one.</text>
+    </g>
+
+    <!-- captions -->
+    <text x="60" y="586" font-size="11" fill="#5b6270">Sources: the sizing defaults in the two Terraform roots, and the compute lines from src/lib/pricing.ts. Azure allocates forty percent less CPU and memory than AWS, and still costs more</text>
+    <text x="60" y="606" font-size="11" fill="#5b6270">per month, so per unit of allocated capacity it is roughly twice the price. Folding in the AWS load balancer narrows the gap without closing it.</text>
+    <text x="60" y="630" font-size="11" fill="#5b6270">Two caveats belong in the text next to this figure. Allocated capacity is not delivered performance, and only the campaign's latency measurements can compare those. And Azure's</text>
+    <text x="60" y="650" font-size="11" fill="#5b6270">consumption plan bills per second with a monthly free grant, so a subscription running few tenants pays less than this figure shows, while a busy one pays more.</text>
+  </g>
+</svg>

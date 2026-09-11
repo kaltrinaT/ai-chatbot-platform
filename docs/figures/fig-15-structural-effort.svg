@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 620" width="1240" height="620" role="img" aria-label="Structural effort measures: the operator supplies five values on AWS and seven on Azure, which the platform expands into twenty-four or twenty-five Terraform inputs and forty-one or twenty-four provisioned resources.">
+  <rect x="0" y="0" width="1240" height="620" fill="#ffffff"/>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="44" font-size="16" font-weight="bold">From what the operator types to what the cloud runs</text>
+    <text x="60" y="66" font-size="11.5" fill="#5b6270">Three counts, all derivable from the repository without running an experiment. They measure the platform's structure, not any operator's speed.</text>
+
+    <!-- legend -->
+    <g>
+      <rect x="200" y="80" width="12" height="12" rx="2" fill="#2a78d6"/>
+      <text x="220" y="91" font-size="11" fill="#3d4350">AWS</text>
+      <rect x="290" y="80" width="12" height="12" rx="2" fill="#eb6834"/>
+      <text x="310" y="91" font-size="11" fill="#3d4350">Azure</text>
+    </g>
+
+    <!-- grid -->
+    <g stroke="#e1e0d9" stroke-width="1">
+      <line x1="200" y1="390" x2="820" y2="390"/>
+      <line x1="200" y1="310" x2="820" y2="310"/>
+      <line x1="200" y1="230" x2="820" y2="230"/>
+      <line x1="200" y1="150" x2="820" y2="150"/>
+    </g>
+    <g font-size="10.5" fill="#898781" text-anchor="end">
+      <text x="192" y="474">0</text>
+      <text x="192" y="394">10</text>
+      <text x="192" y="314">20</text>
+      <text x="192" y="234">30</text>
+      <text x="192" y="154">40</text>
+    </g>
+    <line x1="200" y1="470" x2="820" y2="470" stroke="#c3c2b7" stroke-width="1.5"/>
+
+    <!-- group 1: required fields -->
+    <rect x="254" y="430" width="62" height="40" fill="#2a78d6"/>
+    <rect x="324" y="414" width="62" height="56" fill="#eb6834"/>
+    <text x="285" y="422" font-size="12.5" font-weight="bold" text-anchor="middle">5</text>
+    <text x="355" y="406" font-size="12.5" font-weight="bold" text-anchor="middle">7</text>
+
+    <!-- group 2: terraform variables -->
+    <rect x="444" y="278" width="62" height="192" fill="#2a78d6"/>
+    <rect x="514" y="270" width="62" height="200" fill="#eb6834"/>
+    <text x="475" y="270" font-size="12.5" font-weight="bold" text-anchor="middle">24</text>
+    <text x="545" y="262" font-size="12.5" font-weight="bold" text-anchor="middle">25</text>
+
+    <!-- group 3: resources -->
+    <rect x="634" y="142" width="62" height="328" fill="#2a78d6"/>
+    <rect x="704" y="278" width="62" height="192" fill="#eb6834"/>
+    <text x="665" y="134" font-size="12.5" font-weight="bold" text-anchor="middle">41</text>
+    <text x="735" y="270" font-size="12.5" font-weight="bold" text-anchor="middle">24</text>
+
+    <!-- group labels -->
+    <g text-anchor="middle">
+      <text x="320" y="494" font-size="12.5" font-weight="bold">Values the operator types</text>
+      <text x="510" y="494" font-size="12.5" font-weight="bold">Terraform input variables</text>
+      <text x="700" y="494" font-size="12.5" font-weight="bold">Resources provisioned</text>
+      <g font-size="10.5" fill="#52514e">
+        <text x="320" y="512">required before the wizard</text>
+        <text x="320" y="528">will submit</text>
+        <text x="510" y="512">declared by the root module</text>
+        <text x="510" y="528">for that cloud</text>
+        <text x="700" y="512">created in the customer's</text>
+        <text x="700" y="528">account by one deployment</text>
+      </g>
+    </g>
+
+    <!-- right panel -->
+    <line x1="870" y1="110" x2="870" y2="470" stroke="#e1e0d9" stroke-width="1"/>
+    <text x="898" y="124" font-size="11" font-weight="bold" fill="#5b6270">WHAT THE GAP CONTAINS</text>
+    <g font-size="11" fill="#3d4350">
+      <text x="898" y="152">The nineteen AWS variables and eighteen Azure ones</text>
+      <text x="898" y="170">the operator never sees are filled from three places:</text>
+      <text x="898" y="188">sizing and retention defaults, names derived from the</text>
+      <text x="898" y="206">tenant slug, and values the cloud itself returns while</text>
+      <text x="898" y="224">the deployment runs.</text>
+
+      <text x="898" y="256">Resources created per value typed:</text>
+    </g>
+    <text x="898" y="286" font-size="22" font-weight="bold" fill="#2a78d6">8.2×</text>
+    <text x="960" y="286" font-size="11" fill="#52514e">on AWS</text>
+    <text x="898" y="316" font-size="22" font-weight="bold" fill="#eb6834">3.4×</text>
+    <text x="960" y="316" font-size="11" fill="#52514e">on Azure</text>
+
+    <g font-size="11" fill="#3d4350">
+      <text x="898" y="350">Azure asks for two more values because a service</text>
+      <text x="898" y="368">principal has four parts, and creates fewer resources</text>
+      <text x="898" y="386">because Container Apps bundles the networking and</text>
+      <text x="898" y="404">ingress that AWS requires to be declared one by one.</text>
+      <text x="898" y="432">The same chatbot comes out of both.</text>
+    </g>
+
+    <!-- captions -->
+    <text x="60" y="566" font-size="11" fill="#5b6270">Sources: REQUIRED_BY_STEP and REQUIRED_BY_CLOUD in the wizard, and the two Terraform roots under infra/. Counting them needs no experiment, which is what makes this the part of</text>
+    <text x="60" y="586" font-size="11" fill="#5b6270">the effort claim that stands on its own.</text>
+    <text x="60" y="610" font-size="11" fill="#5b6270">It is not the whole claim. Wall-clock time, discrete operator actions and the number of steps that handle a plaintext credential all require the manual baseline build, which is still to be run.</text>
+  </g>
+</svg>

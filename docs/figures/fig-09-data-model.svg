@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 730" width="1120" height="730" role="img" aria-label="Control-plane data model: users own tenants, which have deployments and documents; the tenant row carries one column set per cloud plus encrypted credentials.">
+  <rect x="0" y="0" width="1120" height="730" fill="#ffffff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f343d"/>
+    </marker>
+  </defs>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <!-- users -->
+    <rect x="60" y="60" width="240" height="130" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.4"/>
+    <rect x="60" y="60" width="240" height="26" rx="4" fill="#eef3fb" stroke="#2f343d" stroke-width="1.4"/>
+    <text x="72" y="78" font-size="12" font-weight="bold">users</text>
+    <g font-size="10" fill="#3d4350">
+      <text x="72" y="108">id — primary key</text>
+      <text x="72" y="123">name</text>
+      <text x="72" y="138">email — unique</text>
+      <text x="72" y="153">email_verified</text>
+      <text x="72" y="168">image</text>
+    </g>
+    <text x="72" y="184" font-size="9.5" fill="#5b6270">one operator account per GitHub login</text>
+
+    <!-- accounts -->
+    <rect x="60" y="220" width="240" height="110" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.4"/>
+    <rect x="60" y="220" width="240" height="26" rx="4" fill="#eef3fb" stroke="#2f343d" stroke-width="1.4"/>
+    <text x="72" y="238" font-size="12" font-weight="bold">accounts</text>
+    <g font-size="10" fill="#3d4350">
+      <text x="72" y="268">provider + provider_account_id — key</text>
+      <text x="72" y="283">user_id → users</text>
+      <text x="72" y="298">access_token, refresh_token, scope</text>
+      <text x="72" y="313">supplied by the auth adapter</text>
+    </g>
+
+    <!-- sessions -->
+    <rect x="60" y="360" width="240" height="86" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.4"/>
+    <rect x="60" y="360" width="240" height="26" rx="4" fill="#eef3fb" stroke="#2f343d" stroke-width="1.4"/>
+    <text x="72" y="378" font-size="12" font-weight="bold">sessions</text>
+    <g font-size="10" fill="#3d4350">
+      <text x="72" y="408">session_token — primary key</text>
+      <text x="72" y="423">user_id → users</text>
+      <text x="72" y="438">expires</text>
+    </g>
+
+    <!-- drafts -->
+    <rect x="60" y="480" width="240" height="170" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.4"/>
+    <rect x="60" y="480" width="240" height="26" rx="4" fill="#eef3fb" stroke="#2f343d" stroke-width="1.4"/>
+    <text x="72" y="498" font-size="12" font-weight="bold">tenant_drafts</text>
+    <g font-size="10" fill="#3d4350">
+      <text x="72" y="528">id — primary key</text>
+      <text x="72" y="543">owner_user_id → users</text>
+      <text x="72" y="558">name</text>
+      <text x="72" y="573">data — jsonb, non-secret fields only</text>
+      <text x="72" y="588">step</text>
+      <text x="72" y="603">created_at, updated_at</text>
+    </g>
+    <text x="72" y="624" font-size="9.5" fill="#a13b12">a half-finished wizard, deliberately not a</text>
+    <text x="72" y="638" font-size="9.5" fill="#a13b12">tenant row with nullable columns</text>
+
+    <!-- tenants -->
+    <rect x="360" y="60" width="460" height="470" rx="4" fill="#ffffff" stroke="#1f4e9c" stroke-width="1.6"/>
+    <rect x="360" y="60" width="460" height="26" rx="4" fill="#eef3fb" stroke="#1f4e9c" stroke-width="1.6"/>
+    <text x="372" y="78" font-size="12" font-weight="bold" fill="#1f4e9c">tenants</text>
+    <text x="808" y="78" font-size="9.5" fill="#5b6270" text-anchor="end">one deployed chatbot</text>
+
+    <g font-size="10" fill="#3d4350">
+      <text x="376" y="106">id — primary key</text>
+      <text x="376" y="121">name</text>
+      <text x="376" y="136">slug — unique, names every cloud resource</text>
+      <text x="376" y="151">owner_user_id → users</text>
+      <text x="376" y="166">cloud_provider — aws | azure</text>
+    </g>
+
+    <line x1="360" y1="180" x2="820" y2="180" stroke="#c3c8d1" stroke-width="1"/>
+    <text x="376" y="198" font-size="10" font-weight="bold" fill="#5b6270">SET WHEN cloud_provider = aws</text>
+    <text x="600" y="198" font-size="10" font-weight="bold" fill="#5b6270">SET WHEN cloud_provider = azure</text>
+    <g font-size="10" fill="#3d4350">
+      <text x="376" y="216">aws_account_id</text>
+      <text x="376" y="231">aws_region</text>
+      <text x="376" y="246">deployment_role_arn</text>
+      <text x="376" y="261">s3_docs_bucket</text>
+      <text x="376" y="276">s3_docs_prefix</text>
+      <text x="376" y="291">llm_secret_arn</text>
+      <text x="376" y="306">pinecone_secret_arn</text>
+      <text x="376" y="321">docs_signer_secret_arn</text>
+
+      <text x="600" y="216">azure_subscription_id</text>
+      <text x="600" y="231">azure_tenant_id</text>
+      <text x="600" y="246">azure_client_id</text>
+      <text x="600" y="261">azure_client_secret_encrypted ◆</text>
+      <text x="600" y="276">azure_resource_group</text>
+      <text x="600" y="291">azure_region</text>
+      <text x="600" y="306">azure_storage_account</text>
+      <text x="600" y="321">azure_storage_container</text>
+      <text x="600" y="336">azure_key_vault_name</text>
+    </g>
+
+    <line x1="360" y1="352" x2="820" y2="352" stroke="#c3c8d1" stroke-width="1"/>
+    <text x="376" y="370" font-size="10" font-weight="bold" fill="#5b6270">SHARED BY BOTH CLOUDS</text>
+    <g font-size="10" fill="#3d4350">
+      <text x="376" y="390">llm_provider — openai | anthropic | openrouter</text>
+      <text x="376" y="405">llm_api_key_encrypted ◆</text>
+      <text x="376" y="420">llm_model, llm_base_url</text>
+      <text x="376" y="435">vector_store — pinecone | pgvector</text>
+      <text x="376" y="450">pinecone_api_key_encrypted ◆</text>
+      <text x="376" y="465">docs_signer_secret_encrypted ◆</text>
+      <text x="376" y="480">docs_signer_url</text>
+
+      <text x="640" y="390">chatbot_version</text>
+      <text x="640" y="405">domain</text>
+      <text x="640" y="420">alb_dns_name</text>
+      <text x="640" y="435">chatbot_url</text>
+      <text x="640" y="450">config — jsonb</text>
+      <text x="640" y="465">created_at, updated_at</text>
+      <text x="640" y="480">deleted_at — soft delete</text>
+    </g>
+    <text x="376" y="498" font-size="9.5" fill="#a13b12">◆ AES-256-GCM encrypted at rest. Every other credential column holds only a</text>
+    <text x="376" y="511" font-size="9.5" fill="#a13b12">reference — an ARN or a vault URL — never a value.</text>
+    <text x="376" y="524" font-size="9.5" fill="#5b6270">The two cloud column groups are exclusive: one table, not one table per cloud.</text>
+
+    <!-- deployments -->
+    <rect x="860" y="60" width="220" height="250" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.4"/>
+    <rect x="860" y="60" width="220" height="26" rx="4" fill="#eef3fb" stroke="#2f343d" stroke-width="1.4"/>
+    <text x="872" y="78" font-size="12" font-weight="bold">deployments</text>
+    <g font-size="10" fill="#3d4350">
+      <text x="872" y="106">id — primary key</text>
+      <text x="872" y="121">tenant_id → tenants</text>
+      <text x="872" y="136">kind — deploy | destroy</text>
+      <text x="872" y="151">status — five states</text>
+      <text x="872" y="166">chatbot_version</text>
+      <text x="872" y="181">github_run_id</text>
+      <text x="872" y="196">github_run_url</text>
+      <text x="872" y="211">triggered_by_user_id → users</text>
+      <text x="872" y="226">started_at</text>
+      <text x="872" y="241">finished_at</text>
+      <text x="872" y="256">error_message</text>
+    </g>
+    <text x="872" y="278" font-size="9.5" fill="#5b6270">A teardown reuses this table so it</text>
+    <text x="872" y="292" font-size="9.5" fill="#5b6270">inherits the same progress and</text>
+    <text x="872" y="306" font-size="9.5" fill="#5b6270">reconciliation machinery.</text>
+
+    <!-- documents -->
+    <rect x="860" y="340" width="220" height="210" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.4"/>
+    <rect x="860" y="340" width="220" height="26" rx="4" fill="#eef3fb" stroke="#2f343d" stroke-width="1.4"/>
+    <text x="872" y="358" font-size="12" font-weight="bold">tenant_documents</text>
+    <g font-size="10" fill="#3d4350">
+      <text x="872" y="386">id — primary key</text>
+      <text x="872" y="401">tenant_id → tenants</text>
+      <text x="872" y="416">object_key — minted by the signer</text>
+      <text x="872" y="431">display_name</text>
+      <text x="872" y="446">content_type</text>
+      <text x="872" y="461">size_bytes</text>
+      <text x="872" y="476">status — pending | uploaded | failed</text>
+      <text x="872" y="491">uploaded_by_user_id → users</text>
+      <text x="872" y="506">created_at, updated_at</text>
+    </g>
+    <text x="872" y="528" font-size="9.5" fill="#a13b12">This table, not a bucket listing, is</text>
+    <text x="872" y="542" font-size="9.5" fill="#a13b12">what the document list is drawn from.</text>
+
+    <!-- relations -->
+    <line x1="302" y1="151" x2="356" y2="151" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="329" y="143" font-size="9.5" text-anchor="middle">1 : N</text>
+
+    <polyline points="180,190 180,204 44,204 44,565" fill="none" stroke="#2f343d" stroke-width="1.4"/>
+    <line x1="44" y1="275" x2="56" y2="275" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <line x1="44" y1="403" x2="56" y2="403" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <line x1="44" y1="565" x2="56" y2="565" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="190" y="202" font-size="9.5">1 : N</text>
+
+    <line x1="822" y1="130" x2="856" y2="130" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="839" y="122" font-size="9.5" text-anchor="middle">1 : N</text>
+    <line x1="822" y1="410" x2="856" y2="410" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="839" y="402" font-size="9.5" text-anchor="middle">1 : N</text>
+
+    <text x="60" y="686" font-size="11" fill="#5b6270">Deleting a user cascades to their tenants, drafts and sessions; deleting a tenant cascades to its deployments and documents. A tenant is never hard-deleted in practice — a successful teardown</text>
+    <text x="60" y="706" font-size="11" fill="#5b6270">stamps deleted_at instead, so the deployment and document history survives for audit while the tenant drops out of the active dashboard and can no longer be redeployed.</text>
+  </g>
+</svg>

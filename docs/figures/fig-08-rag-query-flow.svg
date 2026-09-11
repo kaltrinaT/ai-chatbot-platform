@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 660" width="1120" height="660" role="img" aria-label="Runtime retrieval-augmented generation: a question is embedded, matched against the tenant's own vector store, wrapped in a context-only prompt and answered by the configured LLM provider.">
+  <rect x="0" y="0" width="1120" height="660" fill="#ffffff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f343d"/>
+    </marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
+    </marker>
+  </defs>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <rect x="60" y="28" width="240" height="56" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.2"/>
+    <text x="180" y="52" font-size="12.5" font-weight="bold" text-anchor="middle">End user</text>
+    <text x="180" y="72" font-size="10.5" fill="#5b6270" text-anchor="middle">asks a question in the chat UI</text>
+
+    <line x1="180" y1="84" x2="180" y2="166" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="192" y="120" font-size="10.5">POST /api/ask</text>
+    <text x="192" y="136" font-size="10.5" fill="#5b6270">question, tenant id, top-k</text>
+
+    <!-- account band -->
+    <rect x="40" y="110" width="1045" height="272" rx="6" fill="#e9f3ef" stroke="#146b58" stroke-width="1.5"/>
+    <text x="1065" y="132" font-size="12" font-weight="bold" text-anchor="end" fill="#146b58">CUSTOMER CLOUD ACCOUNT — the chatbot backend container</text>
+
+    <g fill="#ffffff" stroke="#2f343d" stroke-width="1.2">
+      <rect x="60" y="168" width="185" height="152" rx="4"/>
+      <rect x="255" y="168" width="185" height="152" rx="4"/>
+      <rect x="450" y="168" width="185" height="152" rx="4"/>
+      <rect x="645" y="168" width="185" height="152" rx="4"/>
+      <rect x="840" y="168" width="185" height="152" rx="4"/>
+    </g>
+
+    <g font-size="12" font-weight="bold" text-anchor="middle">
+      <text x="152" y="194">1 · Receive</text>
+      <text x="347" y="194">2 · Embed</text>
+      <text x="542" y="194">3 · Retrieve</text>
+      <text x="737" y="194">4 · Compose</text>
+      <text x="932" y="194">5 · Generate</text>
+    </g>
+    <g font-size="10.5" fill="#5b6270" text-anchor="middle">
+      <text x="152" y="218">the request names its own</text>
+      <text x="152" y="234">tenant and how many</text>
+      <text x="152" y="250">chunks to retrieve</text>
+      <text x="152" y="274">the container only ever</text>
+      <text x="152" y="290">holds one tenant's</text>
+      <text x="152" y="306">configuration</text>
+
+      <text x="347" y="218">a sentence-transformer</text>
+      <text x="347" y="234">model runs on CPU in</text>
+      <text x="347" y="250">the container itself</text>
+      <text x="347" y="274">384-dimension vector,</text>
+      <text x="347" y="290">loaded lazily on the first</text>
+      <text x="347" y="306">call and then cached</text>
+
+      <text x="542" y="218">nearest neighbours by</text>
+      <text x="542" y="234">cosine similarity, from</text>
+      <text x="542" y="250">this tenant's own store</text>
+      <text x="542" y="274">a tenant metadata filter</text>
+      <text x="542" y="290">is still applied, as</text>
+      <text x="542" y="306">redundant defence</text>
+
+      <text x="737" y="218">matched chunk texts are</text>
+      <text x="737" y="234">joined into a context</text>
+      <text x="737" y="250">block</text>
+      <text x="737" y="274">the instruction restricts</text>
+      <text x="737" y="290">the answer to that</text>
+      <text x="737" y="306">context alone</text>
+
+      <text x="932" y="218">one OpenAI-compatible</text>
+      <text x="932" y="234">client, pointed at a base</text>
+      <text x="932" y="250">URL chosen by provider</text>
+      <text x="932" y="274">the reply carries the</text>
+      <text x="932" y="290">answer and the source</text>
+      <text x="932" y="306">keys of its chunks</text>
+    </g>
+
+    <g stroke="#2f343d" stroke-width="1.4">
+      <line x1="245" y1="244" x2="251" y2="244" marker-end="url(#a)"/>
+      <line x1="440" y1="244" x2="446" y2="244" marker-end="url(#a)"/>
+      <line x1="635" y1="244" x2="641" y2="244" marker-end="url(#a)"/>
+      <line x1="830" y1="244" x2="836" y2="244" marker-end="url(#a)"/>
+    </g>
+
+    <text x="60" y="366" font-size="10.5" fill="#5b6270">Every stage runs inside the tenant's own account. Neither the question nor the answer is logged to, or reachable from, the control plane.</text>
+
+    <!-- vector store options -->
+    <text x="620" y="416" font-size="11.5" font-weight="bold" text-anchor="middle">chosen once, at onboarding</text>
+    <line x1="542" y1="320" x2="542" y2="392" stroke="#2f343d" stroke-width="1.4"/>
+    <polyline points="465,392 465,436" fill="none" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <polyline points="775,392 775,436" fill="none" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#am)"/>
+    <line x1="465" y1="392" x2="775" y2="392" stroke="#2f343d" stroke-width="1.4"/>
+
+    <rect x="340" y="438" width="250" height="118" rx="4" fill="#e9f3ef" stroke="#146b58" stroke-width="1.4"/>
+    <text x="465" y="462" font-size="12" font-weight="bold" text-anchor="middle" fill="#146b58">Postgres with pgvector</text>
+    <text x="465" y="484" font-size="10.5" fill="#5b6270" text-anchor="middle">a managed instance inside the</text>
+    <text x="465" y="500" font-size="10.5" fill="#5b6270" text-anchor="middle">customer's own account, on the</text>
+    <text x="465" y="516" font-size="10.5" fill="#5b6270" text-anchor="middle">same private network as the app</text>
+    <text x="465" y="538" font-size="10.5" fill="#5b6270" text-anchor="middle">isolation: a whole instance per tenant</text>
+    <text x="465" y="552" font-size="10.5" fill="#5b6270" text-anchor="middle">cost: roughly sixteen dollars a month</text>
+
+    <rect x="650" y="438" width="250" height="118" rx="4" fill="#ffffff" stroke="#5b6270" stroke-width="1.4" stroke-dasharray="6 4"/>
+    <text x="775" y="462" font-size="12" font-weight="bold" text-anchor="middle" fill="#5b6270">Pinecone serverless index</text>
+    <text x="775" y="484" font-size="10.5" fill="#5b6270" text-anchor="middle">one dedicated index in the</text>
+    <text x="775" y="500" font-size="10.5" fill="#5b6270" text-anchor="middle">customer's own project, billed</text>
+    <text x="775" y="516" font-size="10.5" fill="#5b6270" text-anchor="middle">to them, operated by nobody</text>
+    <text x="775" y="538" font-size="10.5" fill="#5b6270" text-anchor="middle">isolation: the index boundary itself</text>
+    <text x="775" y="552" font-size="10.5" fill="#a13b12" text-anchor="middle">but the embeddings leave the account</text>
+
+    <!-- llm provider -->
+    <line x1="932" y1="320" x2="932" y2="436" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="944" y="392" font-size="10.5">HTTPS</text>
+
+    <rect x="920" y="438" width="165" height="118" rx="4" fill="#ffffff" stroke="#a13b12" stroke-width="1.4"/>
+    <text x="1002" y="462" font-size="12" font-weight="bold" text-anchor="middle" fill="#a13b12">LLM provider</text>
+    <text x="1002" y="484" font-size="10.5" fill="#5b6270" text-anchor="middle">OpenAI, Anthropic</text>
+    <text x="1002" y="500" font-size="10.5" fill="#5b6270" text-anchor="middle">or OpenRouter</text>
+    <text x="1002" y="522" font-size="10.5" fill="#5b6270" text-anchor="middle">a third party, outside</text>
+    <text x="1002" y="538" font-size="10.5" fill="#5b6270" text-anchor="middle">the customer's account</text>
+    <text x="1002" y="552" font-size="10.5" fill="#5b6270" text-anchor="middle">and outside this design</text>
+
+    <polyline points="1025,150 1100,150 1100,20 180,20 180,26" fill="none" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#am)"/>
+    <text x="1090" y="100" font-size="10.5" fill="#5b6270" text-anchor="end">answer and sources returned to the user</text>
+
+    <text x="40" y="600" font-size="11" fill="#5b6270">Two boundaries are worth separating here. The vector-store choice decides whether embeddings stay in the customer's account; the LLM choice always sends the question and its retrieved context to a third party.</text>
+    <text x="40" y="620" font-size="11" fill="#5b6270">Because the platform never sets a Pinecone region, an index is created in the provider's default US region even for a tenant deployed in Europe — a residency gap the pgvector option does not have.</text>
+    <text x="40" y="644" font-size="11" fill="#5b6270">Retrieval and generation quality are properties of the chatbot image, which this platform deploys but does not implement.</text>
+  </g>
+</svg>

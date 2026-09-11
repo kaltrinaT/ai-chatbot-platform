@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 760" width="1240" height="760" role="img" aria-label="Where each cloud's resource count goes: AWS spends thirteen of forty-one resources on networking and load balancing that Azure bundles into Container Apps, while Azure spends more on individually declared vault secrets.">
+  <rect x="0" y="0" width="1240" height="760" fill="#ffffff"/>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="44" font-size="16" font-weight="bold">Why one cloud needs forty-one resources and the other twenty-four</text>
+    <text x="60" y="66" font-size="11.5" fill="#5b6270">Every resource declared in the two Terraform roots, grouped by what it is for. The same chatbot comes out of both columns.</text>
+
+    <!-- headers -->
+    <text x="500" y="112" font-size="13" font-weight="bold" fill="#2a78d6" text-anchor="end">AWS</text>
+    <text x="500" y="130" font-size="11" fill="#52514e" text-anchor="end">41 resources</text>
+    <text x="740" y="112" font-size="13" font-weight="bold" fill="#eb6834">Azure</text>
+    <text x="740" y="130" font-size="11" fill="#52514e">24 resources</text>
+
+    <!-- gridlines -->
+    <g stroke="#e1e0d9" stroke-width="1">
+      <line x1="444" y1="140" x2="444" y2="606"/>
+      <line x1="368" y1="140" x2="368" y2="606"/>
+      <line x1="292" y1="140" x2="292" y2="606"/>
+      <line x1="216" y1="140" x2="216" y2="606"/>
+      <line x1="796" y1="140" x2="796" y2="606"/>
+      <line x1="872" y1="140" x2="872" y2="606"/>
+      <line x1="948" y1="140" x2="948" y2="606"/>
+      <line x1="1024" y1="140" x2="1024" y2="606"/>
+    </g>
+    <line x1="520" y1="140" x2="520" y2="606" stroke="#c3c2b7" stroke-width="1.5"/>
+    <line x1="720" y1="140" x2="720" y2="606" stroke="#c3c2b7" stroke-width="1.5"/>
+
+    <!-- rows: labels -->
+    <g font-size="11.5" text-anchor="middle">
+      <text x="620" y="154">Identity and access</text>
+      <text x="620" y="198">Networking</text>
+      <text x="620" y="242">Load balancing</text>
+      <text x="620" y="286">Application runtime</text>
+      <text x="620" y="330">Document storage</text>
+      <text x="620" y="374">Vector database</text>
+      <text x="620" y="418">Secret storage</text>
+      <text x="620" y="462">Signer function</text>
+      <text x="620" y="506">Observability</text>
+      <text x="620" y="550">Container registry</text>
+      <text x="620" y="594">Account scaffolding</text>
+    </g>
+
+    <!-- AWS bars (left) -->
+    <g fill="#2a78d6">
+      <rect x="178" y="139" width="342" height="22"/>
+      <rect x="216" y="183" width="304" height="22"/>
+      <rect x="330" y="227" width="190" height="22"/>
+      <rect x="330" y="271" width="190" height="22"/>
+      <rect x="368" y="315" width="152" height="22"/>
+      <rect x="368" y="359" width="152" height="22"/>
+      <rect x="444" y="403" width="76" height="22"/>
+      <rect x="444" y="447" width="76" height="22"/>
+      <rect x="444" y="491" width="76" height="22"/>
+    </g>
+    <g font-size="11.5" font-weight="bold" text-anchor="end">
+      <text x="170" y="154">9</text>
+      <text x="208" y="198">8</text>
+      <text x="322" y="242">5</text>
+      <text x="322" y="286">5</text>
+      <text x="360" y="330">4</text>
+      <text x="360" y="374">4</text>
+      <text x="436" y="418">2</text>
+      <text x="436" y="462">2</text>
+      <text x="436" y="506">2</text>
+      <text x="512" y="550" fill="#898781">0</text>
+      <text x="512" y="594" fill="#898781">0</text>
+    </g>
+
+    <!-- Azure bars (right) -->
+    <g fill="#eb6834">
+      <rect x="720" y="139" width="76" height="22"/>
+      <rect x="720" y="271" width="76" height="22"/>
+      <rect x="720" y="315" width="76" height="22"/>
+      <rect x="720" y="359" width="228" height="22"/>
+      <rect x="720" y="403" width="228" height="22"/>
+      <rect x="720" y="447" width="114" height="22"/>
+      <rect x="720" y="491" width="38" height="22"/>
+      <rect x="720" y="535" width="38" height="22"/>
+      <rect x="720" y="579" width="38" height="22"/>
+    </g>
+    <g font-size="11.5" font-weight="bold">
+      <text x="804" y="154">2</text>
+      <text x="728" y="198" fill="#898781">0</text>
+      <text x="728" y="242" fill="#898781">0</text>
+      <text x="804" y="286">2</text>
+      <text x="804" y="330">2</text>
+      <text x="956" y="374">6</text>
+      <text x="956" y="418">6</text>
+      <text x="842" y="462">3</text>
+      <text x="766" y="506">1</text>
+      <text x="766" y="550">1</text>
+      <text x="766" y="594">1</text>
+    </g>
+
+    <!-- axis ticks -->
+    <g font-size="10" fill="#898781" text-anchor="middle">
+      <text x="216" y="624">8</text>
+      <text x="292" y="624">6</text>
+      <text x="368" y="624">4</text>
+      <text x="444" y="624">2</text>
+      <text x="520" y="624">0</text>
+      <text x="720" y="624">0</text>
+      <text x="796" y="624">2</text>
+      <text x="872" y="624">4</text>
+      <text x="948" y="624">6</text>
+      <text x="1024" y="624">8</text>
+    </g>
+    <text x="620" y="624" font-size="10" fill="#898781" text-anchor="middle">resources declared</text>
+
+    <!-- findings -->
+    <text x="60" y="668" font-size="11" fill="#5b6270">Thirteen of the forty-one AWS resources — a virtual network, its subnet, gateway, route table, three security groups, a load balancer, two target groups, a listener and a rule — have</text>
+    <text x="60" y="688" font-size="11" fill="#5b6270">no counterpart on the Azure side, because Container Apps provides that layer as part of the service. The nine identity resources answer to the same pressure: on AWS, every</text>
+    <text x="60" y="708" font-size="11" fill="#5b6270">permission the two tasks and the signer function need is written out as a role and an inline policy. Azure reverses the pattern only for secrets, where each vault entry is its own resource.</text>
+    <text x="60" y="732" font-size="11" fill="#5b6270">Counted as declared, not as applied. The two vector-store paths are mutually exclusive, and two AWS declarations expand into a pair each, so a real deployment lands at 37 resources with</text>
+    <text x="60" y="752" font-size="11" fill="#5b6270">Pinecone or 42 with the in-account database, against 18 or 22 on Azure. The two AWS registry repositories are absent here because the workflow creates them, not Terraform.</text>
+  </g>
+</svg>

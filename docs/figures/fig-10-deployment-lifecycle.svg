@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 700" width="1120" height="700" role="img" aria-label="Deployment state machine: a row moves from pending to running to a terminal state via the status callback, or is settled by the progress poll when that callback never arrives.">
+  <rect x="0" y="0" width="1120" height="700" fill="#ffffff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f343d"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a13b12"/>
+    </marker>
+  </defs>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="44" font-size="13" font-weight="bold">A deployment row, from insert to terminal state</text>
+    <text x="60" y="64" font-size="11" fill="#5b6270">The same lifecycle covers a deploy and a teardown; only the workflow dispatched and the effect of success differ.</text>
+
+    <!-- entry -->
+    <line x1="44" y1="196" x2="146" y2="196" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="44" y="158" font-size="10.5">INSERT a row</text>
+    <text x="44" y="172" font-size="10.5" fill="#5b6270">of kind deploy</text>
+    <text x="44" y="186" font-size="10.5" fill="#5b6270">or destroy</text>
+
+    <!-- pending -->
+    <rect x="150" y="162" width="160" height="68" rx="34" fill="#ffffff" stroke="#2f343d" stroke-width="1.6"/>
+    <text x="230" y="192" font-size="13" font-weight="bold" text-anchor="middle">pending</text>
+    <text x="230" y="212" font-size="10" fill="#5b6270" text-anchor="middle">row exists, run does not</text>
+
+    <!-- running -->
+    <rect x="420" y="162" width="160" height="68" rx="34" fill="#ffffff" stroke="#2f343d" stroke-width="1.6"/>
+    <text x="500" y="192" font-size="13" font-weight="bold" text-anchor="middle">running</text>
+    <text x="500" y="212" font-size="10" fill="#5b6270" text-anchor="middle">dispatch accepted</text>
+
+    <line x1="312" y1="196" x2="416" y2="196" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="364" y="188" font-size="10.5" text-anchor="middle">dispatch</text>
+    <text x="364" y="174" font-size="10.5" text-anchor="middle">accepted</text>
+
+    <!-- dispatch failure -->
+    <polyline points="230,232 230,300 700,300 700,368 752,368" fill="none" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="240" y="292" font-size="10.5">dispatch threw — the row fails at once</text>
+
+    <!-- terminal states -->
+    <rect x="760" y="94" width="200" height="68" rx="34" fill="#e9f3ef" stroke="#146b58" stroke-width="1.6"/>
+    <text x="860" y="124" font-size="13" font-weight="bold" text-anchor="middle" fill="#146b58">succeeded</text>
+    <text x="860" y="144" font-size="10" fill="#5b6270" text-anchor="middle">finished_at set</text>
+
+    <rect x="760" y="334" width="200" height="68" rx="34" fill="#fbeee5" stroke="#a13b12" stroke-width="1.6"/>
+    <text x="860" y="364" font-size="13" font-weight="bold" text-anchor="middle" fill="#a13b12">failed</text>
+    <text x="860" y="384" font-size="10" fill="#5b6270" text-anchor="middle">error message retained</text>
+
+    <rect x="760" y="214" width="200" height="68" rx="34" fill="#f6f7f9" stroke="#5b6270" stroke-width="1.6"/>
+    <text x="860" y="244" font-size="13" font-weight="bold" text-anchor="middle" fill="#5b6270">cancelled</text>
+    <text x="860" y="264" font-size="10" fill="#5b6270" text-anchor="middle">run stopped by a human</text>
+
+    <!-- callback transitions -->
+    <line x1="582" y1="180" x2="756" y2="136" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="600" y="152" font-size="10.5">callback: succeeded</text>
+
+    <line x1="582" y1="210" x2="756" y2="356" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="600" y="244" font-size="10.5">callback: failed</text>
+
+    <text x="700" y="50" font-size="10.5" fill="#5b6270">an early callback also records the run id and URL,</text>
+    <text x="700" y="66" font-size="10.5" fill="#5b6270">which is what makes the poll below possible</text>
+
+    <!-- effect of success -->
+    <text x="860" y="182" font-size="10" fill="#5b6270" text-anchor="middle">a deploy fills in the tenant's URLs;</text>
+    <text x="860" y="196" font-size="10" fill="#5b6270" text-anchor="middle">a teardown stamps deleted_at</text>
+
+    <!-- reconciliation band -->
+    <rect x="150" y="450" width="810" height="180" rx="6" fill="#ffffff" stroke="#a13b12" stroke-width="1.4" stroke-dasharray="6 4"/>
+    <text x="170" y="474" font-size="12" font-weight="bold" fill="#a13b12">SELF-HEALING — runs whenever the operator's page polls an active deployment</text>
+
+    <rect x="180" y="490" width="330" height="118" rx="4" fill="#fbeee5" stroke="#a13b12" stroke-width="1.2"/>
+    <text x="345" y="514" font-size="12" font-weight="bold" text-anchor="middle" fill="#a13b12">Progress poll</text>
+    <text x="345" y="534" font-size="10.5" fill="#5b6270" text-anchor="middle">reads the run, its jobs and its current step</text>
+    <text x="345" y="552" font-size="10.5" fill="#5b6270" text-anchor="middle">after a grace period it will even search for a</text>
+    <text x="345" y="568" font-size="10.5" fill="#5b6270" text-anchor="middle">run whose early callback was lost</text>
+    <text x="345" y="590" font-size="10.5" fill="#5b6270" text-anchor="middle">a write only lands if the row is still active, so a</text>
+    <text x="345" y="604" font-size="10.5" fill="#5b6270" text-anchor="middle">real callback arriving at the same moment wins</text>
+
+    <line x1="500" y1="232" x2="500" y2="488" stroke="#a13b12" stroke-width="1.4" marker-end="url(#ar)"/>
+    <text x="512" y="330" font-size="10.5" fill="#a13b12">still pending or running</text>
+    <text x="512" y="346" font-size="10.5" fill="#5b6270">when the page polls</text>
+
+    <g font-size="10.5" fill="#3d4350">
+      <text x="540" y="512">run concluded successfully → succeeded, and any missing URLs are</text>
+      <text x="540" y="527">recovered from the run's own output artifact</text>
+      <text x="540" y="551">run concluded cancelled → cancelled</text>
+      <text x="540" y="575">run concluded any other way → failed</text>
+      <text x="540" y="599">no run found, or the run no longer exists, 45 minutes in → failed</text>
+    </g>
+
+    <polyline points="930,512 1010,512 1010,128 964,128" fill="none" stroke="#a13b12" stroke-width="1.4" marker-end="url(#ar)"/>
+    <polyline points="878,551 990,551 990,248 964,248" fill="none" stroke="#a13b12" stroke-width="1.4" marker-end="url(#ar)"/>
+    <polyline points="878,575 1030,575 1030,368 964,368" fill="none" stroke="#a13b12" stroke-width="1.4" marker-end="url(#ar)"/>
+    <polyline points="930,599 1060,599 1060,388 964,388" fill="none" stroke="#a13b12" stroke-width="1.4" marker-end="url(#ar)"/>
+
+    <text x="60" y="666" font-size="11" fill="#5b6270">The callback is a single point of failure for state, so the poll exists to remove it: a run that finishes while the webhook is lost still settles the row, and a dispatch that never produced a run</text>
+    <text x="60" y="686" font-size="11" fill="#5b6270">is failed rather than left active forever. A terminal state is never revisited, and the guard on every reconciling write keeps a late callback from overwriting a settled row.</text>
+  </g>
+</svg>

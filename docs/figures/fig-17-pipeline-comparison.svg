@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 660" width="1240" height="660" role="img" aria-label="Five counted differences between the two deployment pipelines: Azure runs more steps, applies Terraform twice, authenticates to two clouds, and carries four tenant secret values through the runner where AWS carries none.">
+  <rect x="0" y="0" width="1240" height="660" fill="#ffffff"/>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="44" font-size="16" font-weight="bold">The two pipelines, counted</text>
+    <text x="60" y="66" font-size="11.5" fill="#5b6270">Five measures taken from the two workflow files and the dispatch payloads the platform builds for them. Lower is not always better; the last row is the one that matters most.</text>
+
+    <!-- legend -->
+    <g>
+      <circle cx="596" cy="92" r="6" fill="#2a78d6"/>
+      <text x="610" y="96" font-size="11" fill="#3d4350">AWS</text>
+      <circle cx="676" cy="92" r="6" fill="#eb6834"/>
+      <text x="690" y="96" font-size="11" fill="#3d4350">Azure</text>
+    </g>
+
+    <!-- grid -->
+    <g stroke="#e1e0d9" stroke-width="1">
+      <line x1="596" y1="120" x2="596" y2="500"/>
+      <line x1="732" y1="120" x2="732" y2="500"/>
+      <line x1="868" y1="120" x2="868" y2="500"/>
+      <line x1="1004" y1="120" x2="1004" y2="500"/>
+      <line x1="1140" y1="120" x2="1140" y2="500"/>
+    </g>
+    <line x1="596" y1="500" x2="1140" y2="500" stroke="#c3c2b7" stroke-width="1.5"/>
+    <g font-size="10" fill="#898781" text-anchor="middle">
+      <text x="596" y="518">0</text>
+      <text x="732" y="518">5</text>
+      <text x="868" y="518">10</text>
+      <text x="1004" y="518">15</text>
+      <text x="1140" y="518">20</text>
+    </g>
+    <text x="868" y="540" font-size="11" fill="#52514e" text-anchor="middle">count</text>
+
+    <!-- row 1: steps  AWS 14 -> x=976.4 ; Azure 20 -> 1140 -->
+    <text x="60" y="164" font-size="12.5" font-weight="bold">Steps in the workflow run</text>
+    <text x="60" y="182" font-size="10.5" fill="#5b6270">Azure adds masking, config unpacking, name computation and a separate function-code deploy</text>
+    <line x1="976.4" y1="168" x2="1140" y2="168" stroke="#c3c2b7" stroke-width="3"/>
+    <circle cx="976.4" cy="168" r="6.5" fill="#2a78d6"/>
+    <circle cx="1140" cy="168" r="6.5" fill="#eb6834"/>
+    <text x="962" y="172" font-size="11.5" font-weight="bold" text-anchor="end">14</text>
+    <text x="1155" y="172" font-size="11.5" font-weight="bold">20</text>
+
+    <!-- row 2: applies AWS 1 -> 623.2 ; Azure 2 -> 650.4 -->
+    <text x="60" y="244" font-size="12.5" font-weight="bold">Terraform applies per deployment</text>
+    <text x="60" y="262" font-size="10.5" fill="#5b6270">the registry must exist before an image can be pushed, and the app cannot start without the image</text>
+    <line x1="623.2" y1="248" x2="650.4" y2="248" stroke="#c3c2b7" stroke-width="3"/>
+    <circle cx="623.2" cy="248" r="6.5" fill="#2a78d6"/>
+    <circle cx="650.4" cy="248" r="6.5" fill="#eb6834"/>
+    <text x="609" y="252" font-size="11.5" font-weight="bold" text-anchor="end">1</text>
+    <text x="665" y="252" font-size="11.5" font-weight="bold">2</text>
+
+    <!-- row 3: clouds AWS 1 ; Azure 2 -->
+    <text x="60" y="324" font-size="12.5" font-weight="bold">Clouds the run must authenticate to</text>
+    <text x="60" y="342" font-size="10.5" fill="#5b6270">an Azure deployment still signs in to AWS, for the source images and the Terraform state bucket</text>
+    <line x1="623.2" y1="328" x2="650.4" y2="328" stroke="#c3c2b7" stroke-width="3"/>
+    <circle cx="623.2" cy="328" r="6.5" fill="#2a78d6"/>
+    <circle cx="650.4" cy="328" r="6.5" fill="#eb6834"/>
+    <text x="609" y="332" font-size="11.5" font-weight="bold" text-anchor="end">1</text>
+    <text x="665" y="332" font-size="11.5" font-weight="bold">2</text>
+
+    <!-- row 4: secret values AWS 0 ; Azure 4 -> 704.8 -->
+    <text x="60" y="404" font-size="12.5" font-weight="bold" fill="#a13b12">Tenant secret values that pass through the runner</text>
+    <text x="60" y="422" font-size="10.5" fill="#5b6270">client secret, LLM key, Pinecone key and signer secret — masked in the log, present in the process</text>
+    <line x1="596" y1="408" x2="704.8" y2="408" stroke="#c3c2b7" stroke-width="3"/>
+    <circle cx="596" cy="408" r="6.5" fill="#2a78d6"/>
+    <circle cx="704.8" cy="408" r="6.5" fill="#eb6834"/>
+    <text x="582" y="412" font-size="11.5" font-weight="bold" text-anchor="end">0</text>
+    <text x="719" y="412" font-size="11.5" font-weight="bold" fill="#a13b12">4</text>
+
+    <!-- row 5: references AWS 3 -> 677.6 ; Azure 0 -->
+    <text x="60" y="484" font-size="12.5" font-weight="bold">Secret references sent instead of values</text>
+    <text x="60" y="502" font-size="10.5" fill="#5b6270">the LLM, Pinecone and signer secrets travel as ARNs, resolved inside the customer's account</text>
+    <line x1="596" y1="488" x2="677.6" y2="488" stroke="#c3c2b7" stroke-width="3"/>
+    <circle cx="677.6" cy="488" r="6.5" fill="#2a78d6"/>
+    <circle cx="596" cy="488" r="6.5" fill="#eb6834"/>
+    <text x="692" y="492" font-size="11.5" font-weight="bold">3</text>
+    <text x="582" y="492" font-size="11.5" font-weight="bold" text-anchor="end">0</text>
+
+    <!-- findings -->
+    <text x="60" y="584" font-size="11" fill="#5b6270">Sources: the two workflow files, and buildAwsInputs and buildAzureInputs in src/lib/deploy.ts, which construct the dispatch payloads these runs receive.</text>
+    <text x="60" y="608" font-size="11" fill="#5b6270">The first three rows are cost-of-implementation differences: more steps, a split apply and a second cloud to authenticate to all make the Azure path longer to write and slower to run,</text>
+    <text x="60" y="628" font-size="11" fill="#5b6270">but they do not change what a tenant ends up with. The last two rows are a security difference, and it does not favour Azure. Whether a credential can be kept out of the CI runner</text>
+    <text x="60" y="648" font-size="11" fill="#5b6270">is decided by whether the tenant has somewhere to store it beforehand — which is a property of the cloud, not of the platform's care.</text>
+  </g>
+</svg>

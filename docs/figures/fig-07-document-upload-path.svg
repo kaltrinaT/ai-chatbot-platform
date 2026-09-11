@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 760" width="1360" height="760" role="img" aria-label="Document upload path: the platform brokers a presigned upload but the file bytes travel straight from the operator's browser to the tenant's own store, which the platform cannot read.">
+  <rect x="0" y="0" width="1360" height="760" fill="#ffffff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f343d"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a13b12"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f4e9c"/>
+    </marker>
+  </defs>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <!-- platform db -->
+    <rect x="60" y="86" width="200" height="104" rx="4" fill="#eef3fb" stroke="#1f4e9c" stroke-width="1.2"/>
+    <text x="160" y="110" font-size="12" font-weight="bold" text-anchor="middle" fill="#1f4e9c">Platform database</text>
+    <text x="160" y="130" font-size="10.5" fill="#5b6270" text-anchor="middle">tenant_documents:</text>
+    <text x="160" y="148" font-size="10.5" fill="#5b6270" text-anchor="middle">object key, display name,</text>
+    <text x="160" y="166" font-size="10.5" fill="#5b6270" text-anchor="middle">size, type, status</text>
+    <text x="160" y="184" font-size="10.5" fill="#5b6270" text-anchor="middle">— never file content</text>
+
+    <!-- platform -->
+    <rect x="296" y="60" width="522" height="152" rx="5" fill="#eef3fb" stroke="#1f4e9c" stroke-width="1.5"/>
+    <text x="557" y="86" font-size="13" font-weight="bold" text-anchor="middle" fill="#1f4e9c">PLATFORM — server actions for documents</text>
+    <text x="557" y="110" font-size="11" fill="#5b6270" text-anchor="middle">checks the session owns this tenant, then asks the tenant's own signer for an upload URL</text>
+    <text x="557" y="130" font-size="11" fill="#5b6270" text-anchor="middle">records the document as pending, and marks it uploaded only when the browser reports success</text>
+    <text x="557" y="150" font-size="11" fill="#5b6270" text-anchor="middle">holds no cloud SDK client, no assumed role and no storage key for this bucket</text>
+    <text x="557" y="176" font-size="11" fill="#a13b12" text-anchor="middle" font-weight="bold">the only credential it holds here is the signer's shared secret, which grants writes and deletes — never reads</text>
+
+    <line x1="294" y1="138" x2="264" y2="138" stroke="#1f4e9c" stroke-width="1.4" marker-end="url(#ab)"/>
+
+    <!-- browser -->
+    <rect x="60" y="300" width="220" height="140" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.2"/>
+    <text x="170" y="326" font-size="12.5" font-weight="bold" text-anchor="middle">Operator browser</text>
+    <text x="170" y="348" font-size="10.5" fill="#5b6270" text-anchor="middle">holds the file the operator</text>
+    <text x="170" y="366" font-size="10.5" fill="#5b6270" text-anchor="middle">picked, and posts it with the</text>
+    <text x="170" y="384" font-size="10.5" fill="#5b6270" text-anchor="middle">fields the signer minted</text>
+    <text x="170" y="408" font-size="10.5" fill="#5b6270" text-anchor="middle">reports progress, success</text>
+    <text x="170" y="426" font-size="10.5" fill="#5b6270" text-anchor="middle">or failure back to the platform</text>
+
+    <!-- browser/platform channel -->
+    <polyline points="170,298 170,150 292,150" fill="none" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <polyline points="292,196 214,196 214,298" fill="none" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a)"/>
+    <text x="40" y="228" font-size="10.5">1 ask for an upload URL</text>
+    <text x="40" y="246" font-size="10.5" fill="#5b6270">2 URL and fields back</text>
+    <text x="40" y="264" font-size="10.5">5 confirm, or abandon</text>
+
+    <!-- customer cloud band -->
+    <rect x="520" y="258" width="560" height="404" rx="6" fill="#e9f3ef" stroke="#146b58" stroke-width="1.5"/>
+    <text x="1060" y="282" font-size="12" font-weight="bold" text-anchor="end" fill="#146b58">CUSTOMER CLOUD ACCOUNT</text>
+
+    <!-- store -->
+    <rect x="820" y="300" width="220" height="140" rx="4" fill="#ffffff" stroke="#146b58" stroke-width="1.2"/>
+    <text x="930" y="326" font-size="12.5" font-weight="bold" text-anchor="middle">Document store</text>
+    <text x="930" y="348" font-size="10.5" fill="#5b6270" text-anchor="middle">S3 bucket or Blob container</text>
+    <text x="930" y="366" font-size="10.5" fill="#5b6270" text-anchor="middle">private, encrypted at rest</text>
+    <text x="930" y="384" font-size="10.5" fill="#5b6270" text-anchor="middle">accepts a cross-origin POST</text>
+    <text x="930" y="402" font-size="10.5" fill="#5b6270" text-anchor="middle">or PUT from the platform's</text>
+    <text x="930" y="420" font-size="10.5" fill="#5b6270" text-anchor="middle">origin, signed and short-lived</text>
+
+    <!-- signer -->
+    <rect x="560" y="470" width="220" height="152" rx="4" fill="#fbeee5" stroke="#a13b12" stroke-width="1.4"/>
+    <text x="670" y="496" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#a13b12">docs-signer function</text>
+    <text x="670" y="518" font-size="10.5" fill="#5b6270" text-anchor="middle">authenticates the caller by</text>
+    <text x="670" y="536" font-size="10.5" fill="#5b6270" text-anchor="middle">shared secret, then mints the</text>
+    <text x="670" y="554" font-size="10.5" fill="#5b6270" text-anchor="middle">object key itself — the client</text>
+    <text x="670" y="572" font-size="10.5" fill="#5b6270" text-anchor="middle">never chooses where it lands</text>
+    <text x="670" y="596" font-size="10.5" fill="#a13b12" text-anchor="middle" font-weight="bold">write and delete only</text>
+    <text x="670" y="612" font-size="10.5" fill="#5b6270" text-anchor="middle">no read, no list, on either cloud</text>
+
+    <!-- chatbot -->
+    <rect x="820" y="490" width="220" height="132" rx="4" fill="#ffffff" stroke="#146b58" stroke-width="1.2"/>
+    <text x="930" y="516" font-size="12.5" font-weight="bold" text-anchor="middle">Chatbot backend</text>
+    <text x="930" y="538" font-size="10.5" fill="#5b6270" text-anchor="middle">on reindex it re-reads every</text>
+    <text x="930" y="556" font-size="10.5" fill="#5b6270" text-anchor="middle">object under the prefix,</text>
+    <text x="930" y="574" font-size="10.5" fill="#5b6270" text-anchor="middle">chunks and embeds them,</text>
+    <text x="930" y="592" font-size="10.5" fill="#5b6270" text-anchor="middle">and upserts to the vector store</text>
+    <text x="930" y="612" font-size="10.5" fill="#5b6270" text-anchor="middle">a full resync, never a delta</text>
+
+    <!-- 3: platform -> signer -->
+    <line x1="620" y1="214" x2="620" y2="468" stroke="#a13b12" stroke-width="1.4" marker-end="url(#ar)"/>
+    <text x="440" y="300" font-size="10.5" fill="#a13b12">3 presign this upload</text>
+    <text x="440" y="316" font-size="10.5" fill="#5b6270">HTTPS, shared-secret header</text>
+    <polyline points="680,468 680,214" fill="none" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a)"/>
+    <text x="692" y="252" font-size="10.5" fill="#5b6270">signed URL, fields, object key</text>
+
+    <!-- 4: bytes -->
+    <line x1="284" y1="368" x2="814" y2="368" stroke="#1f4e9c" stroke-width="3.2" marker-end="url(#ab)"/>
+    <text x="336" y="356" font-size="12" font-weight="bold" fill="#1f4e9c">4 the file itself — browser straight to the store</text>
+
+    <!-- signer -> store -->
+    <polyline points="760,468 760,462 900,462 900,444" fill="none" stroke="#a13b12" stroke-width="1.4" marker-end="url(#ar)"/>
+    <text x="790" y="456" font-size="10.5" fill="#a13b12">deletes, performed directly</text>
+
+    <!-- reindex -->
+    <polyline points="818,110 1150,110 1150,556 1044,556" fill="none" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="1162" y="310" font-size="10.5" font-weight="bold">6 trigger a reindex</text>
+    <text x="1162" y="326" font-size="10.5" fill="#5b6270">POST /api/index against</text>
+    <text x="1162" y="342" font-size="10.5" fill="#5b6270">the tenant's own chatbot</text>
+
+    <line x1="960" y1="488" x2="960" y2="444" stroke="#2f343d" stroke-width="1.4" marker-end="url(#a)"/>
+    <text x="970" y="470" font-size="10.5">7 read and embed</text>
+
+    <text x="60" y="700" font-size="11" fill="#5b6270">The thick arrow is the only path the file's bytes ever take. Everything the platform learns about a document — its name, size and type — it learned from the browser before the upload, not from the store afterwards.</text>
+    <text x="60" y="720" font-size="11" fill="#5b6270">Deleting a document removes the object and the platform's record of it, but the vectors already derived from it remain: the backend's index endpoint only upserts, so nothing purges them.</text>
+    <text x="60" y="740" font-size="11" fill="#5b6270">If the browser's upload fails, the pending row is removed; the platform cannot verify either outcome against the store, so the browser's report is authoritative.</text>
+  </g>
+</svg>

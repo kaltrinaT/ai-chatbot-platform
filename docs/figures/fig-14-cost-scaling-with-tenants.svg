@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 660" width="1240" height="660" role="img" aria-label="Modelled cost against tenant count: both configurations scale linearly because no infrastructure is shared, and the gap between them is the monthly premium for keeping embeddings inside the customer's account.">
+  <rect x="0" y="0" width="1240" height="660" fill="#ffffff"/>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="44" font-size="16" font-weight="bold">What the isolation model costs as tenants accumulate</text>
+    <text x="60" y="66" font-size="11.5" fill="#5b6270">Each tenant gets its own network, runtime, registry, secret store and database, so nothing amortises. The lines are straight by construction, not by measurement.</text>
+
+    <!-- legend -->
+    <g>
+      <rect x="170" y="80" width="12" height="12" rx="2" fill="#2a78d6"/>
+      <text x="190" y="91" font-size="11" fill="#3d4350">Embeddings in the customer's Pinecone project</text>
+      <rect x="470" y="80" width="12" height="12" rx="2" fill="#1baf7a"/>
+      <text x="490" y="91" font-size="11" fill="#3d4350">Embeddings in a database inside the customer's cloud account</text>
+    </g>
+
+    <!-- grid -->
+    <g stroke="#e1e0d9" stroke-width="1">
+      <line x1="170" y1="413.3" x2="900" y2="413.3"/>
+      <line x1="170" y1="326.7" x2="900" y2="326.7"/>
+      <line x1="170" y1="240" x2="900" y2="240"/>
+      <line x1="170" y1="153.3" x2="900" y2="153.3"/>
+    </g>
+    <g font-size="10.5" fill="#898781" text-anchor="end">
+      <text x="162" y="504">0</text>
+      <text x="162" y="417">200</text>
+      <text x="162" y="330">400</text>
+      <text x="162" y="243">600</text>
+      <text x="162" y="157">$800</text>
+    </g>
+    <line x1="170" y1="500" x2="900" y2="500" stroke="#c3c2b7" stroke-width="1.5"/>
+    <line x1="170" y1="110" x2="170" y2="500" stroke="#c3c2b7" stroke-width="1.5"/>
+
+    <!-- premium band -->
+    <path d="M 243 471.4 L 900 214 L 900 144.6 L 243 464.5 Z" fill="#1baf7a" fill-opacity="0.10"/>
+
+    <!-- pgvector line -->
+    <polyline points="243,464.5 316,428.9 389,393.4 462,357.9 535,322.3 608,286.8 681,251.2 754,215.7 827,180.1 900,144.6" fill="none" stroke="#1baf7a" stroke-width="2"/>
+    <g fill="#1baf7a" stroke="#ffffff" stroke-width="2">
+      <circle cx="243" cy="464.5" r="4.5"/>
+      <circle cx="316" cy="428.9" r="4.5"/>
+      <circle cx="389" cy="393.4" r="4.5"/>
+      <circle cx="462" cy="357.9" r="4.5"/>
+      <circle cx="535" cy="322.3" r="4.5"/>
+      <circle cx="608" cy="286.8" r="4.5"/>
+      <circle cx="681" cy="251.2" r="4.5"/>
+      <circle cx="754" cy="215.7" r="4.5"/>
+      <circle cx="827" cy="180.1" r="4.5"/>
+      <circle cx="900" cy="144.6" r="4.5"/>
+    </g>
+
+    <!-- pinecone line -->
+    <polyline points="243,471.4 316,442.8 389,414.2 462,385.6 535,357 608,328.4 681,299.8 754,271.2 827,242.6 900,214" fill="none" stroke="#2a78d6" stroke-width="2"/>
+    <g fill="#2a78d6" stroke="#ffffff" stroke-width="2">
+      <circle cx="243" cy="471.4" r="4.5"/>
+      <circle cx="316" cy="442.8" r="4.5"/>
+      <circle cx="389" cy="414.2" r="4.5"/>
+      <circle cx="462" cy="385.6" r="4.5"/>
+      <circle cx="535" cy="357" r="4.5"/>
+      <circle cx="608" cy="328.4" r="4.5"/>
+      <circle cx="681" cy="299.8" r="4.5"/>
+      <circle cx="754" cy="271.2" r="4.5"/>
+      <circle cx="827" cy="242.6" r="4.5"/>
+      <circle cx="900" cy="214" r="4.5"/>
+    </g>
+
+    <text x="912" y="148" font-size="12" font-weight="bold">$820</text>
+    <text x="912" y="218" font-size="12" font-weight="bold">$660</text>
+
+    <text x="470" y="272" font-size="11" font-weight="bold" fill="#0b0b0b">$82 per additional tenant</text>
+    <text x="470" y="394" font-size="11" font-weight="bold" fill="#0b0b0b">$66 per additional tenant</text>
+    <line x1="906" y1="160" x2="906" y2="202" stroke="#52514e" stroke-width="1"/>
+    <text x="912" y="176" font-size="10.5" fill="#52514e">the gap is the isolation</text>
+    <text x="912" y="190" font-size="10.5" fill="#52514e">premium: $160 at ten tenants</text>
+
+    <!-- x axis -->
+    <g font-size="10.5" fill="#898781" text-anchor="middle">
+      <text x="243" y="522">1</text>
+      <text x="316" y="522">2</text>
+      <text x="389" y="522">3</text>
+      <text x="462" y="522">4</text>
+      <text x="535" y="522">5</text>
+      <text x="608" y="522">6</text>
+      <text x="681" y="522">7</text>
+      <text x="754" y="522">8</text>
+      <text x="827" y="522">9</text>
+      <text x="900" y="522">10</text>
+    </g>
+    <text x="535" y="546" font-size="11.5" fill="#52514e" text-anchor="middle">tenants deployed</text>
+
+    <!-- summary table -->
+    <text x="980" y="290" font-size="11" font-weight="bold" fill="#5b6270">MODELLED TOTAL, US$ PER MONTH</text>
+    <g font-size="10.5" fill="#898781" text-anchor="end">
+      <text x="1090" y="314">1</text>
+      <text x="1145" y="314">5</text>
+      <text x="1200" y="314">10</text>
+    </g>
+    <text x="980" y="314" font-size="10" fill="#898781">tenants</text>
+    <line x1="980" y1="322" x2="1200" y2="322" stroke="#c3c2b7" stroke-width="1"/>
+    <g font-size="10.5" fill="#3d4350">
+      <text x="980" y="344">Pinecone</text>
+      <text x="980" y="368">pgvector</text>
+      <text x="980" y="392">premium</text>
+    </g>
+    <g font-size="10.5" fill="#16181d" text-anchor="end">
+      <text x="1090" y="344">66</text><text x="1145" y="344">330</text><text x="1200" y="344">660</text>
+      <text x="1090" y="368">82</text><text x="1145" y="368">410</text><text x="1200" y="368">820</text>
+      <text x="1090" y="392">16</text><text x="1145" y="392">80</text><text x="1200" y="392">160</text>
+    </g>
+    <text x="980" y="418" font-size="10" fill="#898781">AWS figures. Azure lands within a dollar or</text>
+    <text x="980" y="432" font-size="10" fill="#898781">two per tenant at every point on both lines.</text>
+
+    <!-- captions -->
+    <text x="60" y="586" font-size="11" fill="#5b6270">Source: the low estimate from src/lib/pricing.ts, multiplied by tenant count. This is a model of the design, not a measurement of a running fleet — its value is that the slope is a</text>
+    <text x="60" y="606" font-size="11" fill="#5b6270">deliberate architectural consequence: the platform shares no infrastructure between tenants, so the n-th tenant costs exactly what the first one did.</text>
+    <text x="60" y="630" font-size="11" fill="#5b6270">A pooled design would bend both lines toward the horizontal by amortising the load balancer, the always-on container and the database across tenants. It would also dissolve the</text>
+    <text x="60" y="650" font-size="11" fill="#5b6270">boundary that Figure 1 draws, since those shared resources would sit in an account the platform operator controls. The straight line is the price of that boundary.</text>
+  </g>
+</svg>

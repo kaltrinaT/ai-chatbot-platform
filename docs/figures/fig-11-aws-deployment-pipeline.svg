@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1060" width="1240" height="1060" role="img" aria-label="AWS deployment pipeline end to end: secrets are written into the customer account at onboarding, then a single workflow run replicates images and performs one terraform apply that creates every remaining resource.">
+  <rect x="0" y="0" width="1240" height="1060" fill="#ffffff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f343d"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#146b58"/>
+    </marker>
+  </defs>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="52" font-size="16" font-weight="bold">AWS — one tenant, from form submission to a running chatbot</text>
+    <text x="60" y="74" font-size="11.5" fill="#5b6270">Every tenant credential is already inside the customer's account before the run starts, so the run itself only ever carries references.</text>
+
+    <text x="60" y="112" font-size="11" font-weight="bold" fill="#5b6270">WHAT THE PLATFORM AND THE RUN DO, IN ORDER</text>
+    <text x="650" y="112" font-size="11" font-weight="bold" fill="#146b58">WHAT EXISTS IN THE CUSTOMER'S AWS ACCOUNT</text>
+
+    <!-- onboarding -->
+    <rect x="60" y="126" width="540" height="94" rx="4" fill="#eef3fb" stroke="#1f4e9c" stroke-width="1.4"/>
+    <text x="76" y="150" font-size="12" font-weight="bold" fill="#1f4e9c">At onboarding, before any run exists</text>
+    <text x="76" y="170" font-size="10.5" fill="#3d4350">The platform assumes the customer's deployment role for fifteen minutes and</text>
+    <text x="76" y="186" font-size="10.5" fill="#3d4350">writes three secrets into their own Secrets Manager, keeping only the ARNs.</text>
+    <text x="76" y="206" font-size="10.5" fill="#a13b12">It also keeps its own encrypted copy of the signer secret, which it needs again later.</text>
+
+    <line x1="602" y1="173" x2="646" y2="173" stroke="#146b58" stroke-width="1.4" marker-end="url(#ag)"/>
+
+    <rect x="650" y="126" width="530" height="94" rx="4" fill="#e9f3ef" stroke="#146b58" stroke-width="1.4"/>
+    <text x="666" y="150" font-size="12" font-weight="bold" fill="#146b58">Secrets Manager, and nothing else yet</text>
+    <text x="666" y="170" font-size="10.5" fill="#3d4350">{slug}/llm-api-key · {slug}/docs-signer-secret</text>
+    <text x="666" y="186" font-size="10.5" fill="#3d4350">{slug}/pinecone-api-key, when the tenant chose Pinecone</text>
+    <text x="666" y="206" font-size="10.5" fill="#5b6270">No compute, no network and no storage exist at this point.</text>
+
+    <!-- run steps -->
+    <g font-size="12" font-weight="bold">
+      <text x="104" y="268">Notify the platform that the run started</text>
+      <text x="104" y="320">Pull both golden images from the platform's own registry</text>
+      <text x="104" y="372">Assume the tenant role and replicate both images into their registry</text>
+      <text x="104" y="424">Ensure the ECS service-linked role exists</text>
+      <text x="104" y="476">terraform init, against state held in the platform's bucket</text>
+      <text x="104" y="528">Read the customer's Pinecone key from their Secrets Manager</text>
+      <text x="104" y="580">Install the signer's Node dependencies</text>
+      <text x="104" y="632">terraform apply — a single pass</text>
+      <text x="104" y="684">Read the outputs and upload them as a run artifact</text>
+      <text x="104" y="736">Notify the platform of the result</text>
+    </g>
+    <g font-size="10.5" fill="#5b6270">
+      <text x="104" y="284">carries the run id and run URL, so the platform can poll this run later</text>
+      <text x="104" y="336">the platform builds the chatbot once; no tenant image is ever built from source</text>
+      <text x="104" y="388">the image the tenant runs is pulled from a registry they own, not from the platform's</text>
+      <text x="104" y="440">a one-time account prerequisite that Terraform cannot create for itself</text>
+      <text x="104" y="492">tenants/{slug}.tfstate — one state file per tenant, never shared</text>
+      <text x="104" y="544">masked immediately, then handed to the provider; only when vector_store = pinecone</text>
+      <text x="104" y="596">the Lambda's zip is built from disk during apply, so the modules must be there first</text>
+      <text x="104" y="648">every remaining resource is created here, in one graph, with no ordering gap to bridge</text>
+      <text x="104" y="700">a durable copy, so a lost callback costs one extra API call rather than the URLs</text>
+      <text x="104" y="752">succeeded or failed, carrying the chatbot URL, the load balancer DNS and the signer URL</text>
+    </g>
+
+    <g fill="#ffffff" stroke="#2f343d" stroke-width="1.2">
+      <circle cx="78" cy="264" r="13"/>
+      <circle cx="78" cy="316" r="13"/>
+      <circle cx="78" cy="368" r="13"/>
+      <circle cx="78" cy="420" r="13"/>
+      <circle cx="78" cy="472" r="13"/>
+      <circle cx="78" cy="524" r="13"/>
+      <circle cx="78" cy="576" r="13"/>
+      <circle cx="78" cy="680" r="13"/>
+      <circle cx="78" cy="732" r="13"/>
+    </g>
+    <circle cx="78" cy="628" r="13" fill="#fbeee5" stroke="#a13b12" stroke-width="1.6"/>
+    <g font-size="11" text-anchor="middle" font-weight="bold">
+      <text x="78" y="268">1</text>
+      <text x="78" y="320">2</text>
+      <text x="78" y="372">3</text>
+      <text x="78" y="424">4</text>
+      <text x="78" y="476">5</text>
+      <text x="78" y="528">6</text>
+      <text x="78" y="580">7</text>
+      <text x="78" y="632" fill="#a13b12">8</text>
+      <text x="78" y="684">9</text>
+      <text x="78" y="736">10</text>
+    </g>
+
+    <line x1="78" y1="240" x2="78" y2="251" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="277" x2="78" y2="303" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="329" x2="78" y2="355" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="381" x2="78" y2="407" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="433" x2="78" y2="459" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="485" x2="78" y2="511" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="537" x2="78" y2="563" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="589" x2="78" y2="615" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="641" x2="78" y2="667" stroke="#c3c8d1" stroke-width="1.2"/>
+    <line x1="78" y1="693" x2="78" y2="719" stroke="#c3c8d1" stroke-width="1.2"/>
+
+    <!-- registry result -->
+    <line x1="602" y1="368" x2="646" y2="368" stroke="#146b58" stroke-width="1.4" marker-end="url(#ag)"/>
+    <rect x="650" y="336" width="530" height="66" rx="4" fill="#e9f3ef" stroke="#146b58" stroke-width="1.4"/>
+    <text x="666" y="358" font-size="12" font-weight="bold" fill="#146b58">Elastic Container Registry, two repositories</text>
+    <text x="666" y="378" font-size="10.5" fill="#3d4350">{slug}/chatbot and {slug}/chatbot-frontend, each holding this deployment's version tag</text>
+    <text x="666" y="394" font-size="10.5" fill="#5b6270">the tasks defined below can only pull from here</text>
+
+    <!-- apply result -->
+    <line x1="602" y1="628" x2="646" y2="628" stroke="#a13b12" stroke-width="1.6" marker-end="url(#a)"/>
+    <rect x="650" y="430" width="530" height="332" rx="4" fill="#e9f3ef" stroke="#146b58" stroke-width="1.6"/>
+    <text x="666" y="454" font-size="12" font-weight="bold" fill="#146b58">Everything else, created by that one apply</text>
+    <g font-size="10.5" fill="#3d4350">
+      <text x="666" y="478">VPC 10.20.0.0/16, two public subnets across zones, internet gateway</text>
+      <text x="666" y="502">Application Load Balancer, a frontend target group and an /api/* rule to the backend</text>
+      <text x="666" y="526">ECS cluster with a frontend service and a backend service, one task each</text>
+      <text x="666" y="550">Execution role that may read the LLM secret ARN, and nothing else</text>
+      <text x="666" y="574">Task role that may get and list the docs bucket, and nothing else</text>
+      <text x="666" y="598">S3 documents bucket: encrypted, public access blocked, CORS for the platform origin</text>
+      <text x="666" y="622">docs-signer Lambda and its function URL, with a put-and-delete-only role</text>
+      <text x="666" y="646">CloudWatch log group for the tasks, fourteen-day retention</text>
+      <text x="666" y="670">RDS PostgreSQL with pgvector and its connection secret — when that store was chosen</text>
+    </g>
+    <text x="666" y="700" font-size="10.5" fill="#a13b12" font-weight="bold">The apply resolves each secret ARN into the task definition. No secret value passes</text>
+    <text x="666" y="716" font-size="10.5" fill="#a13b12" font-weight="bold">through the runner at any point in this column.</text>
+    <text x="666" y="740" font-size="10.5" fill="#5b6270">A Pinecone index is created in the customer's own project instead, when that store was chosen.</text>
+
+    <!-- outcome -->
+    <rect x="60" y="800" width="1120" height="98" rx="4" fill="#eef3fb" stroke="#1f4e9c" stroke-width="1.4"/>
+    <text x="76" y="824" font-size="12" font-weight="bold" fill="#1f4e9c">What the platform knows when the run ends</text>
+    <text x="76" y="846" font-size="10.5" fill="#3d4350">The chatbot URL, the load balancer DNS name and the docs-signer URL, written onto the tenant row; the run id, run URL and terminal state, written onto the deployment row.</text>
+    <text x="76" y="866" font-size="10.5" fill="#3d4350">It holds no session, key or role into this account afterwards. To upload a document later it calls the signer URL with the shared secret it kept from onboarding.</text>
+    <text x="76" y="886" font-size="10.5" fill="#5b6270">If the final callback is lost, the platform recovers all three URLs from the run artifact uploaded at step 9.</text>
+
+    <text x="60" y="940" font-size="11" fill="#5b6270">The shape of this pipeline follows from one property of AWS: a tenant's secret store exists independently of the deployment, so it can be populated first and referenced later.</text>
+    <text x="60" y="960" font-size="11" fill="#5b6270">That is what allows a single apply and a run that never handles a customer credential. Compare the Azure pipeline, where neither holds.</text>
+  </g>
+</svg>

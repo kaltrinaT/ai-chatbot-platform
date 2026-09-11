@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1380" width="1240" height="1380" role="img" aria-label="Complete inventory of the services one tenant deployment creates on each cloud, grouped by function, with the Terraform resource type behind each one.">
+  <rect x="0" y="0" width="1240" height="1380" fill="#ffffff"/>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#16181d">
+
+    <text x="60" y="44" font-size="16" font-weight="bold">Everything one tenant deployment creates, service by service</text>
+    <text x="60" y="66" font-size="11.5" fill="#5b6270">Each line names the service and the Terraform resource type behind it. The same chatbot comes out of both columns.</text>
+
+    <text x="210" y="104" font-size="13" font-weight="bold" fill="#2a78d6">AWS</text>
+    <text x="262" y="104" font-size="11" fill="#52514e">41 Terraform resources, plus 5 created outside it</text>
+    <text x="710" y="104" font-size="13" font-weight="bold" fill="#eb6834">Azure</text>
+    <text x="772" y="104" font-size="11" fill="#52514e">24 Terraform resources, plus 1 created outside it</text>
+
+    <!-- band 1: scaffolding -->
+    <rect x="60" y="120" width="1130" height="46" fill="#f6f7f9"/>
+    <text x="72" y="140" font-size="11" font-weight="bold" fill="#5b6270">SCAFFOLDING</text>
+    <text x="72" y="156" font-size="9.5" fill="#898781">0 · 1</text>
+    <text x="210" y="144" font-size="10.5" fill="#898781">None — resources sit directly in the account</text>
+    <text x="710" y="144" font-size="10.5">Resource group chatbot-{slug}<tspan fill="#898781" font-size="9.5"> · azurerm_resource_group</tspan></text>
+
+    <!-- band 2: networking -->
+    <rect x="60" y="170" width="1130" height="142" fill="#ffffff"/>
+    <text x="72" y="190" font-size="11" font-weight="bold" fill="#5b6270">NETWORKING</text>
+    <text x="72" y="206" font-size="9.5" fill="#898781">8 · 0</text>
+    <g font-size="10.5">
+      <text x="210" y="194">Virtual private cloud, 10.20.0.0/16<tspan fill="#898781" font-size="9.5"> · aws_vpc</tspan></text>
+      <text x="210" y="210">Internet gateway<tspan fill="#898781" font-size="9.5"> · aws_internet_gateway</tspan></text>
+      <text x="210" y="226">Two public subnets, one per zone<tspan fill="#898781" font-size="9.5"> · aws_subnet, count 2</tspan></text>
+      <text x="210" y="242">Route table<tspan fill="#898781" font-size="9.5"> · aws_route_table</tspan></text>
+      <text x="210" y="258">Two route table associations<tspan fill="#898781" font-size="9.5"> · aws_route_table_association, count 2</tspan></text>
+      <text x="210" y="274">Security group — load balancer<tspan fill="#898781" font-size="9.5"> · aws_security_group.alb</tspan></text>
+      <text x="210" y="290">Security group — tasks<tspan fill="#898781" font-size="9.5"> · aws_security_group.task</tspan></text>
+      <text x="210" y="306">Security group — database †<tspan fill="#898781" font-size="9.5"> · aws_security_group.vectors</tspan></text>
+      <text x="710" y="194" fill="#898781">None declared. The Container Apps environment supplies</text>
+      <text x="710" y="210" fill="#898781">the network, and the platform does not configure it.</text>
+    </g>
+
+    <!-- band 3: ingress -->
+    <rect x="60" y="316" width="1130" height="110" fill="#f6f7f9"/>
+    <text x="72" y="336" font-size="11" font-weight="bold" fill="#5b6270">INGRESS</text>
+    <text x="72" y="352" font-size="9.5" fill="#898781">5 · 0</text>
+    <g font-size="10.5">
+      <text x="210" y="340">Application load balancer<tspan fill="#898781" font-size="9.5"> · aws_lb</tspan></text>
+      <text x="210" y="356">Target group — backend :8000<tspan fill="#898781" font-size="9.5"> · aws_lb_target_group.this</tspan></text>
+      <text x="210" y="372">Target group — frontend :80<tspan fill="#898781" font-size="9.5"> · aws_lb_target_group.frontend</tspan></text>
+      <text x="210" y="388">Listener on :80<tspan fill="#898781" font-size="9.5"> · aws_lb_listener.http</tspan></text>
+      <text x="210" y="404">Rule /api/* to the backend<tspan fill="#898781" font-size="9.5"> · aws_lb_listener_rule</tspan></text>
+      <text x="710" y="340" fill="#898781">None. Ingress is a property of the container app, which is</text>
+      <text x="710" y="356" fill="#898781">why both containers share one replica and talk over localhost.</text>
+    </g>
+
+    <!-- band 4: runtime -->
+    <rect x="60" y="430" width="1130" height="110" fill="#ffffff"/>
+    <text x="72" y="450" font-size="11" font-weight="bold" fill="#5b6270">APPLICATION RUNTIME</text>
+    <text x="72" y="466" font-size="9.5" fill="#898781">5 · 2</text>
+    <g font-size="10.5">
+      <text x="210" y="454">ECS cluster<tspan fill="#898781" font-size="9.5"> · aws_ecs_cluster</tspan></text>
+      <text x="210" y="470">Task definition — backend<tspan fill="#898781" font-size="9.5"> · aws_ecs_task_definition.this</tspan></text>
+      <text x="210" y="486">Service — backend, one task<tspan fill="#898781" font-size="9.5"> · aws_ecs_service.this</tspan></text>
+      <text x="210" y="502">Task definition — frontend<tspan fill="#898781" font-size="9.5"> · aws_ecs_task_definition.frontend</tspan></text>
+      <text x="210" y="518">Service — frontend, one task<tspan fill="#898781" font-size="9.5"> · aws_ecs_service.frontend</tspan></text>
+      <text x="710" y="454">Container Apps environment<tspan fill="#898781" font-size="9.5"> · azurerm_container_app_environment</tspan></text>
+      <text x="710" y="470">Container app — both containers, 1 to 3 replicas<tspan fill="#898781" font-size="9.5"> · azurerm_container_app</tspan></text>
+    </g>
+
+    <!-- band 5: registry -->
+    <rect x="60" y="544" width="1130" height="46" fill="#f6f7f9"/>
+    <text x="72" y="564" font-size="11" font-weight="bold" fill="#5b6270">IMAGE REGISTRY</text>
+    <text x="72" y="580" font-size="9.5" fill="#898781">0 · 1</text>
+    <g font-size="10.5">
+      <text x="210" y="568">Two ECR repositories ◇<tspan fill="#898781" font-size="9.5"> · created by the workflow before Terraform runs</tspan></text>
+      <text x="710" y="568">Container registry, Basic tier<tspan fill="#898781" font-size="9.5"> · azurerm_container_registry</tspan></text>
+    </g>
+
+    <!-- band 6: identity -->
+    <rect x="60" y="594" width="1130" height="174" fill="#ffffff"/>
+    <text x="72" y="614" font-size="11" font-weight="bold" fill="#5b6270">IDENTITY AND ACCESS</text>
+    <text x="72" y="630" font-size="9.5" fill="#898781">9 · 2</text>
+    <g font-size="10.5">
+      <text x="210" y="618">Task execution role<tspan fill="#898781" font-size="9.5"> · aws_iam_role.execution</tspan></text>
+      <text x="210" y="634">— managed ECS execution policy<tspan fill="#898781" font-size="9.5"> · aws_iam_role_policy_attachment</tspan></text>
+      <text x="210" y="650">— inline: read the LLM secret<tspan fill="#898781" font-size="9.5"> · aws_iam_role_policy</tspan></text>
+      <text x="210" y="666">Task role<tspan fill="#898781" font-size="9.5"> · aws_iam_role.task</tspan></text>
+      <text x="210" y="682">— inline: get and list the docs bucket<tspan fill="#898781" font-size="9.5"> · aws_iam_role_policy</tspan></text>
+      <text x="210" y="698">Signer execution role<tspan fill="#898781" font-size="9.5"> · aws_iam_role.docs_signer</tspan></text>
+      <text x="210" y="714">— managed logging policy<tspan fill="#898781" font-size="9.5"> · aws_iam_role_policy_attachment</tspan></text>
+      <text x="210" y="730">— inline: put and delete objects only<tspan fill="#898781" font-size="9.5"> · aws_iam_role_policy</tspan></text>
+      <text x="210" y="746">— inline: read its own auth secret<tspan fill="#898781" font-size="9.5"> · aws_iam_role_policy</tspan></text>
+      <text x="710" y="618">Custom role: delegate, write, delete<tspan fill="#898781" font-size="9.5"> · azurerm_role_definition</tspan></text>
+      <text x="710" y="634">Assignment to the function's identity<tspan fill="#898781" font-size="9.5"> · azurerm_role_assignment</tspan></text>
+      <text x="710" y="658" fill="#898781">The container app needs no role of its own: it reads blobs</text>
+      <text x="710" y="674" fill="#898781">with a storage key mounted as an app secret, and reads its</text>
+      <text x="710" y="690" fill="#898781">other secrets through vault references.</text>
+    </g>
+
+    <!-- band 7: documents -->
+    <rect x="60" y="772" width="1130" height="94" fill="#f6f7f9"/>
+    <text x="72" y="792" font-size="11" font-weight="bold" fill="#5b6270">DOCUMENT STORAGE</text>
+    <text x="72" y="808" font-size="9.5" fill="#898781">4 · 2</text>
+    <g font-size="10.5">
+      <text x="210" y="796">Documents bucket<tspan fill="#898781" font-size="9.5"> · aws_s3_bucket.docs</tspan></text>
+      <text x="210" y="812">Server-side encryption, AES-256<tspan fill="#898781" font-size="9.5"> · aws_s3_bucket_server_side_encryption_configuration</tspan></text>
+      <text x="210" y="828">Public access block<tspan fill="#898781" font-size="9.5"> · aws_s3_bucket_public_access_block</tspan></text>
+      <text x="210" y="844">CORS rule for the platform origin<tspan fill="#898781" font-size="9.5"> · aws_s3_bucket_cors_configuration</tspan></text>
+      <text x="710" y="796">Storage account<tspan fill="#898781" font-size="9.5"> · azurerm_storage_account.docs</tspan></text>
+      <text x="710" y="812">Private blob container<tspan fill="#898781" font-size="9.5"> · azurerm_storage_container</tspan></text>
+      <text x="710" y="836" fill="#898781">Encryption and public-access rules are account defaults here,</text>
+      <text x="710" y="852" fill="#898781">so they need no resource of their own.</text>
+    </g>
+
+    <!-- band 8: signer -->
+    <rect x="60" y="870" width="1130" height="94" fill="#ffffff"/>
+    <text x="72" y="890" font-size="11" font-weight="bold" fill="#5b6270">DOCUMENT SIGNER</text>
+    <text x="72" y="906" font-size="9.5" fill="#898781">2 · 3</text>
+    <g font-size="10.5">
+      <text x="210" y="894">Signer function<tspan fill="#898781" font-size="9.5"> · aws_lambda_function.docs_signer</tspan></text>
+      <text x="210" y="910">Public function URL<tspan fill="#898781" font-size="9.5"> · aws_lambda_function_url</tspan></text>
+      <text x="210" y="934" fill="#898781">Its code is zipped from disk during the apply, so the</text>
+      <text x="210" y="950" fill="#898781">workflow installs the dependencies beforehand.</text>
+      <text x="710" y="894">Consumption plan<tspan fill="#898781" font-size="9.5"> · azurerm_service_plan</tspan></text>
+      <text x="710" y="910">Linux function app<tspan fill="#898781" font-size="9.5"> · azurerm_linux_function_app</tspan></text>
+      <text x="710" y="926">Runtime storage account<tspan fill="#898781" font-size="9.5"> · azurerm_storage_account.function_runtime</tspan></text>
+      <text x="710" y="950">Its code package ◇<tspan fill="#898781" font-size="9.5"> · pushed by the workflow after the apply</tspan></text>
+    </g>
+
+    <!-- band 9: secrets -->
+    <rect x="60" y="968" width="1130" height="126" fill="#f6f7f9"/>
+    <text x="72" y="988" font-size="11" font-weight="bold" fill="#5b6270">SECRET STORAGE</text>
+    <text x="72" y="1004" font-size="9.5" fill="#898781">2 · 6</text>
+    <g font-size="10.5">
+      <text x="210" y="992">Database URL secret †<tspan fill="#898781" font-size="9.5"> · aws_secretsmanager_secret.vectors</tspan></text>
+      <text x="210" y="1008">— its first version †<tspan fill="#898781" font-size="9.5"> · aws_secretsmanager_secret_version</tspan></text>
+      <text x="210" y="1032">llm-api-key ◇<tspan fill="#898781" font-size="9.5"> · written at onboarding, before any deployment</tspan></text>
+      <text x="210" y="1048">docs-signer-secret ◇<tspan fill="#898781" font-size="9.5"> · written at onboarding</tspan></text>
+      <text x="210" y="1064">pinecone-api-key ◇†<tspan fill="#898781" font-size="9.5"> · written at onboarding</tspan></text>
+      <text x="710" y="992">Key vault cb-{slug}-kv<tspan fill="#898781" font-size="9.5"> · azurerm_key_vault</tspan></text>
+      <text x="710" y="1008">llm-api-key<tspan fill="#898781" font-size="9.5"> · azurerm_key_vault_secret</tspan></text>
+      <text x="710" y="1024">storage-key<tspan fill="#898781" font-size="9.5"> · azurerm_key_vault_secret</tspan></text>
+      <text x="710" y="1040">docs-signer<tspan fill="#898781" font-size="9.5"> · azurerm_key_vault_secret</tspan></text>
+      <text x="710" y="1056">pinecone-api-key †<tspan fill="#898781" font-size="9.5"> · azurerm_key_vault_secret</tspan></text>
+      <text x="710" y="1072">vector-db-url †<tspan fill="#898781" font-size="9.5"> · azurerm_key_vault_secret</tspan></text>
+    </g>
+
+    <!-- band 10: observability -->
+    <rect x="60" y="1098" width="1130" height="62" fill="#ffffff"/>
+    <text x="72" y="1118" font-size="11" font-weight="bold" fill="#5b6270">OBSERVABILITY</text>
+    <text x="72" y="1134" font-size="9.5" fill="#898781">2 · 1</text>
+    <g font-size="10.5">
+      <text x="210" y="1122">Log group for the tasks, 14-day retention<tspan fill="#898781" font-size="9.5"> · aws_cloudwatch_log_group.this</tspan></text>
+      <text x="210" y="1138">Log group for the signer<tspan fill="#898781" font-size="9.5"> · aws_cloudwatch_log_group.docs_signer</tspan></text>
+      <text x="710" y="1122">Log Analytics workspace, 30-day retention<tspan fill="#898781" font-size="9.5"> · azurerm_log_analytics_workspace</tspan></text>
+      <text x="710" y="1138" fill="#898781">One workspace covers the containers and the function.</text>
+    </g>
+
+    <!-- band 11: vector store -->
+    <rect x="60" y="1164" width="1130" height="126" fill="#f6f7f9"/>
+    <text x="72" y="1184" font-size="11" font-weight="bold" fill="#5b6270">VECTOR STORE †</text>
+    <text x="72" y="1200" font-size="9.5" fill="#898781">4 · 6</text>
+    <g font-size="10.5">
+      <text x="210" y="1188">Database subnet group<tspan fill="#898781" font-size="9.5"> · aws_db_subnet_group.vectors</tspan></text>
+      <text x="210" y="1204">Generated password<tspan fill="#898781" font-size="9.5"> · random_password</tspan></text>
+      <text x="210" y="1220">RDS PostgreSQL 16 with pgvector<tspan fill="#898781" font-size="9.5"> · aws_db_instance.vectors</tspan></text>
+      <text x="210" y="1244">Or, for the other choice:</text>
+      <text x="210" y="1260">Serverless index in the customer's project<tspan fill="#898781" font-size="9.5"> · pinecone_index</tspan></text>
+      <text x="710" y="1188">PostgreSQL flexible server<tspan fill="#898781" font-size="9.5"> · azurerm_postgresql_flexible_server</tspan></text>
+      <text x="710" y="1204">Extension allow-list, azure.extensions<tspan fill="#898781" font-size="9.5"> · ..._configuration</tspan></text>
+      <text x="710" y="1220">Database named vectors<tspan fill="#898781" font-size="9.5"> · ..._database</tspan></text>
+      <text x="710" y="1236">Firewall rule for Azure services<tspan fill="#898781" font-size="9.5"> · ..._firewall_rule</tspan></text>
+      <text x="710" y="1252">Generated password<tspan fill="#898781" font-size="9.5"> · random_password</tspan></text>
+      <text x="710" y="1268">Serverless index in the customer's project<tspan fill="#898781" font-size="9.5"> · pinecone_index</tspan></text>
+    </g>
+
+    <!-- captions -->
+    <text x="60" y="1320" font-size="11" fill="#5b6270">† Depends on the vector store chosen at onboarding. The two paths are mutually exclusive, so no single deployment creates every line above. Applied, an AWS tenant comes to 37 resources</text>
+    <text x="60" y="1340" font-size="11" fill="#5b6270">with Pinecone or 42 with the in-account database; an Azure tenant to 18 or 22. ◇ Not created by Terraform — written into the account at onboarding, or pushed by the workflow.</text>
+    <text x="60" y="1364" font-size="11" fill="#5b6270">Sources: infra/terraform/main.tf and infra/terraform/azure/main.tf, the two deploy workflows, and the onboarding path in src/app/tenants/new/actions.ts.</text>
+  </g>
+</svg>
