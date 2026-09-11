@@ -44,7 +44,12 @@ export const FIELDS_BY_STEP: Record<number, readonly string[]> = {
     "vectorStore",
     "pineconeApiKey",
   ],
-  4: [],
+  // "_form" is not an input. It carries a failure that belongs to the
+  // submission as a whole rather than to any one field — provisioning against
+  // the customer's cloud, or dispatching the deploy. Owned by the review step
+  // so earliestStepForFields leaves the user on Review, where they pressed the
+  // button, instead of bouncing them to step 1 with nothing to correct.
+  4: ["_form"],
 };
 
 /** Fields that must be non-empty before Continue will advance past a step. */

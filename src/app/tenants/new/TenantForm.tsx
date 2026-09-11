@@ -148,7 +148,9 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
         {activeStep === 1 && <StepPrerequisites values={values} set={set} errors={errors} />}
         {activeStep === 2 && <StepCloudConfig values={values} set={set} errors={errors} />}
         {activeStep === 3 && <StepAiConfig values={values} set={set} errors={errors} />}
-        {activeStep === 4 && <StepReview values={values} goToStep={goToStep} />}
+        {activeStep === 4 && (
+          <StepReview values={values} goToStep={goToStep} formError={errors._form} />
+        )}
         {activeStep === 5 && deployed && (
           <DeployStep
             deploymentId={deployed.deploymentId}

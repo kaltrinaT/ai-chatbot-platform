@@ -556,9 +556,17 @@ export function StepAiConfig({ values, set, errors }: StepProps) {
 export function StepReview({
   values,
   goToStep,
+  formError,
 }: {
   values: Values;
   goToStep: (n: number) => void;
+  /**
+   * A failure that belongs to the whole submission rather than one field:
+   * provisioning into the customer's cloud, or dispatching the deploy.
+   * Nothing was created when this is set, so the fix is to correct the
+   * offending value and press Deploy again.
+   */
+  formError?: string;
 }) {
   const cloud = (values.cloudProvider ?? "aws") as "aws" | "azure";
   const azure = cloud === "azure";
@@ -578,6 +586,19 @@ export function StepReview({
 
   return (
     <div className="space-y-6">
+      {formError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+        >
+          <p className="font-semibold">Deployment could not be started</p>
+          <p className="mt-1 leading-relaxed">{formError}</p>
+          <p className="mt-2 text-xs text-red-700">
+            Nothing was created. Correct the value above and press Deploy again.
+          </p>
+        </div>
+      )}
+
       <InfoBanner title="Your data stays in your client-owned cloud environment" badge="Secure by design" icon={<ShieldCheck className="h-5 w-5" />}>
         This platform orchestrates the deployment, but the chatbot and all of its resources (compute,
         storage, databases) run inside your client-owned cloud environment. Their documents remain in

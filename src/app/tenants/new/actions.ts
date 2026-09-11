@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
@@ -65,20 +66,36 @@ const AwsInput = SharedInput.extend({
 // validates them as such. Checking here too means a value pasted into the
 // wrong box is rejected on the form, rather than surfacing minutes later as
 // an opaque Entra error (AADSTS700016) from the middle of a workflow run.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const azureUuid = (label: string) =>
-  z
-    .string()
-    .regex(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      `${label} must be a valid UUID`
-    );
+  z.string().regex(UUID_RE, `${label} must be a valid UUID`);
+
+// The client secret is the one Azure field with no natural shape to validate,
+// which is why the two easy portal mistakes both used to reach Entra and come
+// back as an opaque AADSTS7000215 from the middle of a workflow run: pasting
+// the Secret ID (a UUID, always visible) instead of the Value (shown once, at
+// creation), or pasting an LLM key from the next step. Both are caught here.
+// The trim matters too — a copied trailing space is invisible and rejected.
+const azureClientSecret = z
+  .string()
+  .trim()
+  .min(1, "Required")
+  .refine((v) => !UUID_RE.test(v), {
+    message:
+      "That is the Secret ID. Copy the Value column instead — Azure shows it only once, when the secret is created.",
+  })
+  .refine((v) => !/^sk-/i.test(v), {
+    message:
+      "That looks like an LLM API key. This field wants the Azure service principal's client secret.",
+  });
 
 const AzureInput = SharedInput.extend({
   cloudProvider: z.literal("azure"),
   azureSubscriptionId: azureUuid("Subscription ID"),
   azureTenantId: azureUuid("Tenant ID"),
   azureClientId: azureUuid("Client ID"),
-  azureClientSecret: z.string().min(1, "Required"),
+  azureClientSecret,
   azureRegion: z.string().min(1, "Required"),
 });
 
@@ -105,6 +122,36 @@ export type FormState = {
   errors: Record<string, string>;
   deployed?: { tenantId: string; deploymentId: string; startedAt: string };
 } | null;
+
+/**
+ * Everything after validation talks to the customer's cloud or to GitHub, and
+ * any of it can fail for reasons no amount of form validation can predict: a
+ * role that doesn't trust the platform, a secret still scheduled for deletion
+ * from a torn-down tenant, a revoked PAT. Thrown, those reach the browser as
+ * React's redacted placeholder and the wizard shows nothing but a 500.
+ *
+ * AWS and Azure SDK errors are surfaced verbatim. They describe the operator's
+ * own account, using values they typed into this form a moment ago, and their
+ * text ("...is not authorized to perform: sts:AssumeRole...") is the single
+ * most useful thing we can put on screen. Anything unrecognised is not
+ * forwarded and stays in the server log.
+ */
+function describeProvisioningFailure(err: unknown): string {
+  if (typeof err === "object" && err !== null) {
+    const e = err as { name?: string; message?: string; $metadata?: unknown };
+    // $metadata is present on every AWS SDK v3 error.
+    if (e.$metadata && e.message) {
+      return e.name ? `${e.name}: ${e.message}` : e.message;
+    }
+    if (e.name === "HttpError" && e.message) {
+      return `GitHub rejected the deployment dispatch: ${e.message}`;
+    }
+    if (e.message?.includes("PLATFORM_ENCRYPTION_KEY")) {
+      return e.message;
+    }
+  }
+  return "Could not provision the tenant. The platform's server log has the reason.";
+}
 
 export async function createTenantAndDeploy(
   _prev: FormState,
@@ -163,115 +210,125 @@ export async function createTenantAndDeploy(
   let docsSignerSecretArn: string | null = null;
   let docsSignerSecretEncrypted: string | null = null;
 
-  if (parsed.cloudProvider === "aws") {
-    const creds = await assumeTenantRole({
-      roleArn: parsed.deploymentRoleArn,
-      sessionName: `tenant-onboarding-${parsed.slug}`,
-      region: parsed.awsRegion,
-    });
-    llmSecretArn = await writeTenantSecret({
-      credentials: creds,
-      region: parsed.awsRegion,
-      secretName: `${parsed.slug}/llm-api-key`,
-      secretValue: llmApiKey,
-      description:
-        "LLM API key for the AI chatbot tenant (managed by ai-chatbot-platform)",
-    });
-    if (usesPinecone) {
-      pineconeSecretArn = await writeTenantSecret({
+  try {
+    if (parsed.cloudProvider === "aws") {
+      const creds = await assumeTenantRole({
+        roleArn: parsed.deploymentRoleArn,
+        sessionName: `tenant-onboarding-${parsed.slug}`,
+        region: parsed.awsRegion,
+      });
+      llmSecretArn = await writeTenantSecret({
         credentials: creds,
         region: parsed.awsRegion,
-        secretName: `${parsed.slug}/pinecone-api-key`,
-        secretValue: parsed.pineconeApiKey!,
+        secretName: `${parsed.slug}/llm-api-key`,
+        secretValue: llmApiKey,
         description:
-          "Customer-owned Pinecone API key for the AI chatbot tenant (managed by ai-chatbot-platform)",
+          "LLM API key for the AI chatbot tenant (managed by ai-chatbot-platform)",
       });
+      if (usesPinecone) {
+        pineconeSecretArn = await writeTenantSecret({
+          credentials: creds,
+          region: parsed.awsRegion,
+          secretName: `${parsed.slug}/pinecone-api-key`,
+          secretValue: parsed.pineconeApiKey!,
+          description:
+            "Customer-owned Pinecone API key for the AI chatbot tenant (managed by ai-chatbot-platform)",
+        });
+      }
+      const docsSigner = await ensureDocsSignerSecret({
+        roleArn: parsed.deploymentRoleArn,
+        region: parsed.awsRegion,
+        slug: parsed.slug,
+        sessionName: `tenant-onboarding-docs-${parsed.slug}`,
+      });
+      docsSignerSecretArn = docsSigner.docsSignerSecretArn;
+      docsSignerSecretEncrypted = docsSigner.docsSignerSecretEncrypted;
+    } else {
+      azureClientSecretEncrypted = encryptSecret(parsed.azureClientSecret);
+      // LLM key is passed directly to the workflow from the encrypted DB value;
+      // Terraform creates the Key Vault and stores it there during deploy.
+      llmSecretArn = null;
+      docsSignerSecretEncrypted = generateDocsSignerSecret().docsSignerSecretEncrypted;
     }
-    const docsSigner = await ensureDocsSignerSecret({
-      roleArn: parsed.deploymentRoleArn,
-      region: parsed.awsRegion,
-      slug: parsed.slug,
-      sessionName: `tenant-onboarding-docs-${parsed.slug}`,
-    });
-    docsSignerSecretArn = docsSigner.docsSignerSecretArn;
-    docsSignerSecretEncrypted = docsSigner.docsSignerSecretEncrypted;
-  } else {
-    azureClientSecretEncrypted = encryptSecret(parsed.azureClientSecret);
-    // LLM key is passed directly to the workflow from the encrypted DB value;
-    // Terraform creates the Key Vault and stores it there during deploy.
-    llmSecretArn = null;
-    docsSignerSecretEncrypted = generateDocsSignerSecret().docsSignerSecretEncrypted;
-  }
 
-  const insertValues =
-    parsed.cloudProvider === "aws"
-      ? {
-          cloudProvider: "aws" as const,
-          name: tenantFields.name,
-          slug: tenantFields.slug,
-          chatbotVersion: tenantFields.chatbotVersion,
-          domain: tenantFields.domain,
-          llmProvider: tenantFields.llmProvider,
-          llmApiKeyEncrypted,
-          llmSecretArn,
-          llmModel: tenantFields.llmModel ?? null,
-          vectorStore: parsed.vectorStore,
-          pineconeApiKeyEncrypted,
-          pineconeSecretArn,
-          ownerUserId: session.user.id,
-          awsAccountId: parsed.awsAccountId,
-          awsRegion: parsed.awsRegion,
-          deploymentRoleArn: parsed.deploymentRoleArn,
-          s3DocsPrefix: parsed.s3DocsPrefix,
-          docsSignerSecretArn,
-          docsSignerSecretEncrypted,
-        }
-      : {
-          cloudProvider: "azure" as const,
-          name: tenantFields.name,
-          slug: tenantFields.slug,
-          chatbotVersion: tenantFields.chatbotVersion,
-          domain: tenantFields.domain,
-          llmProvider: tenantFields.llmProvider,
-          llmApiKeyEncrypted,
-          llmSecretArn,
-          llmModel: tenantFields.llmModel ?? null,
-          vectorStore: parsed.vectorStore,
-          pineconeApiKeyEncrypted,
-          ownerUserId: session.user.id,
-          azureSubscriptionId: parsed.azureSubscriptionId,
-          azureTenantId: parsed.azureTenantId,
-          azureClientId: parsed.azureClientId,
-          azureClientSecretEncrypted,
-          azureRegion: parsed.azureRegion,
-          docsSignerSecretEncrypted,
-        };
+    const insertValues =
+      parsed.cloudProvider === "aws"
+        ? {
+            cloudProvider: "aws" as const,
+            name: tenantFields.name,
+            slug: tenantFields.slug,
+            chatbotVersion: tenantFields.chatbotVersion,
+            domain: tenantFields.domain,
+            llmProvider: tenantFields.llmProvider,
+            llmApiKeyEncrypted,
+            llmSecretArn,
+            llmModel: tenantFields.llmModel ?? null,
+            vectorStore: parsed.vectorStore,
+            pineconeApiKeyEncrypted,
+            pineconeSecretArn,
+            ownerUserId: session.user.id,
+            awsAccountId: parsed.awsAccountId,
+            awsRegion: parsed.awsRegion,
+            deploymentRoleArn: parsed.deploymentRoleArn,
+            s3DocsPrefix: parsed.s3DocsPrefix,
+            docsSignerSecretArn,
+            docsSignerSecretEncrypted,
+          }
+        : {
+            cloudProvider: "azure" as const,
+            name: tenantFields.name,
+            slug: tenantFields.slug,
+            chatbotVersion: tenantFields.chatbotVersion,
+            domain: tenantFields.domain,
+            llmProvider: tenantFields.llmProvider,
+            llmApiKeyEncrypted,
+            llmSecretArn,
+            llmModel: tenantFields.llmModel ?? null,
+            vectorStore: parsed.vectorStore,
+            pineconeApiKeyEncrypted,
+            ownerUserId: session.user.id,
+            azureSubscriptionId: parsed.azureSubscriptionId,
+            azureTenantId: parsed.azureTenantId,
+            azureClientId: parsed.azureClientId,
+            azureClientSecretEncrypted,
+            azureRegion: parsed.azureRegion,
+            docsSignerSecretEncrypted,
+          };
 
-  const [tenant] = await db.insert(tenants).values(insertValues).returning();
+    const [tenant] = await db.insert(tenants).values(insertValues).returning();
 
-  const deployment = await triggerDeployment({
-    tenantId: tenant.id,
-    chatbotVersion: parsed.chatbotVersion,
-    triggeredByUserId: session.user.id,
-  });
-
-  // The wizard was saved as a draft while it was being filled in; the tenant
-  // it was a draft OF now exists, so the draft has served its purpose.
-  const draftId = formData.get("draftId");
-  if (typeof draftId === "string" && draftId) {
-    await db
-      .delete(tenantDrafts)
-      .where(and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id)));
-  }
-
-  return {
-    errors: {},
-    deployed: {
+    const deployment = await triggerDeployment({
       tenantId: tenant.id,
-      deploymentId: deployment.id,
-      startedAt: deployment.startedAt.toISOString(),
-    },
-  };
+      chatbotVersion: parsed.chatbotVersion,
+      triggeredByUserId: session.user.id,
+    });
+
+    // The wizard was saved as a draft while it was being filled in; the tenant
+    // it was a draft OF now exists, so the draft has served its purpose.
+    const draftId = formData.get("draftId");
+    if (typeof draftId === "string" && draftId) {
+      await db
+        .delete(tenantDrafts)
+        .where(and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id)));
+    }
+
+    return {
+      errors: {},
+      deployed: {
+        tenantId: tenant.id,
+        deploymentId: deployment.id,
+        startedAt: deployment.startedAt.toISOString(),
+      },
+    };
+  } catch (err) {
+    // The only place the real cause is recorded — the caller gets a summary.
+    console.error(
+      `[createTenantAndDeploy] provisioning failed for ${parsed.cloudProvider} tenant ` +
+        `'${parsed.slug}' (owner ${session.user.id})`,
+      err,
+    );
+    return { errors: { _form: describeProvisioningFailure(err) } };
+  }
 }
 
 // Wizard fields that are customer credentials. Stripped before a draft is
@@ -341,4 +398,8 @@ export async function deleteTenantDraft(draftId: string): Promise<void> {
   await db
     .delete(tenantDrafts)
     .where(and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id)));
+
+  // The drafts list on /chatbots is the only place a draft is reachable from,
+  // so it has to reflect the deletion immediately.
+  revalidatePath("/chatbots");
 }

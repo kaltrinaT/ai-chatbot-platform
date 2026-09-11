@@ -161,7 +161,13 @@ export function Field({
         placeholder={placeholder}
         inputMode={inputMode}
         maxLength={maxLength}
-        autoComplete={type === "password" ? "off" : undefined}
+        // "off" is ignored by Chrome on password inputs — it deliberately
+        // overrides it for password managers. "new-password" is the value
+        // that actually suppresses autofill, which matters here because the
+        // first password field in the wizard is the Azure client secret: a
+        // saved LLM key would otherwise be filled in silently and only fail
+        // at `azure/login`, minutes into a deploy.
+        autoComplete={type === "password" ? "new-password" : undefined}
         className={`${inputBase} ${error ? "border-red-400" : ""}`}
       />
       {hintOrError(hint, error)}

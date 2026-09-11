@@ -14,6 +14,7 @@ const {
   ensureDocsSignerSecret,
   generateDocsSignerSecret,
   redirectMock,
+  revalidatePathMock,
 } = vi.hoisted(() => {
     const authMock = vi.fn();
     const dbInsertReturning = vi.fn();
@@ -41,7 +42,9 @@ const {
     const redirectMock = vi.fn((url: string) => {
       throw new Error(`REDIRECT:${url}`);
     });
+    const revalidatePathMock = vi.fn();
     return {
+      revalidatePathMock,
       authMock,
       dbInsertValues,
       dbInsertReturning,
@@ -58,6 +61,7 @@ const {
   });
 
 vi.mock("next/navigation", () => ({ redirect: redirectMock }));
+vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/db", () => ({
   db: {
@@ -294,6 +298,70 @@ describe("createTenantAndDeploy", () => {
         formData({ ...validAzure, azureClientSecret: "" }),
       );
       expect(result?.errors.azureClientSecret).toBeDefined();
+    });
+  });
+
+  // Provisioning talks to the customer's cloud and to GitHub. Thrown, those
+  // failures reach the browser as React's redacted placeholder and the wizard
+  // shows a bare 500, so they are returned under "_form" instead — a key the
+  // review step owns, so the user stays where they pressed Deploy.
+  describe("provisioning failures are returned, not thrown", () => {
+    beforeEach(() => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+    });
+
+    it("surfaces an AWS SDK error verbatim, since it names the operator's own role", async () => {
+      const denied = Object.assign(
+        new Error(
+          "User: arn:aws:iam::314113910299:user/platform is not authorized to perform: sts:AssumeRole on resource: arn:aws:iam::314113910299:role/wrong-role",
+        ),
+        { name: "AccessDenied", $metadata: { httpStatusCode: 403 } },
+      );
+      assumeTenantRole.mockRejectedValue(denied);
+
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.deployed).toBeUndefined();
+      expect(result?.errors._form).toContain("AccessDenied");
+      expect(result?.errors._form).toContain("sts:AssumeRole");
+      // Nothing may be recorded for a tenant whose cloud setup failed.
+      expect(triggerDeployment).not.toHaveBeenCalled();
+    });
+
+    it("surfaces a secret still scheduled for deletion, the reused-slug case", async () => {
+      writeTenantSecret.mockRejectedValue(
+        Object.assign(
+          new Error(
+            "You can't create this secret because a secret with this name is already scheduled for deletion.",
+          ),
+          { name: "InvalidRequestException", $metadata: { httpStatusCode: 400 } },
+        ),
+      );
+
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.errors._form).toContain("scheduled for deletion");
+      expect(triggerDeployment).not.toHaveBeenCalled();
+    });
+
+    it("does not forward an unrecognised error's message to the browser", async () => {
+      assumeTenantRole.mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.1:5432"));
+
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.errors._form).toBeDefined();
+      expect(result?.errors._form).not.toContain("ECONNREFUSED");
+    });
+
+    it("reports a failed deploy dispatch after the tenant row was written", async () => {
+      triggerDeployment.mockRejectedValue(
+        Object.assign(new Error("Not Found"), { name: "HttpError", status: 404 }),
+      );
+
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.deployed).toBeUndefined();
+      expect(result?.errors._form).toContain("GitHub rejected the deployment dispatch");
     });
   });
 
