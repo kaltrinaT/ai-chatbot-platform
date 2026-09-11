@@ -166,6 +166,18 @@ resource "aws_lb" "this" {
   security_groups    = [aws_security_group.alb.id]
   subnets            = aws_subnet.public[*].id
   tags               = local.common_tags
+
+  # POST /api/index embeds every document under the tenant's prefix in one
+  # synchronous request, which routinely outlives the ALB's 60s default. The
+  # platform allows that call 120s (see triggerReindex in src/lib/reindex.ts),
+  # so with the default the proxy gave up first and the platform saw a 504 for
+  # a reindex that was still running and would have succeeded.
+  #
+  # Set above the caller's own timeout so the client is what gives up, not the
+  # proxy: a 504 tells you nothing about whether the work completed, whereas
+  # the client timing out is at least unambiguous. The real answer is to make
+  # indexing asynchronous and poll it, which belongs in the chatbot backend.
+  idle_timeout = 180
 }
 
 # Backend target group — receives only /api/* via the listener rule below.
@@ -703,6 +715,20 @@ resource "aws_ecs_service" "this" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
+  # Without this, "redeploy" does not redeploy. Tenant images are tagged by
+  # chatbot_version, which defaults to "latest" — a mutable tag. A deploy
+  # replicates the new image into the tenant's ECR under the same tag, so the
+  # task definition's image string is unchanged, Terraform sees no diff, and
+  # ECS keeps the existing tasks running the code they pulled when they last
+  # started. Observed directly: a tenant kept serving a build from hours
+  # earlier while the fixed image sat unused in its own registry.
+  #
+  # Forcing a new deployment on every apply is the honest behaviour for a
+  # platform whose redeploy button is meant to ship new chatbot code. The
+  # alternative, tagging images by digest or commit so the task definition
+  # changes on its own, is better but means changing how versions are minted.
+  force_new_deployment = true
+
   network_configuration {
     subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.task.id]
@@ -760,6 +786,9 @@ resource "aws_ecs_service" "frontend" {
   task_definition = aws_ecs_task_definition.frontend.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+
+  # Same mutable-tag problem as the backend service above.
+  force_new_deployment = true
 
   network_configuration {
     subnets          = aws_subnet.public[*].id
