@@ -237,6 +237,42 @@ jobs:
             -var "docs_signer_secret_arn=${{ inputs.docs_signer_secret_arn }}" \
             -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
 
+      # The one piece of tenant infrastructure Terraform cannot express here.
+      #
+      # Since October 2025 a Lambda Function URL requires BOTH
+      # lambda:InvokeFunctionUrl and lambda:InvokeFunction in the function's
+      # resource policy. With only the first, Lambda answers 403 to every
+      # anonymous request before the handler runs, no matter that the URL's
+      # AuthType is NONE — which is exactly how document upload was broken for
+      # every AWS tenant. The second statement needs the
+      # lambda:InvokedViaFunctionUrl condition, and AWS rejects the only
+      # alternative the 5.x provider can emit:
+      #   "FunctionUrlAuthType is only supported for lambda:InvokeFunctionUrl"
+      #
+      # aws_lambda_permission gained invoked_via_function_url in AWS provider
+      # 6.28.0, but infra/terraform pins ~> 5.60. Move this into Terraform and
+      # delete this step once that constraint is raised.
+      #
+      # Idempotent: remove-then-add, since AddPermission rejects a duplicate
+      # statement id and the statement already exists on any redeployed tenant.
+      - name: Grant the docs-signer Function URL its invoke permission
+        env:
+          FN: chatbot-${{ inputs.tenant_slug }}-docs-signer
+          SID: AllowDocsSignerInvokeViaFunctionUrl
+        run: |
+          aws lambda remove-permission \
+            --function-name "$FN" \
+            --statement-id "$SID" \
+            --region "${{ inputs.aws_region }}" 2>/dev/null || true
+          aws lambda add-permission \
+            --function-name "$FN" \
+            --statement-id "$SID" \
+            --action lambda:InvokeFunction \
+            --principal '*' \
+            --invoked-via-function-url \
+            --region "${{ inputs.aws_region }}" > /dev/null
+          echo "Granted lambda:InvokeFunction via function URL on $FN."
+
       - name: Read Terraform outputs
         id: tf
         working-directory: infra/terraform

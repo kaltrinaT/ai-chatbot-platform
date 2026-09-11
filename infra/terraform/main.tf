@@ -417,6 +417,17 @@ resource "aws_lambda_function_url" "docs_signer" {
 # principal = "*" is scoped by function_url_auth_type: it grants exactly one
 # action, on this one function, through its Function URL. The secret header
 # checked in the handler remains the actual authentication.
+#
+# NOT SUFFICIENT ON ITS OWN. Since October 2025 a Function URL also requires a
+# lambda:InvokeFunction statement carrying the lambda:InvokedViaFunctionUrl
+# condition; without it Lambda still answers 403. That statement cannot be
+# written here: it needs aws_lambda_permission's invoked_via_function_url
+# argument, added in AWS provider 6.28.0, and this module pins ~> 5.60. AWS
+# rejects the only form 5.x can emit ("FunctionUrlAuthType is only supported
+# for lambda:InvokeFunctionUrl action"). It is granted instead by the
+# "Grant the docs-signer Function URL its invoke permission" step in
+# .github/workflows/deploy-tenant.yml — fold that step back in here when the
+# provider constraint is raised.
 resource "aws_lambda_permission" "docs_signer_url" {
   statement_id           = "AllowDocsSignerFunctionUrlInvoke"
   action                 = "lambda:InvokeFunctionUrl"
