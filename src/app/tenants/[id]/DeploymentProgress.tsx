@@ -43,10 +43,24 @@ export default function DeploymentProgress({
   deploymentId,
   startedAt,
   initialRunUrl,
+  finishedHref,
 }: {
   deploymentId: string;
   startedAt: string;
   initialRunUrl: string | null;
+  /**
+   * Where to go once the deployment reaches a terminal state.
+   *
+   * Omit it on a page that renders this from server data, like the tenant
+   * page: refreshing is enough there, because the re-render drops the active
+   * deployment and unmounts this component.
+   *
+   * Set it where refreshing changes nothing. The onboarding wizard is the
+   * case that matters: its step is client state, so a refresh re-renders the
+   * same wizard on the same step and the "finished" banner would sit there
+   * forever promising a transition that cannot happen.
+   */
+  finishedHref?: string;
 }) {
   const router = useRouter();
   const [data, setData] = useState<ProgressResponse | null>(null);
@@ -70,7 +84,8 @@ export default function DeploymentProgress({
         setFailures(0);
         if (body.deployment.status !== "pending" && body.deployment.status !== "running") {
           done.current = true;
-          router.refresh();
+          if (finishedHref) router.replace(finishedHref);
+          else router.refresh();
         }
       } catch {
         setFailures((f) => f + 1);
@@ -82,7 +97,7 @@ export default function DeploymentProgress({
     poll();
     const interval = setInterval(poll, POLL_MS);
     return () => clearInterval(interval);
-  }, [deploymentId, router]);
+  }, [deploymentId, router, finishedHref]);
 
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 1000);
@@ -98,7 +113,8 @@ export default function DeploymentProgress({
   if (isTerminal) {
     return (
       <div className="mt-3 rounded border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-        Deployment finished ({status}). Refreshing…
+        Deployment finished ({status}).{" "}
+        {finishedHref ? "Opening the chatbot page…" : "Refreshing…"}
       </div>
     );
   }

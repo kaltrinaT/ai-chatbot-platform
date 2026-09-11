@@ -126,6 +126,27 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
   const onReview = activeStep === LAST_INPUT_STEP;
   const showFooter = activeStep <= LAST_INPUT_STEP;
 
+  // Deploy sits in the same footer position that Continue occupied on the
+  // previous step, so a double-click on Continue advances to the review with
+  // the first click and submits with the second, landing on a button that
+  // appeared under the cursor. That provisions real infrastructure in the
+  // customer's account and dispatches a workflow, which is not something a
+  // stray click should be able to do.
+  //
+  // So the button exists as soon as the review renders, but does not accept a
+  // click until it has outlived a double-click. Windows defaults to 500ms
+  // between clicks, hence the margin. A deliberate press is never affected:
+  // reading the review page takes far longer than this.
+  const [deployArmed, setDeployArmed] = useState(false);
+  useEffect(() => {
+    if (activeStep !== LAST_INPUT_STEP) {
+      setDeployArmed(false);
+      return;
+    }
+    const timer = setTimeout(() => setDeployArmed(true), 600);
+    return () => clearTimeout(timer);
+  }, [activeStep]);
+
   return (
     <form action={formAction} className="pb-10">
       {/* The wizard renders one step at a time, so its inputs are controlled
@@ -203,8 +224,13 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
             {onReview ? (
               <button
                 type="submit"
-                disabled={isPending}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                disabled={isPending || !deployArmed}
+                // Deliberately not dimmed while unarmed. The window is shorter
+                // than it takes to aim at the button, so showing it disabled
+                // would only produce a flicker on arrival at the review step.
+                className={`inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 ${
+                  isPending ? "opacity-60" : ""
+                }`}
               >
                 {isPending ? (
                   <>
@@ -296,7 +322,14 @@ function DeployStep({
 }) {
   return (
     <div className="space-y-6">
-      <DeploymentProgress deploymentId={deploymentId} startedAt={startedAt} initialRunUrl={null} />
+      <DeploymentProgress
+        deploymentId={deploymentId}
+        startedAt={startedAt}
+        initialRunUrl={null}
+        // The wizard has nothing to refresh into: its step is client state, so
+        // the tenant's own page is where a finished deployment belongs.
+        finishedHref={`/tenants/${tenantId}`}
+      />
 
       <div className="flex items-start gap-4 rounded-xl border border-blue-100 bg-blue-50/60 p-5">
         <div className="min-w-0 flex-1">
