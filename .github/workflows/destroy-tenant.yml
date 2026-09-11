@@ -122,6 +122,29 @@ jobs:
           echo "::add-mask::$key"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
+      # force_destroy on aws_s3_bucket.docs is documented as the backstop that
+      # keeps `terraform destroy` from stalling on a non-empty bucket, but it
+      # is not sufficient on its own: a bucket whose versioning was turned on
+      # outside Terraform still holds noncurrent versions and delete markers
+      # after force_destroy runs, and DeleteBucket then fails with
+      # "BucketNotEmpty: You must delete all versions in the bucket". That is
+      # not hypothetical — it stranded chatbot-tenat1012-docs, and the bucket
+      # had to be purged by hand.
+      #
+      # Versioning is not declared anywhere in the Terraform, so its state is
+      # undefined per tenant and can drift. Rather than depend on a property
+      # the config does not pin, empty the bucket explicitly here, before
+      # Terraform is asked to delete it. Paginated because delete-objects
+      # takes at most 1000 keys per call.
+      #
+      # Best-effort throughout: a tenant whose bucket never existed, or whose
+      # deploy never got that far, must still be destroyable.
+      - name: Empty the docs bucket, object versions included
+        continue-on-error: true
+        env:
+          BUCKET: chatbot-${{ inputs.tenant_slug }}-docs
+        run: node .github/scripts/empty-docs-bucket.mjs
+
       # No real image is pulled/pushed for a destroy — these just need to be
       # well-formed ECR URIs to satisfy Terraform's variable validation.
       - name: Terraform destroy
