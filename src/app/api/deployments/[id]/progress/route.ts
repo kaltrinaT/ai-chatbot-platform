@@ -19,9 +19,17 @@ import { ACTIVE_STATUSES, reconcileCompletedRun } from "@/lib/reconcile";
  * never received (self-heals deployments stuck in "running").
  */
 
-// Past the workflow's own 30-minute timeout; if we still can't tie the row to
-// a run by then, the dispatch was lost and the deployment can never finish.
-const STALE_DEPLOYMENT_MS = 45 * 60_000;
+// A deployment still not tied to a GitHub run after this long is treated as a
+// lost dispatch and failed. It must exceed the LONGEST workflow job timeout,
+// which is destroy-tenant.yml at 60 minutes because it waits on CloudFront
+// deletion, plus margin for a dispatched run sitting queued before its job
+// starts. It was 45 minutes when every workflow timed out at 30. Raising the
+// workflow timeouts without raising this would fail teardowns that are still
+// legitimately running, whenever the run-started callback was lost and the run
+// cannot be found by name.
+const LONGEST_WORKFLOW_TIMEOUT_MS = 60 * 60_000;
+const STALE_DEPLOYMENT_MS = LONGEST_WORKFLOW_TIMEOUT_MS + 15 * 60_000;
+const STALE_MINUTES = STALE_DEPLOYMENT_MS / 60_000;
 
 // Give GitHub a moment to start the run (and the early callback to land)
 // before falling back to searching runs by display_title.
@@ -135,7 +143,7 @@ export async function GET(
       if (ageMs > STALE_DEPLOYMENT_MS) {
         await failStuckDeployment(
           deployment.id,
-          "No workflow run could be found for this deployment and no completion webhook arrived within 45 minutes.",
+          `No workflow run could be found for this deployment and no completion webhook arrived within ${STALE_MINUTES} minutes.`,
         );
         return serialize(await reload(deployment.id), null, { reconciled: true });
       }
@@ -160,7 +168,7 @@ export async function GET(
     if (githubError === "run_not_found" && ageMs > STALE_DEPLOYMENT_MS) {
       await failStuckDeployment(
         deployment.id,
-        "The GitHub Actions run for this deployment no longer exists and no completion webhook arrived within 45 minutes.",
+        `The GitHub Actions run for this deployment no longer exists and no completion webhook arrived within ${STALE_MINUTES} minutes.`,
       );
       return serialize(await reload(deployment.id), null, { githubError, reconciled: true });
     }

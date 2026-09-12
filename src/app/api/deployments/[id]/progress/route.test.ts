@@ -64,7 +64,9 @@ vi.mock("@/lib/github", () => ({
 import { GET } from "./route";
 
 const GRACE_MS = 60_000;
-const STALE_MS = 45 * 60_000;
+// Mirrors STALE_DEPLOYMENT_MS in route.ts: the longest workflow job timeout
+// (destroy-tenant.yml, 60 minutes) plus 15 minutes of queueing margin.
+const STALE_MS = (60 + 15) * 60_000;
 
 function deploymentRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -429,6 +431,27 @@ describe("GET /api/deployments/[id]/progress", () => {
       expect(dbUpdateSet).toHaveBeenCalledWith(
         expect.objectContaining({ status: "failed" }),
       );
+    });
+
+    // The regression the stale window's size exists to prevent. A teardown
+    // waiting on CloudFront deletion can legitimately run close to its
+    // 60-minute job timeout. Under the old 45-minute window, such a run was
+    // failed while still running whenever its run-started callback had been
+    // lost. It must survive anywhere inside the longest workflow timeout.
+    it("does not fail an un-locatable teardown that is still inside the longest workflow timeout", async () => {
+      const startedAt = new Date(Date.now() - 50 * 60_000);
+      dbOwnershipWhere.mockResolvedValue([
+        { deployment: deploymentRow({ kind: "destroy", status: "running", githubRunId: null, startedAt }) },
+      ]);
+      findRunForDeployment.mockResolvedValue(null);
+
+      const res = await callRoute();
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.reconciled).toBe(false);
+      expect(findRunForDeployment).toHaveBeenCalledWith("dep-1", startedAt, "destroy-tenant.yml");
+      expect(dbUpdate).not.toHaveBeenCalled();
     });
   });
 

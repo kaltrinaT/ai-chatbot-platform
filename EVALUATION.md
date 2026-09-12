@@ -223,7 +223,7 @@ self-healing reconciliation path: if GitHub reports the run finished but the
 completion callback never arrived, the row is repaired
 (`src/app/api/deployments/[id]/progress/route.ts`). Inject the fault by
 blocking the final callback, then measure time-to-detection. Constants under
-test: `RUN_LOOKUP_GRACE_MS` (60 s) and `STALE_DEPLOYMENT_MS` (45 min).
+test: `RUN_LOOKUP_GRACE_MS` (60 s) and `STALE_DEPLOYMENT_MS` (75 min: the longest workflow job timeout, 60 min, plus queueing margin).
 
 ```
   normal path        │  fault-injected path
