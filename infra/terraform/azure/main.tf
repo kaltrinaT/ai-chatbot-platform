@@ -266,22 +266,23 @@ resource "azurerm_storage_container" "docs" {
 # ──────────────────────────────────────────────────────────────────────
 # Docs-signer Function — the ONLY component with write/delete access to the
 # docs container besides the tenant themselves. Its managed identity holds
-# a custom role limited to generateUserDelegationKey + blobs/delete (never
-# read, never list) so that even full possession of its credentials cannot
-# read a document's content. The platform reaches it over plain
-# authenticated HTTPS (shared-secret header, no Azure AD token) — the
+# a custom role limited to generateUserDelegationKey + blobs/write +
+# blobs/delete (never read, never list) so that even full possession of its
+# credentials cannot read a document's content. The platform reaches it over
+# plain authenticated HTTPS (shared-secret header, no Azure AD token) — the
 # platform itself never holds an Azure credential capable of touching this
 # storage account. Mirrors the docs-signer Lambda in infra/terraform/main.tf.
 #
-# NOTE: this Key Vault's access-policy authorization model (see above) is
-# vault-scoped, not per-secret — the access policy below grants the
-# Function's identity read access to every secret in this vault, not only
-# docs-signer-secret. Unlike AWS IAM (which scopes secretsmanager:GetSecretValue
-# to one ARN), Azure access policies have no per-secret equivalent short of
-# migrating the whole vault to the RBAC authorization model, which would
-# also change how every other existing secret consumer is authorized — out
-# of scope here. This is a deliberate, documented gap, not an oversight.
-# See DOCUMENT-MANAGEMENT.md.
+# The secret below is written to the vault as a durable record, but the
+# Function does NOT read it from there: it arrives as an app setting (see
+# azurerm_linux_function_app.docs_signer), so the Function's identity holds
+# no Key Vault access at all. That matters because this vault uses the
+# access-policy authorization model, which is vault-scoped rather than
+# per-secret — unlike AWS IAM, which scopes secretsmanager:GetSecretValue to
+# a single ARN. Granting this identity a read here would therefore have
+# exposed every other secret in the vault, so it is deliberately not granted.
+# The only access policy on this vault belongs to the deploying service
+# principal. See DOCUMENT-MANAGEMENT.md.
 # ──────────────────────────────────────────────────────────────────────
 
 resource "azurerm_key_vault_secret" "docs_signer" {

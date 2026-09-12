@@ -13,12 +13,33 @@ export type AssumedCredentials = {
   sessionToken: string;
 };
 
+/**
+ * The platform calls AWS only from a sign-in session, through AWS_PROFILE (see
+ * .env.example), never with a stored access key. The SDK's default chain does
+ * not know that: with no profile set it falls back to any static key in the
+ * environment or ~/.aws/credentials. Temporary credentials always carry a
+ * session token, and long-lived IAM user keys never do.
+ */
+export class LongLivedAwsKeyError extends Error {
+  constructor() {
+    super(
+      "The platform refuses to call AWS with a long-lived access key. Remove AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from its environment, run aws login --profile platform-operator, and set AWS_PROFILE=platform-control-plane.",
+    );
+    this.name = "LongLivedAwsKeyError";
+  }
+}
+
 export async function assumeTenantRole(opts: {
   roleArn: string;
   sessionName: string;
   region: string;
 }): Promise<AssumedCredentials> {
   const sts = new STSClient({ region: opts.region });
+  // Resolved before send, so a refused key never signs a request.
+  const platformCredentials = await sts.config.credentials();
+  if (!platformCredentials.sessionToken) {
+    throw new LongLivedAwsKeyError();
+  }
   const res = await sts.send(
     new AssumeRoleCommand({
       RoleArn: opts.roleArn,

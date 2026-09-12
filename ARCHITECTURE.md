@@ -25,7 +25,16 @@ This platform is a **control plane only**. It deploys and monitors infrastructur
 
 The only information that crosses from data plane to control plane is deployment lifecycle data: success/failure status and the resulting chatbot URL. Do not add any endpoint, IAM role, or delegated access that would give the platform visibility into runtime traffic, documents, or logs.
 
-**Document management (AWS) is the one deliberate, narrow exception to "no IAM role" above, and it's built specifically to avoid becoming a visibility exception too.** The platform lets an operator upload/delete a tenant's knowledge-base documents from its own UI, but it holds **no AWS credential of any kind** for the docs bucket — not even a scoped one. Instead, each tenant gets its own `docs-signer` Lambda (see the AWS Infrastructure diagram below), with an IAM role limited to `s3:PutObject`/`s3:DeleteObject` and nothing else — never `GetObject`, never `ListBucket`. The platform reaches it only over plain authenticated HTTPS (a shared secret, no AWS SigV4), the same shape as the existing deployment-status webhook. Uploads are S3 presigned POSTs the browser sends directly to S3 — file bytes never pass through the platform's server. The platform's own Postgres (`tenant_documents`), not `s3:ListBucket`, is what the document list in the UI is drawn from — so the platform knows filenames and sizes (it needs to, to render a list), but at no point holds a credential capable of reading a document's content. Deleting a document does not purge its already-embedded vectors — that's a limitation of the chatbot backend's `/api/index`, not something the platform can address.
+**Document management is the one deliberate, narrow exception to "no IAM role" above, and it's built specifically to avoid becoming a visibility exception too.** It works the same way on both clouds. The platform lets an operator upload/delete a tenant's knowledge-base documents from its own UI, but it holds **no cloud credential of any kind** for the tenant's document storage — not even a scoped one. Instead, each tenant gets its own `docs-signer` function in its own account:
+
+| | AWS | Azure |
+|---|---|---|
+| Runtime | Lambda behind a Function URL (`authorization_type = NONE`) | Linux Function App, `authLevel: "anonymous"` |
+| Identity to storage | Execution role: `s3:PutObject`/`s3:DeleteObject` only — never `GetObject`, never `ListBucket` | System-assigned managed identity holding a custom role definition scoped to the docs storage account: `generateUserDelegationKey` plus `blobs/write` and `blobs/delete` — never read, never list |
+| Where its shared secret lives | The tenant's Secrets Manager, read at runtime (`secretsmanager:GetSecretValue` on that one ARN) | An application setting, set by Terraform. The identity has **no Key Vault access at all** |
+| Upload protocol | S3 presigned POST — a URL plus form fields the browser submits as multipart | Blob user-delegation SAS — a single URL the browser sends one `PUT` to |
+
+The platform reaches either one only over plain authenticated HTTPS (a shared secret, no SigV4 and no Entra token), the same shape as the existing deployment-status webhook. File bytes go from the operator's browser straight to the tenant's storage and never pass through the platform's server. The platform's own Postgres (`tenant_documents`), not a listing call, is what the document list in the UI is drawn from — so the platform knows filenames and sizes (it needs to, to render a list), but at no point holds a credential capable of reading a document's content. Deleting a document does not purge its already-embedded vectors — that's a limitation of the chatbot backend's `/api/index`, not something the platform can address.
 
 ### Configurable vector store
 
@@ -115,12 +124,13 @@ be recovered — see Known Limitation #2 in `SECURITY.md`.
 │  ECS Fargate     │           │  ACR             │  │  vector_store =     │
 │  ECR             │           │  Key Vault       │  │  "pinecone"         │
 │  S3 docs bucket  │           │  Storage Account │  │                     │
-│  Secrets Manager │           │  Log Analytics   │  │  index per tenant:  │
-│  CloudWatch      │           │                  │  │  chatbot-{slug}     │
-│                  │           │                  │  │                     │
-│  vector_store =  │           │  vector_store =  │  │  billed to the      │
-│  "pgvector"? →   │           │  "pgvector"? →   │  │  customer's own     │
-│  RDS + pgvector  │           │  Azure PG +      │  │  Pinecone account   │
+│  docs-signer fn  │           │  docs-signer fn  │  │  index per tenant:  │
+│  Secrets Manager │           │  Log Analytics   │  │  chatbot-{slug}     │
+│  CloudWatch      │           │                  │  │                     │
+│                  │           │                  │  │  billed to the      │
+│  vector_store =  │           │  vector_store =  │  │  customer's own     │
+│  "pgvector"? →   │           │  "pgvector"? →   │  │  Pinecone account   │
+│  RDS + pgvector  │           │  Azure PG +      │  │                     │
 │                  │           │  pgvector        │  │                     │
 └──────────────────┘           └──────────────────┘  └─────────────────────┘
 ```
@@ -140,9 +150,13 @@ Operator                Platform (Next.js)           Customer Cloud      GitHub 
    │              AWS  │              │ Azure               │                    │
    │                   │              │                     │                    │
    │              STS AssumeRole      │ encrypt             │                    │
-   │              write LLM secret    │ azure_client_secret │                    │
-   │              to Secrets Manager  │ store in DB         │                    │
-   │              store ARN in DB     │                     │                    │
+   │              write LLM +         │ azure_client_secret │                    │
+   │              Pinecone secrets    │ + LLM + Pinecone    │                    │
+   │              to Secrets Manager  │ keys, store in DB   │                    │
+   │              generate + write    │ generate docs-      │                    │
+   │              docs-signer secret  │ signer secret; no   │                    │
+   │              store ARNs in DB    │ Azure call possible │                    │
+   │                                  │ (no vault yet)      │                    │
    │                   └──────┬───────┘                     │                    │
    │                          │                            │                    │
    │                          │ INSERT tenant              │                    │
@@ -168,7 +182,9 @@ Operator                Platform (Next.js)           Customer Cloud      GitHub 
    │                          │ UPDATE deployment          │                    │
    │                          │   (status: succeeded)      │                    │
    │                          │ UPDATE tenant              │                    │
-   │                          │   (chatbotUrl, albDnsName) │                    │
+   │                          │   (chatbotUrl, albDnsName, │                    │
+   │                          │    docsSignerUrl, and the  │                    │
+   │                          │    Azure resource names)   │                    │
    │                          │                            │                    │
    │── GET /tenants/{id} ────►│                            │                    │
    │◄─ chatbot URL ───────────│                            │                    │
@@ -198,14 +214,37 @@ VPC  10.20.0.0/16
 │   └── ECS Fargate task (public IP)
 │
 ├── Security Group: alb
-│   └── ingress 0.0.0.0/0 → port 80
+│   ├── ingress 0.0.0.0/0 → port 80
+│   └── ingress 0.0.0.0/0 → port 443   [only with acm_certificate_arn]
 │
 ├── Security Group: task
 │   └── ingress alb-sg → frontend_port (80)  + container_port (8000)
 │       egress  all
 │
+├── CloudFront distribution: [no acm_certificate_arn — i.e. the default]
+│   ├── viewer: redirect-to-https on *.cloudfront.net, AWS-managed cert
+│   ├── origin: this ALB over HTTP; caching disabled, all methods allowed,
+│   │           every header but Host forwarded, 60s origin read timeout
+│   └── Exists because ACM cannot issue for the ALB's own hostname, so a
+│       tenant that brings no domain has no other route to TLS. The
+│       CloudFront→ALB hop stays unencrypted, and the ALB stays publicly
+│       reachable on :80 — a tenant wanting TLS end to end, and only one
+│       reachable address, supplies a certificate instead.
+│
 ├── Application Load Balancer
-│   └── Listener :80
+│   │
+│   │  Without a certificate, :80 serves traffic and there is no :443. With
+│   │  one, :80 only redirects and every route below moves to :443. See the
+│   │  acm_certificate_arn and enable_cdn variables.
+│   │
+│   ├── Listener :80
+│   │     ├── [no cert]  default action    → Frontend Target Group (port 80)
+│   │     │                rule /api/* (10) → Backend Target Group (port 8000)
+│   │     └── [cert]     default action    → 301 redirect to https://:443
+│   │
+│   └── Listener :443                       [only with acm_certificate_arn]
+│         ├── certificate: customer-issued ACM cert covering `domain`
+│         ├── ssl_policy: ELBSecurityPolicy-TLS13-1-2-2021-06
 │         ├── default action        → Frontend Target Group (IP, port 80)
 │         │     └── Health check GET /  matcher 200-399
 │         └── rule /api/*  (prio 10) → Backend  Target Group (IP, port 8000)
@@ -222,13 +261,18 @@ VPC  10.20.0.0/16
 │   │       │   └── s3:GetObject  → docs bucket/{prefix}*
 │   │       └── Container: chatbot
 │   │           ├── image: {customer-ecr}/{slug}/chatbot:{version}
-│   │           ├── env:   S3_DOCS_BUCKET, S3_DOCS_PREFIX,
-│   │           │          LLM_PROVIDER, AWS_REGION, PORT,
-│   │           │          OPENAI_BASE_URL, OPENAI_API_BASE,
-│   │           │          LLM_MODEL, PINECONE_INDEX (=chatbot-{slug})
+│   │           ├── env:   TENANT_ID, S3_DOCS_BUCKET, S3_DOCS_PREFIX,
+│   │           │          LLM_PROVIDER, AWS_REGION, PORT, VECTOR_STORE,
+│   │           │          OPENAI_BASE_URL, OPENAI_API_BASE, LLM_MODEL
+│   │           │          [pinecone] PINECONE_INDEX (=chatbot-{slug})
+│   │           │          [pgvector] PGVECTOR_TABLE (=embeddings),
+│   │           │                     PGVECTOR_DIMENSION (=384)
+│   │           │          note: unlike Azure, PINECONE_ENVIRONMENT is not set
 │   │           └── secret: LLM_API_KEY, OPENAI_API_KEY,
 │   │                       ANTHROPIC_API_KEY ← LLM secret,
-│   │                       PINECONE_API_KEY  ← Pinecone secret
+│   │                       [pinecone] PINECONE_API_KEY ← Pinecone secret
+│   │                       [pgvector] DATABASE_URL, PGVECTOR_URL
+│   │                                  ← {slug}/vector-db-url
 │   │
 │   └── Frontend Service (desired 1, Fargate, public IP)
 │       └── Task Definition  (chatbot-{slug}-frontend)
@@ -301,10 +345,14 @@ Resource Group: chatbot-{slug}
 │   └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
 │
 ├── Key Vault: cb-{slug}-kv  (Standard SKU)
-│   ├── secret: llm-api-key       ← written by Terraform during apply
-│   ├── secret: pinecone-api-key  ← customer's own key  [vector_store = pinecone]
-│   ├── secret: vector-db-url     ← Postgres URL        [vector_store = pgvector]
-│   └── secret: storage-key       ← storage account primary access key
+│   ├── secret: llm-api-key        ← written by Terraform during apply
+│   ├── secret: pinecone-api-key   ← customer's own key  [vector_store = pinecone]
+│   ├── secret: vector-db-url      ← Postgres URL        [vector_store = pgvector]
+│   ├── secret: storage-key        ← storage account primary access key
+│   ├── secret: docs-signer-secret ← shared auth secret for the Function below
+│   └── Access policy: the deploying service principal ONLY. The Container App
+│       does not read from this vault — Terraform sets its app secrets directly
+│       (see below), so the vault is a durable record, not the injection path.
 │
 ├── PostgreSQL Flexible Server: chatbot-{slug}-pg  [vector_store = pgvector]
 │   ├── B_Standard_B1ms, 32 GB, PG 16, 7-day backups
@@ -314,7 +362,30 @@ Resource Group: chatbot-{slug}
 │       from rotating Azure IPs; not open to the public internet
 │
 ├── Storage Account: chatbot{slug}  (hyphens stripped, max 24 chars)
-│   └── Blob container: documents  (private)
+│   ├── Blob container: documents  (private)
+│   └── CORS: PUT from the platform's own origin (browser → Blob uploads)
+│
+├── Storage Account: chatbot{slug}fn  (truncated to 22 chars, then "fn")
+│   └── the Azure Functions runtime's own bookkeeping store. Deliberately
+│       separate from the docs account so the docs-signer identity's role
+│       never has to cover anything but the tenant's documents.
+│
+├── Service Plan: chatbot-{slug}-docs-signer-plan  (Y1 Consumption)
+│
+├── Function App: chatbot-{slug}-docs-signer  (Linux, Node 20, https_only)
+│   ├── Route: POST /api/docs-signer   authLevel: "anonymous"
+│   │     auth is the shared-secret header, mirroring the Lambda Function
+│   │     URL's authorization_type = NONE on the AWS side
+│   ├── Identity: system-assigned
+│   ├── Custom role definition, scoped to the docs storage account ONLY:
+│   │     actions:      generateUserDelegationKey
+│   │     data actions: blobs/write, blobs/delete
+│   │     (never read, never list — blobs/write is required because a
+│   │      user-delegation SAS is capped by its signer's own permissions)
+│   ├── DOCS_SIGNER_SECRET arrives as an app setting, so this identity holds
+│   │   NO Key Vault access — access policies cannot be scoped to one secret
+│   └── Mints a user-delegation SAS for the browser to PUT to, and performs
+│       deletes itself. Same contract as the AWS Lambda, different protocol.
 │
 ├── Log Analytics Workspace: chatbot-{slug}-logs  (30-day retention)
 │
@@ -414,6 +485,38 @@ Form input (plaintext)
   Used by Terraform provider to authenticate to Azure
 ```
 
+### Both clouds — docs-signer shared secret
+
+The one credential the platform deliberately keeps **usable**, rather than
+write-once-and-forget: it needs the plaintext again on every document upload and
+delete. Re-fetching it from the tenant's cloud each time would mean touching
+tenant cloud credentials on an ongoing basis, which is exactly what this design
+avoids.
+
+```
+randomBytes(32).toString("hex")
+       │
+       ├── AES-256-GCM encrypt ──────► tenants.docsSignerSecretEncrypted (DB)
+       │                                the platform's own durable copy
+       │
+       ├── AWS   STS AssumeRole → Secrets Manager PutSecretValue
+       │         → {slug}/docs-signer-secret
+       │         → ARN in tenants.docsSignerSecretArn; only the ARN travels
+       │           through GitHub Actions afterwards, like llm-api-key
+       │         → the Lambda reads the value at runtime and caches it warm
+       │
+       └── Azure No vault exists at onboarding — Terraform creates it during
+                 the deploy — so nothing is written and docsSignerSecretArn
+                 stays null. On every deploy the plaintext is decrypted and
+                 sent as a masked workflow input, written to Key Vault, and
+                 set directly as the Function App's DOCS_SIGNER_SECRET.
+
+At call time (both clouds):
+  POST tenants.docsSignerUrl
+    header x-docs-signer-secret: {plaintext}
+    → compared with timingSafeEqual inside the function
+```
+
 ### Encryption format (`src/lib/crypto.ts`)
 
 ```
@@ -434,35 +537,50 @@ users ◄───────────────────────�
   │                                    sessions
   │ ownerUserId
   ▼
-tenants ──────────────────────────────────────────────────────────┐
-  │                                                               │
-  │  cloudProvider = "aws"          cloudProvider = "azure"      │
-  │  ─────────────────────          ──────────────────────       │
-  │  awsAccountId                   azureSubscriptionId          │
-  │  awsRegion                      azureTenantId                │
-  │  deploymentRoleArn              azureClientId                │
-  │  s3DocsBucket                   azureClientSecretEncrypted   │
-  │  s3DocsPrefix                   azureResourceGroup           │
-  │  llmSecretArn                   azureRegion                  │
-  │                                 azureStorageAccount          │
-  │                                 azureStorageContainer        │
-  │                                 azureKeyVaultName            │
-  │                                                              │
-  │  shared: llmProvider (openai|anthropic|openrouter),           │
-  │          llmApiKeyEncrypted, llmModel, llmBaseUrl,           │
-  │          vectorStore (pinecone|pgvector),                    │
-  │          pineconeApiKeyEncrypted, pineconeSecretArn (AWS),   │
-  │          chatbotVersion, domain, albDnsName, chatbotUrl,     │
-  │          config (jsonb)                                      │
-  │                                                              │
-  │ tenantId                                                     │
-  ▼                                                              │
-deployments                                                      │
-  status: pending → running → succeeded | failed | cancelled     │
-  githubRunId, githubRunUrl                                      │
-  errorMessage                                                   │
-  triggeredByUserId ─────────────────────────────────────────────┘
-                                                    (FK → users)
+tenants
+  │
+  │   cloudProvider = "aws"          cloudProvider = "azure"
+  │   ─────────────────────          ──────────────────────
+  │   awsAccountId                   azureSubscriptionId
+  │   awsRegion                      azureTenantId
+  │   deploymentRoleArn              azureClientId
+  │   s3DocsBucket  (see note)       azureClientSecretEncrypted
+  │   s3DocsPrefix                   azureResourceGroup
+  │   acmCertificateArn              azureRegion
+  │   llmSecretArn                   azureStorageAccount
+  │   pineconeSecretArn              azureStorageContainer
+  │   docsSignerSecretArn            azureKeyVaultName
+  │
+  │   shared: llmProvider (openai|anthropic|openrouter),
+  │           llmApiKeyEncrypted, llmModel, llmBaseUrl,
+  │           vectorStore (pinecone|pgvector), pineconeApiKeyEncrypted,
+  │           docsSignerSecretEncrypted, docsSignerUrl,
+  │           chatbotVersion, domain, albDnsName, chatbotUrl,
+  │           config (jsonb), deletedAt (soft delete)
+  │
+  ├── deployments                                    tenantId
+  │     kind: deploy | destroy
+  │     status: pending → running → succeeded | failed | cancelled
+  │     chatbotVersion, githubRunId, githubRunUrl
+  │     errorMessage, startedAt, finishedAt
+  │     triggeredByUserId ─────────────────────────────► users
+  │
+  └── tenant_documents                               tenantId
+        objectKey — minted by the docs-signer, never client-supplied
+        displayName, contentType, sizeBytes
+        status: pending | uploaded | failed
+        uploadedByUserId ───────────────────────────► users
+
+tenant_drafts — owned by users, NOT attached to a tenant
+  name, step, data (jsonb)
+  Non-secret wizard state only: llmApiKey, pineconeApiKey and
+  azureClientSecret are stripped before saving and must be re-entered on
+  resume. Deliberately not a tenants row with nullable columns, so a draft
+  can never be deployed. Deleted once the tenant it describes exists.
+
+Note: s3DocsBucket exists in the schema but nothing ever writes it, so it is
+null for every tenant. The name is deterministic — chatbot-{slug}-docs — and
+is derived rather than read (see docsBucketName in src/lib/reindex.ts).
 ```
 
 ---
@@ -482,14 +600,20 @@ GitHub Actions                          Platform
       │       "githubRunUrl": "https://..." │   githubRunUrl
       │     }                               │
       │   Body (success):                   │
-      │     {                               │
-      │       "status": "succeeded",        │
-      │       "albDnsName": "...",          │ UPDATE tenants SET
-      │       "chatbotUrl": "...",          │   albDnsName, chatbotUrl
-      │       "githubRunId": "12345",       │
-      │       "githubRunUrl": "https://..." │ UPDATE deployments SET
-      │     }                               │   status, githubRunId,
-      │                                     │   githubRunUrl, finishedAt
+      │     {                               │ UPDATE deployments SET
+      │       "status": "succeeded",        │   status, githubRunId,
+      │       "albDnsName": "...",          │   githubRunUrl, finishedAt
+      │       "chatbotUrl": "...",          │
+      │       "docsSignerUrl": "...",       │ UPDATE tenants SET
+      │       "githubRunId": "12345",       │   albDnsName, chatbotUrl,
+      │       "githubRunUrl": "https://..." │   docsSignerUrl
+      │     }                               │
+      │   Azure also sends, and the platform│ every optional field is
+      │   also stores: azureResourceGroup,  │ written only when present
+      │   azureStorageAccount,              │
+      │   azureStorageContainer,            │ if the deployment's kind is
+      │   azureKeyVaultName                 │ "destroy", a succeeded status
+      │                                     │ instead sets tenants.deletedAt
       │   Body (failure):                   │
       │     {                               │
       │       "status": "failed",           │ UPDATE deployments SET

@@ -48,7 +48,7 @@ Trust policy — paste exactly this (replace `PLATFORM_ACCOUNT_ID` with the valu
 **The role name must start with `chatbot-client-deploy-`** (e.g. `chatbot-client-deploy-acme`). The platform's own AWS identity is restricted by its own IAM policy to only assume roles matching `arn:aws:iam::*:role/chatbot-client-deploy-*` — any other name is denied before your trust policy is even evaluated, regardless of how correctly it's configured.
 
 ### 4. Attach the permissions policy
-This role needs to create everything Terraform provisions on your behalf: a VPC, an Application Load Balancer, an ECS cluster with two Fargate services, two ECR repos, an S3 documents bucket, a per-tenant docs-signer Lambda (for the platform's document upload/delete UI — see `DOCUMENT-MANAGEMENT.md`), a CloudWatch log group, IAM roles for the ECS tasks and the Lambda, Secrets Manager secrets, and (if you chose pgvector) an RDS instance.
+This role needs to create everything Terraform provisions on your behalf: a VPC, an Application Load Balancer, an ECS cluster with two Fargate services, two ECR repos, an S3 documents bucket, a per-tenant docs-signer Lambda (for the platform's document upload/delete UI — see `DOCUMENT-MANAGEMENT.md`), a CloudWatch log group, IAM roles for the ECS tasks and the Lambda, Secrets Manager secrets, a CloudFront distribution (unless you bring your own TLS certificate — see step 7b), and (if you chose pgvector) an RDS instance.
 
 ```json
 {
@@ -63,6 +63,7 @@ This role needs to create everything Terraform provisions on your behalf: a VPC,
     { "Sid": "Secrets", "Effect": "Allow", "Action": "secretsmanager:*", "Resource": "*" },
     { "Sid": "Logs", "Effect": "Allow", "Action": "logs:*", "Resource": "*" },
     { "Sid": "Database", "Effect": "Allow", "Action": "rds:*", "Resource": "*" },
+    { "Sid": "Cdn", "Effect": "Allow", "Action": "cloudfront:*", "Resource": "*" },
     {
       "Sid": "IamForTaskRoles",
       "Effect": "Allow",
@@ -80,6 +81,8 @@ This role needs to create everything Terraform provisions on your behalf: a VPC,
 }
 ```
 > **Why `s3:*`/`lambda:*` instead of a narrower list:** Terraform's resources read back many attributes to reconcile state (tags, policy, ACL, versioning, etc.), each requiring its own IAM `Get*` action. A narrower hand-picked list will fail one missing permission at a time as different attributes get read; a broad grant avoids that entirely. This mirrors how every other service in this policy is already granted (`ec2:*`, `ecs:*`, etc.) rather than curated to specific actions — the `Functions` Sid is not a broader grant of trust than the rest of this policy already represents, since the same role can already create/modify the ECS tasks that run your data plane.
+>
+> **If you already created this role before HTTPS support existed:** add the `Cdn` Sid above to your existing role's policy before your next deploy **or teardown**. Unless you supply your own TLS certificate, Terraform now puts a CloudFront distribution in front of your load balancer so the chatbot is reachable over HTTPS, and without this the deploy fails on `cloudfront:CreateDistribution` with an `AccessDeniedException`. Teardown needs it too, even for a tenant deployed before this change and therefore having no distribution: Terraform reads the managed CloudFront cache policy while resolving the configuration, before it works out that there is nothing to delete.
 >
 > **If you already created this role before document management existed:** add the `Functions` Sid above to your existing role's policy (IAM → Roles → your `chatbot-client-deploy-*` role → Permissions → edit the policy) before your next deploy — Terraform will fail on `lambda:CreateFunction` with an `AccessDeniedException` otherwise.
 >
@@ -104,6 +107,19 @@ Sign up (or use your existing account) at [app.pinecone.io](https://app.pinecone
 
 > Every tenant's Pinecone index is created in **AWS us-east-1**, regardless of what AWS region you picked in step 1. If data residency matters for your embeddings specifically, use pgvector instead — see Known Limitation #6 in `SECURITY.md`.
 
+### 7b. (Strongly recommended) Request a TLS certificate
+Without this, your chatbot is served over **plain HTTP**: every question, every answer, and every passage retrieved from your documents crosses the internet unencrypted and readable by anything on the network path. Setting it up takes a few minutes and costs nothing.
+
+It requires a domain you control, because AWS Certificate Manager will only issue for a hostname whose DNS you can prove you own — and the load balancer's own `*.elb.amazonaws.com` name is not one of those.
+
+1. Decide the hostname your users will visit, e.g. `chat.acme.com`.
+2. AWS Certificate Manager → **in the same region as your deployment** → Request a public certificate for that hostname.
+3. Choose **DNS validation** and add the CNAME record ACM gives you to your DNS provider.
+4. Wait for the status to reach **Issued**, usually a few minutes.
+5. Copy the certificate ARN. It looks like `arn:aws:acm:us-east-1:123456789012:certificate/…`.
+
+Put that ARN, and the same hostname, into the onboarding form. Both fields are needed: a certificate on its own has no hostname to cover.
+
 ### 8. Fill out the onboarding form
 | Field | Value |
 |---|---|
@@ -113,7 +129,8 @@ Sign up (or use your existing account) at [app.pinecone.io](https://app.pinecone
 | AWS region | From step 1 |
 | Deployment role ARN | From step 5 |
 | S3 prefix (optional) | Folder path if you want to scope documents |
-| Custom domain (optional) | See the HTTPS note below before setting this |
+| Custom domain (optional) | Your own hostname, e.g. `chat.acme.com` |
+| TLS certificate ARN (optional) | From step 7b. Required for HTTPS |
 | LLM provider / key / model | From steps 6–7 |
 | Vector store | Pinecone or pgvector |
 | Pinecone API key | Only if you picked Pinecone |
@@ -121,12 +138,16 @@ Sign up (or use your existing account) at [app.pinecone.io](https://app.pinecone
 ### 9. Submit and wait
 The platform assumes your role, writes your LLM key (and Pinecone key, if any) into your own Secrets Manager, then triggers the deployment. Watch progress on the tenant page.
 
-### 10. Access your chatbot — use `http://`, not `https://`
-The AWS infrastructure only provisions an **HTTP listener on port 80** — there is no HTTPS/TLS termination set up on the load balancer. Your chatbot URL will look like:
+### 10. Access your chatbot
+**With a certificate.** The load balancer serves HTTPS on 443 and redirects port 80 to it. After the first deploy, point your hostname at the load balancer with a CNAME to the chatbot URL shown on the tenant page, then visit `https://chat.acme.com`.
+
+**Without one.** A CloudFront distribution is created in front of the load balancer, and your chatbot URL is its hostname:
 ```
-http://chatbot-<slug>-<random>.<region>.elb.amazonaws.com/
+https://d111111abcdef8.cloudfront.net/
 ```
-If your browser auto-upgrades this to `https://`, the connection will simply time out (nothing is listening on port 443). Explicitly use `http://`.
+That is HTTPS for everyone who visits the chatbot, on CloudFront's own certificate, with no DNS work on your part. Allow a few minutes after the deploy reports success before it answers everywhere.
+
+Two things to know about this mode. The hop from CloudFront to your load balancer is plain HTTP inside AWS, because the load balancer has no certificate of its own; supply one if you need TLS the whole way. And the load balancer stays directly reachable over HTTP, so the unencrypted address still works — publish the CloudFront URL, not that one.
 
 ---
 

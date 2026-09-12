@@ -263,6 +263,52 @@ describe("createTenantAndDeploy", () => {
       );
       expect(result?.errors.s3DocsPrefix).toMatch(/leading slash/);
     });
+
+    it("rejects a malformed acmCertificateArn", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({ ...validAws, domain: "chat.acme.com", acmCertificateArn: "not-an-arn" }),
+      );
+      expect(result?.errors.acmCertificateArn).toMatch(/valid ACM certificate ARN/);
+    });
+
+    it("rejects a certificate with no domain, which would listen on 443 for a hostname nobody resolves", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({
+          ...validAws,
+          domain: "",
+          acmCertificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc",
+        }),
+      );
+      expect(result?.errors.acmCertificateArn).toMatch(/custom domain/);
+    });
+
+    it("rejects a certificate from another region, which a load balancer cannot use", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({
+          ...validAws,
+          awsRegion: "eu-central-1",
+          domain: "chat.acme.com",
+          acmCertificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc",
+        }),
+      );
+      expect(result?.errors.acmCertificateArn).toMatch(/same region/);
+    });
+
+    it("accepts a certificate in the deployment region alongside a domain", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({
+          ...validAws,
+          awsRegion: "us-east-1",
+          domain: "chat.acme.com",
+          acmCertificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc",
+        }),
+      );
+      expect(result?.errors.acmCertificateArn).toBeUndefined();
+    });
   });
 
   describe("Azure field validation", () => {

@@ -4,8 +4,25 @@ output "alb_dns_name" {
 }
 
 output "chatbot_url" {
-  description = "Full URL the workflow POSTs back to the platform's status webhook."
-  value       = var.domain != "" ? "https://${var.domain}" : "http://${aws_lb.this.dns_name}"
+  description = <<-EOT
+    Full URL the workflow POSTs back to the platform's status webhook.
+
+    The scheme is whatever the ALB will actually answer on. This used to
+    report https:// for any tenant with a custom domain, whether or not a
+    certificate existed — and none ever did, so the advertised URL pointed at
+    a port the load balancer was not listening on.
+  EOT
+  value = (
+    local.enable_https && var.domain != "" ? "https://${var.domain}" :
+    local.use_cdn ? "https://${one(aws_cloudfront_distribution.this[*].domain_name)}" :
+    var.domain != "" ? "http://${var.domain}" :
+    "http://${aws_lb.this.dns_name}"
+  )
+}
+
+output "cdn_domain_name" {
+  description = "CloudFront hostname serving this tenant over HTTPS, or empty when the tenant terminates TLS at its own load balancer instead."
+  value       = local.use_cdn ? one(aws_cloudfront_distribution.this[*].domain_name) : ""
 }
 
 output "ecs_cluster_name" {

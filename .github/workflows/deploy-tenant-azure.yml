@@ -49,7 +49,16 @@ jobs:
   deploy:
     name: Deploy chatbot-${{ inputs.tenant_slug }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Same reasoning as deploy-tenant.yml: id-token: write is what lets the
+    # OIDC credentials step run, and no step here uses the job token for the
+    # GitHub API, so dropping the other scopes removes nothing.
+    permissions:
+      id-token: write
+      contents: read
+    # Raised from 30 for the same reasons as the AWS deploy job: the apply
+    # now waits on container health probes, and the bootstrap phase adds a
+    # deliberate pause for the identity's registry grant to propagate.
+    timeout-minutes: 45
 
     steps:
       # Dispatch inputs are visible to anyone with read access to the run;
@@ -132,11 +141,16 @@ jobs:
 
       # Pull the same platform golden image AWS deploys replicate — see
       # deploy-tenant.yml for the AWS-side twin of these two steps.
-      - name: Configure AWS credentials (platform — for source ECR read)
+      # OIDC, not a stored key. On this path the platform-role credentials
+      # serve the rest of the job: pulling the golden images here, and every
+      # Terraform step below reaching the S3 state backend. There is no
+      # customer AWS role to chain into on Azure.
+      - name: Configure AWS credentials (platform role via OIDC — ECR read and Terraform state)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-session-name: platform-azure-${{ github.run_id }}
+          role-duration-seconds: 3600
           aws-region: ${{ steps.names.outputs.source_region }}
 
       - name: Pull source images (backend + frontend)
@@ -156,22 +170,27 @@ jobs:
         with:
           terraform_version: "~1.6"
 
+      # No AWS_* env on this or either apply step, deliberately. Step-level env
+      # overrides the credentials the OIDC step exported, so restating the old
+      # secrets would silently keep state access on the static key, and then
+      # break every Azure deploy the moment those secrets were deleted. The S3
+      # backend reads the platform-role credentials from the job environment.
       - name: Terraform init
         working-directory: ${{ env.TF_DIR }}
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="key=azure/tenants/${{ inputs.tenant_slug }}/terraform.tfstate" \
             -backend-config="region=${{ secrets.TF_STATE_REGION }}"
 
-      - name: "Terraform apply — bootstrap ACR"
+      # Creates what must exist before the Container App can: the registry to
+      # push into, and the chatbot's user-assigned identity with AcrPull on it.
+      # The identity has to come first because the app's very first revision
+      # pulls its image as that identity (see azurerm_user_assigned_identity
+      # .chatbot in main.tf for why it cannot be system-assigned).
+      - name: "Terraform apply — bootstrap registry and chatbot identity"
         working-directory: ${{ env.TF_DIR }}
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           TF_VAR_azure_client_secret: ${{ inputs.azure_client_secret }}
           TF_VAR_llm_api_key: ${{ inputs.llm_api_key }}
           # The pinecone provider requires a non-empty credential to
@@ -188,6 +207,8 @@ jobs:
           terraform apply -auto-approve \
             -target=azurerm_resource_group.this \
             -target=azurerm_container_registry.this \
+            -target=azurerm_user_assigned_identity.chatbot \
+            -target=azurerm_role_assignment.chatbot_acr_pull \
             -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
             -var="tenant_slug=${{ inputs.tenant_slug }}" \
             -var="azure_subscription_id=${{ steps.cfg.outputs.azure_subscription_id }}" \
@@ -200,6 +221,15 @@ jobs:
             -var="vector_store=${{ steps.cfg.outputs.vector_store }}" \
             -var="image_uri=placeholder" \
             -var="frontend_image_uri=placeholder"
+
+      # The bootstrap apply just granted the chatbot identity AcrPull. Azure
+      # RBAC is eventually consistent, and the full apply below creates a
+      # Container App whose very first revision pulls its image with that
+      # grant; if it has not propagated yet, the revision fails to start and
+      # the apply fails with it. The image push below adds further delay on
+      # top of this, so this is a floor rather than the whole budget.
+      - name: Allow the AcrPull grant to propagate
+        run: sleep 90
 
       - name: Log in to ACR
         run: az acr login --name ${{ steps.names.outputs.acr_name }}
@@ -214,8 +244,6 @@ jobs:
       - name: "Terraform apply — full deploy"
         working-directory: ${{ env.TF_DIR }}
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           TF_VAR_azure_client_secret: ${{ inputs.azure_client_secret }}
           TF_VAR_llm_api_key: ${{ inputs.llm_api_key }}
           # The pinecone provider requires a non-empty credential to

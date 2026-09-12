@@ -268,6 +268,10 @@ function buildAwsInputs(
     deployment_role_arn: tenant.deploymentRoleArn!,
     chatbot_version: chatbotVersion,
     domain: tenant.domain ?? "",
+    // Always sent, including when empty. Omitting it on a redeploy would let
+    // Terraform tear the HTTPS listener back down and silently return an
+    // already-encrypted tenant to plain HTTP.
+    acm_certificate_arn: tenant.acmCertificateArn ?? "",
     s3_docs_prefix: tenant.s3DocsPrefix ?? "",
     llm_provider: tenant.llmProvider,
     llm_secret_arn: tenant.llmSecretArn!,

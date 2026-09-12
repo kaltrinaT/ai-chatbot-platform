@@ -30,6 +30,7 @@ export const FIELDS_BY_STEP: Record<number, readonly string[]> = {
     "awsRegion",
     "deploymentRoleArn",
     "s3DocsPrefix",
+    "acmCertificateArn",
     // Azure
     "azureSubscriptionId",
     "azureTenantId",

@@ -36,8 +36,9 @@ on:
       llm_secret_arn:
         required: true
         type: string
-      # Optional: a tenant onboarded before the docs-signer shipped has no such
-      # secret, and must still be destroyable. See buildDestroyInputs.
+      # Optional so teardown can never be blocked by a missing field: the
+      # platform sends an empty string rather than omitting the input. See
+      # buildAwsDestroyInputs in src/lib/deploy.ts.
       docs_signer_secret_arn:
         required: false
         type: string
@@ -58,7 +59,23 @@ on:
 jobs:
   destroy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Same reasoning as deploy-tenant.yml: id-token: write is what lets the
+    # OIDC credentials step run, and no step here uses the job token for the
+    # GitHub API, so dropping the other scopes removes nothing.
+    permissions:
+      id-token: write
+      contents: read
+    # Longer than a deploy's 30. Deleting a CloudFront distribution means
+    # disabling it and waiting for that to reach every edge location before
+    # the delete is accepted, which routinely takes 15-30 minutes on its own.
+    # A teardown that times out leaves the tenant's infrastructure half-gone
+    # and still billing, so the budget here is generous on purpose.
+    #
+    # Do not raise this above 60 without also refreshing AWS credentials
+    # immediately before `terraform destroy`. The chained customer-role
+    # session is capped at one hour by AWS, and today this timeout is the
+    # thing that keeps the job shorter than its credentials.
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -86,13 +103,27 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      # Teardown needs nothing in the platform account except the right to
+      # assume the customer's role, and that right now lives on the platform
+      # role, reached through GitHub's OIDC token rather than a stored key.
+      - name: Configure AWS credentials (platform role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-session-name: platform-destroy-${{ github.run_id }}
+          role-duration-seconds: 3600
+          aws-region: ${{ inputs.aws_region }}
+
+      # Chained from the platform role above; see deploy-tenant.yml for why
+      # role-chaining is required. Both sessions start within the job's first
+      # minute and last one hour, and the job's own 60-minute timeout ends it
+      # before they can expire (see the note on timeout-minutes above).
       - name: Configure AWS credentials (client — assume tenant role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.aws_region }}
           role-to-assume: ${{ inputs.deployment_role_arn }}
+          role-chaining: true
           role-session-name: destroy-${{ inputs.tenant_slug }}-${{ github.run_id }}
           role-duration-seconds: 3600
           role-skip-session-tagging: true

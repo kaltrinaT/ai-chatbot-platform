@@ -28,6 +28,16 @@ on:
         required: false
         type: string
         default: ""
+      acm_certificate_arn:
+        required: false
+        type: string
+        default: ""
+        description: "ACM certificate ARN covering `domain`. Empty means the ALB serves plain HTTP; set means an HTTPS listener plus a 301 from port 80."
+      enable_cdn:
+        required: false
+        type: boolean
+        default: true
+        description: "Front the ALB with CloudFront so tenants without a certificate still get HTTPS. Ignored when acm_certificate_arn is set. Re-run this workflow manually with it unchecked to remove a distribution that is misbehaving — the ALB keeps serving either way."
       s3_docs_prefix:
         required: false
         type: string
@@ -68,7 +78,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # OIDC needs id-token: write, or GitHub never issues the token and the
+    # credentials steps fail. A job-level block drops every scope it does not
+    # list, which is safe here: no step calls the GitHub API with the job
+    # token. Status callbacks carry their own webhook secret, and artifact
+    # uploads use the runner's own token.
+    permissions:
+      id-token: write
+      contents: read
+    # Raised from 30 when the apply stopped returning early: it now waits for
+    # both ECS services to reach steady state (see wait_for_steady_state in
+    # infra/terraform/main.tf) on top of replicating two images and creating a
+    # CloudFront distribution. The wait is the point — it is what turns a
+    # failed rollout into a failed deployment instead of a green one.
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -109,11 +132,18 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # 1. Pull source image from the PLATFORM's ECR
       # ─────────────────────────────────────────────────────────────
-      - name: Configure AWS credentials (platform — for source ECR read)
+      # No stored AWS key. GitHub presents a signed OIDC token for this run,
+      # and STS exchanges it for one-hour credentials on the platform role,
+      # which trusts only this repository's deploy branch (see
+      # infra/platform/github-oidc). The next credentials step chains from
+      # here into the customer's role, exactly as it chained from the static
+      # key before.
+      - name: Configure AWS credentials (platform role via OIDC — for source ECR read)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-session-name: platform-deploy-${{ github.run_id }}
+          role-duration-seconds: 3600
           aws-region: ${{ inputs.aws_region }}
 
       - name: Pull source images (backend + frontend)
@@ -127,13 +157,17 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # 2. Assume client deployment role, push image to client ECR
       # ─────────────────────────────────────────────────────────────
+      # role-chaining is what makes this assume the customer's role USING the
+      # platform-role credentials above. Without it the action attempts OIDC
+      # again, directly against a role whose trust policy only names the
+      # platform account, and fails. AWS caps a chained session at one hour,
+      # which is why role-duration-seconds cannot go above 3600 here.
       - name: Configure AWS credentials (client — assume tenant role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.aws_region }}
           role-to-assume: ${{ inputs.deployment_role_arn }}
+          role-chaining: true
           role-session-name: deploy-${{ inputs.tenant_slug }}-${{ github.run_id }}
           role-duration-seconds: 3600
           role-skip-session-tagging: true
@@ -234,6 +268,8 @@ jobs:
             -var "vector_store=${{ inputs.vector_store }}" \
             -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
             -var "domain=${{ inputs.domain }}" \
+            -var "acm_certificate_arn=${{ inputs.acm_certificate_arn }}" \
+            -var "enable_cdn=${{ inputs.enable_cdn }}" \
             -var "docs_signer_secret_arn=${{ inputs.docs_signer_secret_arn }}" \
             -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
             -var "extra_cors_origin=${{ vars.EXTRA_CORS_ORIGIN }}"

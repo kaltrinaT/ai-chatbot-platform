@@ -79,6 +79,7 @@ const AWS_PERMISSIONS_POLICY = `{
     { "Sid": "Secrets", "Effect": "Allow", "Action": "secretsmanager:*", "Resource": "*" },
     { "Sid": "Logs", "Effect": "Allow", "Action": "logs:*", "Resource": "*" },
     { "Sid": "Database", "Effect": "Allow", "Action": "rds:*", "Resource": "*" },
+    { "Sid": "Cdn", "Effect": "Allow", "Action": "cloudfront:*", "Resource": "*" },
     {
       "Sid": "IamForTaskRoles",
       "Effect": "Allow",
@@ -309,11 +310,15 @@ export default function CloudPrerequisitesContent() {
           <h2 className="text-base font-semibold text-gray-900">Network Requirements</h2>
           <ul className="mt-3 space-y-3 text-sm">
             <li>
-              <span className="font-medium text-gray-900">AWS — HTTP only.</span>{" "}
+              <span className="font-medium text-gray-900">AWS — HTTPS either way, two routes to it.</span>{" "}
               <span className="text-gray-600">
-                The load balancer only provisions an HTTP listener on port 80 — there&apos;s no HTTPS/TLS termination.
-                Access your chatbot with http://, not https://; if your browser auto-upgrades the URL, the connection
-                will simply time out.
+                Supply a TLS certificate ARN and the load balancer terminates TLS itself on 443, with port 80
+                redirecting to it and traffic encrypted end to end. Request the certificate in AWS Certificate
+                Manager, in the same region as the deployment, covering your custom domain, validated by DNS.
+                Leave it blank and a CloudFront distribution is created in front of the load balancer instead,
+                so the chatbot is still served over HTTPS on a *.cloudfront.net hostname with no DNS work — but
+                the hop from CloudFront to the load balancer is plain HTTP, and the load balancer stays directly
+                reachable without encryption.
               </span>
             </li>
             <li>

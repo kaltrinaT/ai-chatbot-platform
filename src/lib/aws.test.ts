@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-const { stsSend, secretsSend } = vi.hoisted(() => ({
+const { stsSend, stsCredentials, secretsSend } = vi.hoisted(() => ({
   stsSend: vi.fn(),
+  stsCredentials: vi.fn(),
   secretsSend: vi.fn(),
 }));
 
@@ -16,6 +17,8 @@ vi.mock("@aws-sdk/client-sts", () => {
   const STSClient = vi.fn(function (this: MockInstance, opts: unknown) {
     this.opts = opts;
     this.send = stsSend;
+    // The platform's own credentials, as the SDK's default chain resolved them.
+    this.config = { credentials: stsCredentials };
   });
   const AssumeRoleCommand = vi.fn(function (this: MockInstance, input: unknown) {
     this.input = input;
@@ -39,12 +42,47 @@ vi.mock("@aws-sdk/client-secrets-manager", () => {
 
 import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
 import { CreateSecretCommand, UpdateSecretCommand } from "@aws-sdk/client-secrets-manager";
-import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "./aws";
+import {
+  assumeTenantRole,
+  writeTenantSecret,
+  ensureDocsSignerSecret,
+  LongLivedAwsKeyError,
+} from "./aws";
 import { decryptSecret } from "@/lib/crypto";
+
+// What `aws login` or `aws sso login` hands the SDK: temporary, so it carries
+// a session token.
+const signInSession = {
+  accessKeyId: "ASIAPLATFORM",
+  secretAccessKey: "platform-secret",
+  sessionToken: "platform-session",
+};
 
 describe("assumeTenantRole", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stsCredentials.mockResolvedValue(signInSession);
+  });
+
+  it("refuses a long-lived access key without calling STS", async () => {
+    stsCredentials.mockResolvedValue({ accessKeyId: "AKIAPLATFORM", secretAccessKey: "platform-secret" });
+
+    await expect(
+      assumeTenantRole({ roleArn: "arn:x", sessionName: "s", region: "us-east-1" }),
+    ).rejects.toBeInstanceOf(LongLivedAwsKeyError);
+    expect(stsSend).not.toHaveBeenCalled();
+  });
+
+  it("propagates a missing sign-in session without calling STS", async () => {
+    const noSession = Object.assign(new Error("Could not load credentials from any providers"), {
+      name: "CredentialsProviderError",
+    });
+    stsCredentials.mockRejectedValue(noSession);
+
+    await expect(
+      assumeTenantRole({ roleArn: "arn:x", sessionName: "s", region: "us-east-1" }),
+    ).rejects.toThrow("Could not load credentials from any providers");
+    expect(stsSend).not.toHaveBeenCalled();
   });
 
   it("returns mapped credentials on success", async () => {
@@ -168,6 +206,7 @@ describe("ensureDocsSignerSecret", () => {
     // A real (not mocked) encrypt/decrypt round-trip needs a valid key —
     // this exercises the actual @/lib/crypto module, not a stub.
     process.env.PLATFORM_ENCRYPTION_KEY = "1".repeat(64);
+    stsCredentials.mockResolvedValue(signInSession);
     stsSend.mockResolvedValue({
       Credentials: { AccessKeyId: "AKIA123", SecretAccessKey: "secret", SessionToken: "token" },
     });

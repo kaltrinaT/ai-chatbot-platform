@@ -58,6 +58,16 @@ const AwsInput = SharedInput.extend({
     .string()
     .refine((v) => !v.startsWith("/"), "Must not start with a leading slash")
     .optional(),
+  // Optional, but it is the only thing that gets a tenant TLS: without it the
+  // ALB listens on port 80 only and every question and answer crosses the
+  // internet in clear text.
+  acmCertificateArn: z
+    .string()
+    .refine(
+      (v) => v === "" || /^arn:aws:acm:[a-z0-9-]+:\d{12}:certificate\/.+$/.test(v),
+      "Must be a valid ACM certificate ARN (arn:aws:acm:REGION:ACCOUNT:certificate/ID)",
+    )
+    .optional(),
 });
 
 // ── Azure fields ──────────────────────────────────────────────────────
@@ -106,7 +116,28 @@ const TenantInput = z
   .refine((v) => v.vectorStore !== "pinecone" || (v.pineconeApiKey ?? "").length >= 10, {
     message: "Required when the vector store is Pinecone",
     path: ["pineconeApiKey"],
-  });
+  })
+  // A certificate with no domain would open port 443 for a hostname nobody
+  // resolves, while the tenant's advertised URL stayed on plain HTTP.
+  .refine((v) => v.cloudProvider !== "aws" || !v.acmCertificateArn || Boolean(v.domain), {
+    message:
+      "A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.",
+    path: ["acmCertificateArn"],
+  })
+  // A load balancer can only use certificates from its own region. Caught
+  // here because otherwise it surfaces minutes later, as a Terraform error
+  // from the middle of a workflow run.
+  .refine(
+    (v) =>
+      v.cloudProvider !== "aws" ||
+      !v.acmCertificateArn ||
+      v.acmCertificateArn.split(":")[3] === v.awsRegion,
+    {
+      message:
+        "The certificate must live in the same region as the deployment. Request it again in the tenant's region.",
+      path: ["acmCertificateArn"],
+    },
+  );
 
 /**
  * `errors` is always present (empty on success) so callers can read it without
@@ -176,6 +207,7 @@ export async function createTenantAndDeploy(
     awsRegion: formData.get("awsRegion"),
     deploymentRoleArn: formData.get("deploymentRoleArn"),
     s3DocsPrefix: (formData.get("s3DocsPrefix") as string) || undefined,
+    acmCertificateArn: (formData.get("acmCertificateArn") as string) || undefined,
     // Azure
     azureSubscriptionId: formData.get("azureSubscriptionId"),
     azureTenantId: formData.get("azureTenantId"),
@@ -271,6 +303,7 @@ export async function createTenantAndDeploy(
             awsRegion: parsed.awsRegion,
             deploymentRoleArn: parsed.deploymentRoleArn,
             s3DocsPrefix: parsed.s3DocsPrefix,
+            acmCertificateArn: parsed.acmCertificateArn || null,
             docsSignerSecretArn,
             docsSignerSecretEncrypted,
           }

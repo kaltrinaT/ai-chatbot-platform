@@ -57,6 +57,13 @@ export const tenants = pgTable("tenants", {
   deploymentRoleArn: text("deployment_role_arn"),
   s3DocsBucket: text("s3_docs_bucket"),
   s3DocsPrefix: text("s3_docs_prefix"),
+  // ARN of an ACM certificate covering `domain`, in the tenant's own region.
+  // Null means the ALB has no HTTPS listener and chat traffic is unencrypted
+  // — which was the only possible state before this column existed. The
+  // customer issues and validates the certificate themselves: ACM will not
+  // issue for the ALB's own *.elb.amazonaws.com name, so this is always
+  // accompanied by `domain`.
+  acmCertificateArn: text("acm_certificate_arn"),
   // Shared by both clouds, populated asymmetrically:
   //  - AWS: docsSignerSecretArn is the ARN of the secret written once into
   //    the tenant's own Secrets Manager during onboarding (like

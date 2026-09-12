@@ -26,6 +26,7 @@ function tenantRow(overrides: Partial<TenantRow> = {}): TenantRow {
     deploymentRoleArn: null,
     s3DocsBucket: null,
     s3DocsPrefix: null,
+    acmCertificateArn: null,
     docsSignerSecretArn: null,
     docsSignerSecretEncrypted: null,
     docsSignerUrl: null,

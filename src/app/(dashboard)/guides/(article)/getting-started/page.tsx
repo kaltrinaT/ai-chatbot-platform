@@ -216,8 +216,9 @@ export default function GettingStartedPage() {
             <div id="access-chatbot" className="mt-4 scroll-mt-8">
               <h3 className="text-sm font-semibold text-gray-900">4. Access Chatbot</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Once the deployment succeeds, the tenant page shows your chatbot&apos;s URL. AWS tenants get an
-                HTTP-only URL (no HTTPS yet); Azure tenants get a managed HTTPS URL automatically.
+                Once the deployment succeeds, the tenant page shows your chatbot&apos;s URL, and it is an HTTPS
+                one on both clouds. Azure serves it from Container Apps directly. On AWS it is your own load
+                balancer when you supplied a TLS certificate ARN, and a CloudFront hostname when you did not.
               </p>
             </div>
           </section>

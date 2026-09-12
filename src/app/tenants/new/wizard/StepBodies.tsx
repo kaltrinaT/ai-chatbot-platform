@@ -395,6 +395,15 @@ export function StepCloudConfig({ values, set, errors }: StepProps) {
               error={errors.s3DocsPrefix}
               tooltip="A folder path inside the docs bucket Terraform creates. Leave blank to use the bucket root."
             />
+            <Field
+              label="TLS Certificate ARN (Optional)"
+              value={values.acmCertificateArn ?? ""}
+              onChange={(v) => set("acmCertificateArn", v)}
+              placeholder="arn:aws:acm:us-east-1:123456789012:certificate/…"
+              hint="Needs the custom domain above. Without it, chat traffic is unencrypted."
+              error={errors.acmCertificateArn}
+              tooltip="Request a certificate in AWS Certificate Manager for the custom domain, in this same region, and validate it via DNS. Paste the ARN here to serve the chatbot over HTTPS; port 80 then redirects."
+            />
           </div>
           <DocsNote />
         </Card>
@@ -690,6 +699,21 @@ export function StepReview({
                   {values.s3DocsPrefix && (
                     <SummaryRow label="S3 Prefix">{values.s3DocsPrefix}</SummaryRow>
                   )}
+                  <SummaryRow label="Chat Traffic">
+                    {values.acmCertificateArn ? (
+                      <>
+                        HTTPS on the custom domain, encrypted end to end. Port 80 redirects
+                        to it.
+                      </>
+                    ) : (
+                      <>
+                        HTTPS via a CloudFront address, since no certificate was supplied.
+                        The hop from CloudFront to the load balancer is unencrypted, and the
+                        load balancer stays reachable over plain HTTP. Supply a certificate
+                        to encrypt the whole path.
+                      </>
+                    )}
+                  </SummaryRow>
                 </>
               )}
               <SummaryRow label="Data Plane">

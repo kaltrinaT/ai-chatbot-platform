@@ -196,10 +196,15 @@ The following must be secured by the platform operator:
 |---|---|---|
 | `PLATFORM_ENCRYPTION_KEY` | Server environment variable | All stored client secrets become decryptable |
 | `GITHUB_PAT` | Server environment variable | Attacker can trigger arbitrary workflow dispatches |
+| Operator's AWS sign-in session (`aws login`) | AWS CLI login cache on the platform's machine, reached by the application through `AWS_PROFILE` | Attacker can assume every customer's `chatbot-client-deploy-*` role until the session expires |
 | `PLATFORM_WEBHOOK_SECRET` | Server env + GitHub Actions secret | Attacker can forge deployment status callbacks |
 | `TF_STATE_BUCKET` | GitHub Actions secret | Reveals Terraform state storage location |
 
 These values must never be committed to source control, logged, or included in error responses.
+
+**GitHub Actions holds no AWS key.** Deploy and teardown workflows exchange GitHub's signed OIDC token for one-hour credentials on the platform role defined in [`infra/platform/github-oidc`](infra/platform/github-oidc), whose trust policy admits only runs on this repository's deploy branch. Nothing reusable is stored, and each customer-role session is named after the workflow run that opened it, so a customer's CloudTrail ties every action to one run.
+
+**Neither does the application.** It assumes the `platform-control-plane` role defined in [`infra/platform/control-plane`](infra/platform/control-plane) from the operator's `aws login` session, and that role may do one thing: `sts:AssumeRole` into `chatbot-client-deploy-*` roles. Two independent checks keep a stored key from standing in for the session. `assumeTenantRole` refuses credentials without a session token before signing anything, and the role's trust policy admits only temporary credentials. A hosted deployment would swap the operator's session for the host's own workload identity, trusted by the same role. `GITHUB_PAT` remains long-lived; it could become a GitHub App's short-lived installation tokens.
 
 ---
 

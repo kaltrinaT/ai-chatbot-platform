@@ -1,5 +1,34 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { triggerReindex, docsBucketName } from "./reindex";
+import { triggerReindex, docsBucketName, controlPlaneUrl } from "./reindex";
+
+describe("controlPlaneUrl", () => {
+  it("bypasses the CDN, whose 60s origin cap is below the 120s a reindex is allowed", () => {
+    expect(
+      controlPlaneUrl({
+        chatbotUrl: "https://d111111abcdef8.cloudfront.net",
+        albDnsName: "chatbot-acme-co-123.us-east-1.elb.amazonaws.com",
+      }),
+    ).toBe("http://chatbot-acme-co-123.us-east-1.elb.amazonaws.com");
+  });
+
+  it("keeps using the tenant's own HTTPS endpoint when it terminates TLS itself", () => {
+    expect(
+      controlPlaneUrl({
+        chatbotUrl: "https://chat.acme.com",
+        albDnsName: "chatbot-acme-co-123.us-east-1.elb.amazonaws.com",
+      }),
+    ).toBe("https://chat.acme.com");
+  });
+
+  it("falls back to the chatbot URL when there is no load balancer to address, as on Azure", () => {
+    expect(
+      controlPlaneUrl({
+        chatbotUrl: "https://chatbot-beta.azurecontainerapps.io",
+        albDnsName: null,
+      }),
+    ).toBe("https://chatbot-beta.azurecontainerapps.io");
+  });
+});
 
 describe("docsBucketName", () => {
   it("uses the stored bucket when there is one", () => {
@@ -26,6 +55,21 @@ describe("triggerReindex", () => {
     global.fetch = vi.fn();
     // The failure path logs the real error; keep it out of the test output.
     vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("posts to the load balancer, not the CDN, for a CloudFront-fronted tenant", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+
+    await triggerReindex({
+      slug: "acme-co",
+      chatbotUrl: "https://d111111abcdef8.cloudfront.net",
+      albDnsName: "chatbot-acme-co-123.us-east-1.elb.amazonaws.com",
+      s3DocsBucket: null,
+      s3DocsPrefix: null,
+    });
+
+    const [url] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("http://chatbot-acme-co-123.us-east-1.elb.amazonaws.com/api/index");
   });
 
   it("never sends a null bucket, even when the column is unset", async () => {

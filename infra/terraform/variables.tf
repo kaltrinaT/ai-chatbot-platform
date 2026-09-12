@@ -185,6 +185,41 @@ variable "domain" {
   }
 }
 
+variable "enable_cdn" {
+  description = <<-EOT
+    Front the load balancer with a CloudFront distribution so tenants that have
+    no certificate of their own still get HTTPS, on CloudFront's own
+    *.cloudfront.net hostname and its own certificate.
+
+    Ignored when acm_certificate_arn is set, since the load balancer already
+    terminates TLS in that case and CloudFront would only add a hop. Turn this
+    off only to accept a plaintext-only deployment deliberately.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "acm_certificate_arn" {
+  description = <<-EOT
+    ARN of an ACM certificate, in this same region, covering var.domain. When
+    set, the ALB gains an HTTPS listener on 443 and port 80 becomes a 301
+    redirect to it; when empty the ALB serves plain HTTP and nothing is
+    encrypted in transit.
+
+    The customer creates and validates this certificate themselves. ACM can
+    only issue for a domain whose DNS the requester controls, which rules out
+    the ALB's own *.elb.amazonaws.com hostname, so certificate and custom
+    domain always arrive together.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.acm_certificate_arn == "" || can(regex("^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/.+$", var.acm_certificate_arn))
+    error_message = "acm_certificate_arn must be empty or a valid ACM certificate ARN (arn:aws:acm:REGION:ACCOUNT:certificate/ID)."
+  }
+}
+
 variable "container_port" {
   description = "Port the chatbot container listens on."
   type        = number

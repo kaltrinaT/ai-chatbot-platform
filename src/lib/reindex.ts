@@ -25,6 +25,32 @@ export function docsBucketName(tenant: Pick<Tenant, "slug" | "s3DocsBucket">): s
 const REINDEX_TIMEOUT_MS = 120_000;
 
 /**
+ * Where the platform's own calls to the chatbot go, which is not always where
+ * a person's browser goes.
+ *
+ * A tenant with no certificate of its own is fronted by CloudFront for TLS
+ * (see aws_cloudfront_distribution.this), and chatbotUrl then names the
+ * distribution. CloudFront gives up on an origin response after 60s, which is
+ * the most it allows without a quota increase, while a reindex is deliberately
+ * given 120s because it re-embeds every document under the prefix rather than
+ * the one that changed. Routing this call through the CDN would turn a slow
+ * but working reindex into a 504.
+ *
+ * So control-plane calls address the load balancer directly. Viewer traffic is
+ * unaffected and still arrives over HTTPS. The trade is that this one call,
+ * which carries a slug, a bucket name and a prefix and no credential, travels
+ * unencrypted — exactly as it did before the CDN existed.
+ */
+export function controlPlaneUrl(
+  tenant: Pick<Tenant, "chatbotUrl"> & Partial<Pick<Tenant, "albDnsName">>,
+): string | null {
+  if (tenant.albDnsName && tenant.chatbotUrl?.includes(".cloudfront.net")) {
+    return `http://${tenant.albDnsName}`;
+  }
+  return tenant.chatbotUrl;
+}
+
+/**
  * Triggers the tenant's own chatbot backend to (re)load documents from S3
  * into its vector store. Per CHATBOT-LOGIC.md, POST /api/index does a full
  * resync of everything under the prefix — it does not incrementally embed
@@ -33,14 +59,17 @@ const REINDEX_TIMEOUT_MS = 120_000;
  * ai-chatbot/ai-backend repo, not something this call can control.
  */
 export async function triggerReindex(
-  tenant: Pick<Tenant, "slug" | "chatbotUrl" | "s3DocsBucket" | "s3DocsPrefix">,
+  tenant: Pick<Tenant, "slug" | "chatbotUrl" | "s3DocsBucket" | "s3DocsPrefix"> &
+    Partial<Pick<Tenant, "albDnsName">>,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!tenant.chatbotUrl) {
     return { ok: false, error: "Tenant has no chatbotUrl yet — deploy has not completed." };
   }
 
+  const baseUrl = controlPlaneUrl(tenant)!;
+
   try {
-    const res = await fetch(`${tenant.chatbotUrl}/api/index`, {
+    const res = await fetch(`${baseUrl}/api/index`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -59,7 +88,7 @@ export async function triggerReindex(
     }
     return { ok: true };
   } catch (err) {
-    console.error(`[triggerReindex] ${tenant.slug} -> ${tenant.chatbotUrl}/api/index failed`, err);
+    console.error(`[triggerReindex] ${tenant.slug} -> ${baseUrl}/api/index failed`, err);
     return { ok: false, error: describeFetchFailure(err) };
   }
 }

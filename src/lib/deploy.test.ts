@@ -242,6 +242,42 @@ describe("triggerDeployment", () => {
     expect(ensureDocsSignerSecret).not.toHaveBeenCalled();
   });
 
+  it("forwards the tenant's TLS certificate ARN, so a redeploy keeps its HTTPS listener", async () => {
+    const certArn = "arn:aws:acm:us-east-1:111111111111:certificate/abc-123";
+    dbSelectWhere.mockResolvedValue([{ ...baseAwsTenant, acmCertificateArn: certArn }]);
+    dbInsertReturning.mockResolvedValue([{ id: "deploy-6", status: "pending" }]);
+    dbUpdateWhere.mockResolvedValue(undefined);
+    createWorkflowDispatch.mockResolvedValue({});
+
+    await triggerDeployment({
+      tenantId: baseAwsTenant.id,
+      chatbotVersion: "v1",
+      triggeredByUserId: "u1",
+    });
+
+    expect(createWorkflowDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputs: expect.objectContaining({ acm_certificate_arn: certArn }),
+      }),
+    );
+  });
+
+  it("sends an empty certificate ARN rather than omitting it, which GitHub rejects", async () => {
+    dbSelectWhere.mockResolvedValue([{ ...baseAwsTenant, acmCertificateArn: null }]);
+    dbInsertReturning.mockResolvedValue([{ id: "deploy-7", status: "pending" }]);
+    dbUpdateWhere.mockResolvedValue(undefined);
+    createWorkflowDispatch.mockResolvedValue({});
+
+    await triggerDeployment({
+      tenantId: baseAwsTenant.id,
+      chatbotVersion: "v1",
+      triggeredByUserId: "u1",
+    });
+
+    const call = createWorkflowDispatch.mock.calls[0][0];
+    expect(call.inputs.acm_certificate_arn).toBe("");
+  });
+
   it("lazily generates and stores the docs-signer secret for AWS tenants missing one", async () => {
     dbSelectWhere.mockResolvedValue([{ ...baseAwsTenant, docsSignerSecretArn: null }]);
     dbInsertReturning.mockResolvedValue([{ id: "deploy-5", status: "pending" }]);

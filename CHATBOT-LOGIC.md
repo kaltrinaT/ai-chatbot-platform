@@ -2,7 +2,7 @@
 
 > **Scope:** This documents the external `ai-chatbot/ai-backend` repository, which is **not** part of this platform repo. Backend-internal details (endpoints, embedding model, chunking) can only be verified against that repo. The runtime **environment variables** below, however, are set by this repo's Terraform and are authoritative.
 
-The chatbot backend is a Python FastAPI service (`ai-chatbot/ai-backend`). It implements a Retrieval-Augmented Generation (RAG) pipeline: it retrieves relevant document chunks from Pinecone, then sends them as context to an LLM to generate an answer.
+The chatbot backend is a Python FastAPI service (`ai-chatbot/ai-backend`). It implements a Retrieval-Augmented Generation (RAG) pipeline: it retrieves relevant document chunks from the tenant's vector store — Pinecone or Postgres/pgvector, selected per tenant — then sends them as context to an LLM to generate an answer.
 
 ---
 
@@ -13,7 +13,7 @@ The chatbot backend is a Python FastAPI service (`ai-chatbot/ai-backend`). It im
 | `/api/` | GET | Health / info |
 | `/api/health` | GET | ALB health check target |
 | `/api/ask` | POST | Answer a question using RAG |
-| `/api/index` | POST | Load documents from S3 into Pinecone |
+| `/api/index` | POST | Load documents from the tenant's object storage into its vector store |
 | `/docs` | GET | Swagger UI (FastAPI auto-generated) |
 
 ---
@@ -32,10 +32,13 @@ Client
          └── model loaded lazily on first call, cached via @lru_cache
         │
         ▼
-  2. Query Pinecone
-     └── index.query(vector, top_k, filter={"tenant": tenant_id})
+  2. Query the vector store          (VECTOR_STORE selects which)
+     ├── pinecone: index.query(vector, top_k,
+     │             filter={"tenant": tenant_id})
+     └── pgvector: nearest-neighbour SELECT over PGVECTOR_TABLE
          → returns top-k matching chunks with metadata
-         └── tenant isolation via metadata filter
+         └── isolation is the dedicated index / database per tenant;
+             the metadata filter is defence in depth on top of it
         │
         ▼
   3. Build prompt
@@ -86,8 +89,10 @@ If none are set → **mock client** returns `[Mock Response] No API key configur
 ```
 POST /api/index  { tenant_id, bucket, prefix }
   │
-  ├── Load documents from S3
-  │   └── s3_loader.load_text_from_s3(bucket, prefix)
+  ├── Load documents from the tenant's object storage
+  │   ├── AWS:   S3, via s3_loader.load_text_from_s3(bucket, prefix)
+  │   └── Azure: Blob Storage, reached with AZURE_STORAGE_ACCOUNT /
+  │              _CONTAINER / _KEY (set by this repo's Terraform)
   │       → lists objects under prefix, reads text content
   │
   ├── For each document:
@@ -105,9 +110,16 @@ POST /api/index  { tenant_id, bucket, prefix }
   └── return { message: "Data indexed successfully" }
 ```
 
+> **Note on the request body.** `triggerReindex` (`src/lib/reindex.ts`) sends the
+> same `{ tenant_id, bucket, prefix }` body for both clouds, and `bucket` is
+> always derived AWS-style as `chatbot-{slug}-docs`. For an Azure tenant that
+> names nothing that exists; the container is expected to fall back to its
+> `AZURE_STORAGE_*` settings. Whether it does can only be confirmed against the
+> backend repo.
+
 ---
 
-## Pinecone Index
+## Vector Store
 
 The platform provisions **either** a Pinecone index **or** a PostgreSQL/pgvector
 database per tenant, selected by the tenant's `vector_store` setting and
@@ -147,26 +159,39 @@ never needs the unused backend's dependency to be importable.
 
 ## Environment Variables (container)
 
-| Variable | Source | Purpose |
-|---|---|---|
-| `OPENAI_API_KEY` | Secrets Manager | LLM authentication |
-| `LLM_API_KEY` | Secrets Manager | LLM authentication (fallback) |
-| `ANTHROPIC_API_KEY` | Secrets Manager | LLM authentication (fallback) |
-| `VECTOR_STORE` | Terraform env | `pinecone` or `pgvector` — selects the retrieval backend |
-| `PINECONE_API_KEY` | Secrets Manager | Pinecone authentication (customer's own key) |
-| `DATABASE_URL` / `PGVECTOR_URL` | Secrets Manager / Key Vault | pgvector connection URL |
-| `PGVECTOR_TABLE` | Terraform env | Table holding embeddings (`embeddings`) |
-| `PGVECTOR_DIMENSION` | Terraform env | Vector column width (384) |
-| `OPENAI_BASE_URL` | Terraform env | LLM API endpoint (derived from provider) |
-| `OPENAI_API_BASE` | Terraform env | LLM API endpoint (legacy alias) |
-| `LLM_MODEL` | Terraform env | Model name override |
-| `LLM_PROVIDER` | Terraform env | Provider name (`openai`/`anthropic`/`openrouter`) |
-| `PINECONE_INDEX` | Terraform env | Pinecone index name (per-tenant: `chatbot-{slug}`) |
-| `PINECONE_ENVIRONMENT` | Terraform env | Pinecone serverless region |
-| `S3_DOCS_BUCKET` | Terraform env | S3 bucket for tenant documents |
-| `S3_DOCS_PREFIX` | Terraform env | Optional key prefix within bucket |
-| `AWS_REGION` | Terraform env | Region for S3 SDK |
-| `PORT` | Terraform env | Uvicorn listen port (default 8000) |
+Not every variable is set on both clouds. "Secret" means an ECS task secret
+resolved from Secrets Manager on AWS, and a Container App secret set by
+Terraform on Azure; the plaintext exists only inside the running container
+either way.
+
+| Variable | Cloud | Source | Purpose |
+|---|---|---|---|
+| `TENANT_ID` | both | Terraform env | Tenant slug; the value used as the metadata filter |
+| `PORT` | both | Terraform env | Uvicorn listen port (default 8000) |
+| `LLM_PROVIDER` | both | Terraform env | Provider name (`openai`/`anthropic`/`openrouter`) |
+| `LLM_MODEL` | both | Terraform env | Model name override |
+| `OPENAI_BASE_URL` | both | Terraform env | LLM API endpoint (derived from provider) |
+| `OPENAI_API_BASE` | both | Terraform env | LLM API endpoint (legacy alias) |
+| `OPENAI_API_KEY` | both | secret | LLM authentication |
+| `LLM_API_KEY` | both | secret | LLM authentication (fallback) |
+| `ANTHROPIC_API_KEY` | both | secret | LLM authentication (fallback) |
+| `VECTOR_STORE` | both | Terraform env | `pinecone` or `pgvector` — selects the retrieval backend |
+| `PINECONE_API_KEY` | both | secret | Pinecone authentication (customer's own key) |
+| `PINECONE_INDEX` | both | Terraform env | Pinecone index name (per-tenant: `chatbot-{slug}`) |
+| `PINECONE_ENVIRONMENT` | **Azure only** | Terraform env | Pinecone serverless region. The AWS task definition does not set it |
+| `DATABASE_URL` / `PGVECTOR_URL` | both | secret | pgvector connection URL |
+| `PGVECTOR_TABLE` | both | Terraform env | Table holding embeddings (`embeddings`) |
+| `PGVECTOR_DIMENSION` | both | Terraform env | Vector column width (384) |
+| `S3_DOCS_BUCKET` | **AWS only** | Terraform env | S3 bucket for tenant documents |
+| `S3_DOCS_PREFIX` | **AWS only** | Terraform env | Optional key prefix within bucket |
+| `AWS_REGION` | **AWS only** | Terraform env | Region for the S3 SDK |
+| `AZURE_STORAGE_ACCOUNT` | **Azure only** | Terraform env | Storage account holding the documents container |
+| `AZURE_STORAGE_CONTAINER` | **Azure only** | Terraform env | Blob container name (`documents`) |
+| `AZURE_STORAGE_KEY` | **Azure only** | secret | Storage account primary access key |
+
+The `PINECONE_*` rows apply only when `VECTOR_STORE = pinecone`, and the
+`PGVECTOR_*` / `DATABASE_URL` rows only when it is `pgvector`. Terraform emits
+one set or the other, never both.
 
 ---
 

@@ -55,6 +55,19 @@ locals {
 
   use_pinecone = var.vector_store == "pinecone"
   use_pgvector = var.vector_store == "pgvector"
+
+  # TLS is available only when the customer supplies a certificate, because
+  # ACM cannot issue one for the ALB's own *.elb.amazonaws.com name — that
+  # zone isn't theirs to validate. A certificate therefore implies a custom
+  # domain, and the customer creates and validates it themselves in the same
+  # visit to their DNS provider where they point the hostname at the ALB.
+  enable_https = var.acm_certificate_arn != ""
+
+  # The fallback for everyone else. A certificate needs a domain, and most
+  # tenants bring neither, so without this they are served over plain HTTP.
+  # CloudFront supplies both the hostname and the certificate, which is the
+  # only way to give a tenant TLS with no action on the customer's part.
+  use_cdn = var.enable_cdn && !local.enable_https
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -112,6 +125,18 @@ resource "aws_security_group" "alb" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Only opened when there is a certificate to terminate with. Without one
+  # the listener below doesn't exist, so an open 443 would accept nothing.
+  dynamic "ingress" {
+    for_each = local.enable_https ? [1] : []
+    content {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
 
   egress {
@@ -220,10 +245,45 @@ resource "aws_lb_target_group" "frontend" {
   tags = local.common_tags
 }
 
+# Port 80. With a certificate configured this does nothing but redirect to
+# 443; without one it is the only listener there is and serves traffic
+# directly, in the clear. See the acm_certificate_arn variable.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
+
+  dynamic "default_action" {
+    for_each = local.enable_https ? [1] : []
+    content {
+      type = "redirect"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = local.enable_https ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.frontend.arn
+    }
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  count = local.enable_https ? 1 : 0
+
+  load_balancer_arn = aws_lb.this.arn
+  port              = 443
+  protocol          = "HTTPS"
+  # TLS 1.2 floor, and 1.3 where the client supports it. Anything older is
+  # not worth offering to a browser talking to a chatbot.
+  ssl_policy      = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn = var.acm_certificate_arn
 
   # Default: serve the frontend UI.
   default_action {
@@ -232,9 +292,14 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# API traffic is routed to the backend service.
+# API traffic is routed to the backend service. It hangs off whichever
+# listener actually serves traffic — putting it on the HTTP listener while
+# that listener is a blanket redirect would route nothing.
 resource "aws_lb_listener_rule" "backend_api" {
-  listener_arn = aws_lb_listener.http.arn
+  # one() rather than [0]: it yields null for an empty list instead of an
+  # invalid-index error, so this expression stays valid however Terraform
+  # chooses to evaluate the unselected branch.
+  listener_arn = local.enable_https ? one(aws_lb_listener.https[*].arn) : aws_lb_listener.http.arn
   priority     = 10
 
   action {
@@ -247,6 +312,93 @@ resource "aws_lb_listener_rule" "backend_api" {
       values = ["/api/*"]
     }
   }
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# CloudFront — TLS for tenants who brought no certificate
+#
+# This is a viewer-facing TLS terminator, not a cache. Everything here is
+# dynamic: a chat UI and a question-answering API, where a cached response
+# would be a correctness bug rather than a saving. So caching is disabled
+# outright and every request reaches the origin.
+#
+# The origin hop, CloudFront to ALB, stays HTTP. It cannot be anything else:
+# the ALB has no certificate in this branch, which is the whole reason the
+# distribution exists. So this encrypts the leg that crosses networks the
+# customer does not control, and leaves one inside AWS that it does not.
+# A tenant wanting TLS end to end supplies acm_certificate_arn instead.
+# ──────────────────────────────────────────────────────────────────────
+
+data "aws_cloudfront_cache_policy" "disabled" {
+  count = local.use_cdn ? 1 : 0
+  name  = "Managed-CachingDisabled"
+}
+
+# Forwards every header, cookie and query string except Host. Host has to be
+# left alone so the ALB sees its own name and its listener rules still match.
+data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
+  count = local.use_cdn ? 1 : 0
+  name  = "Managed-AllViewerExceptHostHeader"
+}
+
+resource "aws_cloudfront_distribution" "this" {
+  count = local.use_cdn ? 1 : 0
+
+  enabled     = true
+  comment     = "${local.name} — TLS front for the chatbot ALB"
+  price_class = "PriceClass_100"
+
+  # Terraform otherwise blocks until the distribution finishes propagating,
+  # which is minutes of a 30-minute deploy job spent watching a progress bar.
+  # Nothing downstream needs it to be live, only to exist and have a name.
+  wait_for_deployment = false
+
+  origin {
+    domain_name = aws_lb.this.dns_name
+    origin_id   = "alb"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+      # 60s is the ceiling CloudFront allows without a quota increase. The
+      # chatbot's first request after a cold start loads an embedding model,
+      # so the default 30s is not enough headroom.
+      origin_read_timeout      = 60
+      origin_keepalive_timeout = 60
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "alb"
+    viewer_protocol_policy = "redirect-to-https"
+
+    # Compression is deliberately left off. It interacts with the cache
+    # policy's Accept-Encoding handling, which is the one attribute here
+    # nobody has been able to try against a real distribution yet, and the
+    # origin can compress its own responses anyway. Turn it on once there
+    # has been a successful deploy to try it against.
+
+    # POST and friends are required: /api/ask is how the chatbot is used.
+    allowed_methods = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods  = ["GET", "HEAD"]
+
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled[0].id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host[0].id
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = local.common_tags
 }
 
 # ──────────────────────────────────────────────────────────────────────
