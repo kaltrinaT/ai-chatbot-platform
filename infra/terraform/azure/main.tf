@@ -63,8 +63,48 @@ resource "azurerm_container_registry" "this" {
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
   sku                 = "Basic"
-  admin_enabled       = true
   tags                = local.common_tags
+
+  # No admin user. It is one shared username and password with push and pull
+  # over the whole registry, and it used to be handed to the Container App as
+  # a secret. Pulls now go through the chatbot's user-assigned identity holding
+  # AcrPull (below). Pushes go through `az acr login`, which uses the deploying
+  # service principal's Entra token and never needed the admin user.
+  admin_enabled = false
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# Chatbot runtime identity
+#
+# User-assigned rather than system-assigned, because of an ordering problem a
+# system-assigned identity cannot solve: it does not exist until the Container
+# App does, and the Container App cannot create its first revision until it can
+# pull its image. The pull permission could never be in place in time.
+#
+# Created in the bootstrap apply, alongside the registry and before any image
+# is pushed, so its AcrPull grant has time to propagate before the full apply
+# creates the app (see deploy-tenant-azure.yml).
+#
+# Deliberately separate from the docs-signer's identity. This one pulls images
+# and reads documents; the signer's writes and deletes documents and nothing
+# else. Neither holds the other's permissions.
+# ──────────────────────────────────────────────────────────────────────
+
+resource "azurerm_user_assigned_identity" "chatbot" {
+  name                = "${local.name}-chatbot-id"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  tags                = local.common_tags
+}
+
+resource "azurerm_role_assignment" "chatbot_acr_pull" {
+  scope                = azurerm_container_registry.this.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.chatbot.principal_id
+  # A freshly created identity may not have replicated through Entra ID yet,
+  # and the assignment API rejects principals it cannot look up. Skipping that
+  # lookup is the documented remedy for exactly this case.
+  skip_service_principal_aad_check = true
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -109,11 +149,11 @@ resource "azurerm_key_vault_secret" "pinecone_api_key" {
   key_vault_id = azurerm_key_vault.this.id
 }
 
-resource "azurerm_key_vault_secret" "storage_key" {
-  name         = "storage-key"
-  value        = azurerm_storage_account.docs.primary_access_key
-  key_vault_id = azurerm_key_vault.this.id
-}
+# The storage account key is deliberately not stored anywhere. Nothing in
+# this deployment uses it: the chatbot reads blobs through its managed
+# identity and the docs-signer writes through its own. Keeping a copy in the
+# vault would reintroduce, at rest, exactly the credential the identities
+# exist to avoid.
 
 # ──────────────────────────────────────────────────────────────────────
 # Vector store — exactly one of the two blocks below is created, chosen by
@@ -237,6 +277,14 @@ resource "azurerm_storage_account" "docs" {
   account_replication_type = "LRS"
   tags                     = local.common_tags
 
+  min_tls_version = "TLS1_2"
+
+  # The container below is private, but this defaults to true, which leaves
+  # anyone with control-plane rights able to flip a container to public. There
+  # is no case in this deployment where a tenant's documents should be
+  # anonymously readable.
+  allow_nested_items_to_be_public = false
+
   # The browser PUTs document bytes directly to Blob Storage using a SAS
   # minted by the docs-signer Function below — a cross-origin request from
   # the platform's own origin, so it needs CORS. Mirrors
@@ -244,6 +292,14 @@ resource "azurerm_storage_account" "docs" {
   # nests CORS inside the storage account resource rather than as a
   # separate one).
   blob_properties {
+    # The Azure half of the same durability problem as S3 versioning: the
+    # docs-signer can delete, the chatbot's index never purges the vectors of
+    # a deleted document, so a mistaken delete otherwise leaves embeddings
+    # answering for a document nobody can recover.
+    delete_retention_policy {
+      days = 30
+    }
+
     cors_rule {
       # compact() drops extra_cors_origin when it's empty, so a tenant
       # deploy allows exactly the platform's own origin unless one is
@@ -390,6 +446,45 @@ resource "azurerm_role_assignment" "docs_signer_storage" {
   principal_id       = azurerm_linux_function_app.docs_signer.identity[0].principal_id
 }
 
+# The chatbot's own role: the exact mirror image of the signer's. The signer
+# may write and delete but never read; the chatbot may read but never write.
+# Neither can do the other's job, and neither can reach anything in this
+# storage account beyond the documents themselves.
+#
+# Narrower than the built-in Storage Blob Data Reader, which also carries
+# generateUserDelegationKey — the ability to mint SAS tokens. Only the signer
+# needs that, so only the signer has it.
+resource "azurerm_role_definition" "chatbot_docs_reader" {
+  name        = "${local.name}-chatbot-docs-reader"
+  scope       = azurerm_storage_account.docs.id
+  description = "Read and list documents in this tenant's docs container. No write, no delete, no SAS minting."
+
+  permissions {
+    # Listing is a container operation, reading a blob is a data operation.
+    # Azure rejects the definition outright if these are not filed under the
+    # right heading, the same constraint the signer's role runs into.
+    actions = [
+      "Microsoft.Storage/storageAccounts/blobServices/containers/read",
+    ]
+    data_actions = [
+      "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read",
+    ]
+  }
+
+  assignable_scopes = [azurerm_storage_account.docs.id]
+}
+
+resource "azurerm_role_assignment" "chatbot_docs_reader" {
+  scope              = azurerm_storage_account.docs.id
+  role_definition_id = azurerm_role_definition.chatbot_docs_reader.role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.chatbot.principal_id
+  # Not in the bootstrap apply, unlike AcrPull: its scope, the docs storage
+  # account, does not exist yet at that point. It does not need to be early
+  # either, because documents are read at reindex time, long after the app
+  # has started.
+  skip_service_principal_aad_check = true
+}
+
 # The Function deliberately has NO Key Vault access: it receives its auth
 # secret as an app setting, so its identity is scoped to the storage account
 # alone (see azurerm_role_definition.docs_signer above). This also removes
@@ -428,15 +523,20 @@ resource "azurerm_container_app" "this" {
   revision_mode                = "Single"
   tags                         = local.common_tags
 
-  registry {
-    server               = azurerm_container_registry.this.login_server
-    username             = azurerm_container_registry.this.admin_username
-    password_secret_name = "acr-password"
+  # The chatbot pulls its image and reads documents as its own identity. It
+  # used to be handed two shared secrets instead: the registry's admin
+  # password, and the storage account's primary access key — read, write,
+  # delete and list over the entire account, strictly more authority than the
+  # AWS task has ever had for the same job. See azurerm_user_assigned_identity
+  # .chatbot for why this identity is user-assigned.
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.chatbot.id]
   }
 
-  secret {
-    name  = "acr-password"
-    value = azurerm_container_registry.this.admin_password
+  registry {
+    server   = azurerm_container_registry.this.login_server
+    identity = azurerm_user_assigned_identity.chatbot.id
   }
 
   secret {
@@ -460,10 +560,6 @@ resource "azurerm_container_app" "this" {
     }
   }
 
-  secret {
-    name  = "storage-key"
-    value = azurerm_storage_account.docs.primary_access_key
-  }
 
   template {
     # Tenant images are pushed to a mutable tag (chatbot_version, usually
@@ -514,9 +610,18 @@ resource "azurerm_container_app" "this" {
         name  = "AZURE_STORAGE_CONTAINER"
         value = azurerm_storage_container.docs.name
       }
+      # No AZURE_STORAGE_KEY, and the backend has no code path that would use
+      # one: it always authenticates with DefaultAzureCredential, as the
+      # managed identity declared above (see _load_from_azure in the backend).
+      #
+      # AZURE_CLIENT_ID is what makes that work with a USER-assigned identity.
+      # The app has no system-assigned identity for the managed identity
+      # endpoint to default to, so DefaultAzureCredential reads this variable
+      # to choose one. Without it every blob read fails to authenticate even
+      # though the role assignment is correct.
       env {
-        name        = "AZURE_STORAGE_KEY"
-        secret_name = "storage-key"
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.chatbot.client_id
       }
       env {
         name  = "VECTOR_STORE"
@@ -586,6 +691,49 @@ resource "azurerm_container_app" "this" {
         name  = "LLM_MODEL"
         value = local.llm_model
       }
+
+      # Probes are deliberately forgiving here, because this container has a
+      # failure mode nginx does not: the embedding model is loaded lazily on
+      # the FIRST /ask or /index call, not at startup (see CHATBOT-LOGIC.md).
+      # While that load runs, the process can stop answering /api/health even
+      # though nothing is wrong. A probe tuned for a normal web service would
+      # read that as a hang and restart the container mid-download, forever.
+      #
+      # So: the startup probe covers boot, readiness takes a stuck replica out
+      # of rotation after a minute, and liveness only restarts after five
+      # straight minutes of silence — long enough to sit through a cold model
+      # load, short enough to recover a genuinely wedged process. Path matches
+      # what the AWS backend target group already checks against this image.
+      # failure_count_threshold caps at 10 on every probe, so the boot budget
+      # is bought with the interval instead: 15s x 10 = 150s.
+      startup_probe {
+        transport               = "HTTP"
+        port                    = var.container_port
+        path                    = "/api/health"
+        interval_seconds        = 15
+        timeout                 = 5
+        failure_count_threshold = 10
+      }
+
+      readiness_probe {
+        transport               = "HTTP"
+        port                    = var.container_port
+        path                    = "/api/health"
+        interval_seconds        = 10
+        timeout                 = 5
+        failure_count_threshold = 6
+        success_count_threshold = 1
+      }
+
+      liveness_probe {
+        transport               = "HTTP"
+        port                    = var.container_port
+        path                    = "/api/health"
+        initial_delay           = 15
+        interval_seconds        = 30
+        timeout                 = 5
+        failure_count_threshold = 10
+      }
     }
 
     # ── Frontend: chat UI + nginx ──
@@ -601,6 +749,39 @@ resource "azurerm_container_app" "this" {
       env {
         name  = "BACKEND_PORT"
         value = tostring(var.container_port)
+      }
+
+      # nginx serving static files answers immediately or not at all, so these
+      # can be tighter than the backend's below. Probing "/" matches what the
+      # AWS frontend target group already health-checks (aws_lb_target_group
+      # .frontend), against the same image.
+      startup_probe {
+        transport               = "HTTP"
+        port                    = var.frontend_port
+        path                    = "/"
+        interval_seconds        = 5
+        timeout                 = 3
+        failure_count_threshold = 10
+      }
+
+      readiness_probe {
+        transport               = "HTTP"
+        port                    = var.frontend_port
+        path                    = "/"
+        interval_seconds        = 10
+        timeout                 = 3
+        failure_count_threshold = 3
+        success_count_threshold = 1
+      }
+
+      liveness_probe {
+        transport               = "HTTP"
+        port                    = var.frontend_port
+        path                    = "/"
+        initial_delay           = 10
+        interval_seconds        = 30
+        timeout                 = 3
+        failure_count_threshold = 3
       }
     }
   }

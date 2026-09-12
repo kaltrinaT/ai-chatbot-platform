@@ -187,7 +187,12 @@ either way.
 | `AWS_REGION` | **AWS only** | Terraform env | Region for the S3 SDK |
 | `AZURE_STORAGE_ACCOUNT` | **Azure only** | Terraform env | Storage account holding the documents container |
 | `AZURE_STORAGE_CONTAINER` | **Azure only** | Terraform env | Blob container name (`documents`) |
-| `AZURE_STORAGE_KEY` | **Azure only** | secret | Storage account primary access key |
+| `AZURE_CLIENT_ID` | **Azure only** | Terraform env | Client ID of the chatbot's user-assigned identity; tells `DefaultAzureCredential` which identity to authenticate as |
+
+There is no `AZURE_STORAGE_KEY`, and the loader has no code path that would use
+one. It always authenticates with `DefaultAzureCredential`, which resolves to
+the Container App's user-assigned managed identity, selected by
+`AZURE_CLIENT_ID`, and a role that can only read this tenant's documents.
 
 The `PINECONE_*` rows apply only when `VECTOR_STORE = pinecone`, and the
 `PGVECTOR_*` / `DATABASE_URL` rows only when it is `pgvector`. Terraform emits
