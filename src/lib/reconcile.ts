@@ -79,8 +79,7 @@ export async function reconcileCompletedRun(
       }
     } catch {
       // Best-effort recovery only — the deployment is still correctly marked
-      // succeeded even if the artifact is missing/expired/unreadable (e.g. a
-      // run from before this feature shipped).
+      // succeeded even if the artifact is missing, expired or unreadable.
     }
   }
 }

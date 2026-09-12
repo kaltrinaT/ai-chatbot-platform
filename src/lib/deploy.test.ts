@@ -17,8 +17,6 @@ const {
   getDeployWorkflowId,
   getDestroyWorkflowId,
   getOctokit,
-  ensureDocsSignerSecret,
-  generateDocsSignerSecret,
   deleteViaSigner,
 } = vi.hoisted(() => {
   const dbSelectWhere = vi.fn();
@@ -33,8 +31,6 @@ const {
   const getDeployWorkflowId = vi.fn(() => "deploy-tenant.yml");
   const getDestroyWorkflowId = vi.fn(() => "destroy-tenant.yml");
   const getOctokit = vi.fn(() => ({ actions: { createWorkflowDispatch } }));
-  const ensureDocsSignerSecret = vi.fn();
-  const generateDocsSignerSecret = vi.fn();
   const deleteViaSigner = vi.fn();
 
   return {
@@ -48,8 +44,6 @@ const {
     getDeployWorkflowId,
     getDestroyWorkflowId,
     getOctokit,
-    ensureDocsSignerSecret,
-    generateDocsSignerSecret,
     deleteViaSigner,
   };
 });
@@ -75,8 +69,6 @@ vi.mock("@/lib/github", () => ({
   getDestroyWorkflowId,
   getOctokit,
 }));
-vi.mock("@/lib/aws", () => ({ ensureDocsSignerSecret }));
-vi.mock("@/lib/azure", () => ({ generateDocsSignerSecret }));
 vi.mock("@/lib/docsSigner", () => ({ deleteViaSigner }));
 
 import { db } from "@/db";
@@ -125,14 +117,6 @@ describe("triggerDeployment", () => {
     getChatbotRepo.mockReturnValue({ owner: "acme", repo: "chatbot" });
     getDeployWorkflowId.mockReturnValue("deploy-tenant.yml");
     getOctokit.mockReturnValue({ actions: { createWorkflowDispatch } });
-    ensureDocsSignerSecret.mockResolvedValue({
-      docsSignerSecretArn: "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",
-      docsSignerSecretEncrypted: "iv:tag:docssignerct",
-    });
-    generateDocsSignerSecret.mockReturnValue({
-      docsSignerSecretEncrypted: "iv:tag:azuredocssignerct",
-      docsSignerSecretPlaintext: "azure-plaintext-secret",
-    });
     process.env.PLATFORM_CHATBOT_IMAGE_URI = "111111111111.dkr.ecr.us-east-1.amazonaws.com/chatbot";
     process.env.PLATFORM_FRONTEND_IMAGE_URI = "111111111111.dkr.ecr.us-east-1.amazonaws.com/frontend";
     delete process.env.CHATBOT_DEPLOY_REF;
@@ -239,7 +223,6 @@ describe("triggerDeployment", () => {
       }),
     );
     expect(dbUpdateWhere).toHaveBeenCalled();
-    expect(ensureDocsSignerSecret).not.toHaveBeenCalled();
   });
 
   it("forwards the tenant's TLS certificate ARN, so a redeploy keeps its HTTPS listener", async () => {
@@ -278,29 +261,18 @@ describe("triggerDeployment", () => {
     expect(call.inputs.acm_certificate_arn).toBe("");
   });
 
-  it("lazily generates and stores the docs-signer secret for AWS tenants missing one", async () => {
+  // Onboarding writes this secret before the tenant row exists, so a tenant
+  // without it is inconsistent. Deploy refuses rather than generating one,
+  // which would mean calling STS into the customer's account on a redeploy.
+  it("refuses to deploy an AWS tenant with no docs-signer secret ARN", async () => {
     dbSelectWhere.mockResolvedValue([{ ...baseAwsTenant, docsSignerSecretArn: null }]);
-    dbInsertReturning.mockResolvedValue([{ id: "deploy-5", status: "pending" }]);
-    dbUpdateWhere.mockResolvedValue(undefined);
-    createWorkflowDispatch.mockResolvedValue({});
 
-    await triggerDeployment({
-      tenantId: baseAwsTenant.id,
-      chatbotVersion: "v1",
-      triggeredByUserId: "u1",
-    });
+    await expect(
+      triggerDeployment({ tenantId: baseAwsTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" }),
+    ).rejects.toThrow("no docsSignerSecretArn");
 
-    expect(ensureDocsSignerSecret).toHaveBeenCalledWith(
-      expect.objectContaining({ roleArn: baseAwsTenant.deploymentRoleArn, slug: baseAwsTenant.slug }),
-    );
-    expect(createWorkflowDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inputs: expect.objectContaining({
-          docs_signer_secret_arn:
-            "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",
-        }),
-      }),
-    );
+    expect(dbInsertReturning).not.toHaveBeenCalled();
+    expect(createWorkflowDispatch).not.toHaveBeenCalled();
   });
 
   it("uses deploy-tenant-azure.yml and JSON-packs config for Azure tenants", async () => {
@@ -327,7 +299,6 @@ describe("triggerDeployment", () => {
     expect(call.inputs.your_frontend_ecr_image).toBe(
       "111111111111.dkr.ecr.us-east-1.amazonaws.com/frontend:v2",
     );
-    expect(generateDocsSignerSecret).not.toHaveBeenCalled();
 
     const config = JSON.parse(call.inputs.config);
     expect(config).toMatchObject({
@@ -340,26 +311,15 @@ describe("triggerDeployment", () => {
     expect(config).not.toHaveProperty("your_frontend_ecr_image");
   });
 
-  it("lazily generates and stores the docs-signer secret for Azure tenants missing one", async () => {
+  it("refuses to deploy an Azure tenant with no encrypted docs-signer secret", async () => {
     dbSelectWhere.mockResolvedValue([{ ...baseAzureTenant, docsSignerSecretEncrypted: null }]);
-    dbInsertReturning.mockResolvedValue([{ id: "deploy-6", status: "pending" }]);
-    dbUpdateWhere.mockResolvedValue(undefined);
-    createWorkflowDispatch.mockResolvedValue({});
 
-    await triggerDeployment({
-      tenantId: baseAzureTenant.id,
-      chatbotVersion: "v1",
-      triggeredByUserId: "u1",
-    });
+    await expect(
+      triggerDeployment({ tenantId: baseAzureTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" }),
+    ).rejects.toThrow("no encrypted docs-signer secret");
 
-    expect(generateDocsSignerSecret).toHaveBeenCalledWith();
-    expect(createWorkflowDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inputs: expect.objectContaining({
-          docs_signer_secret: "decrypted:iv:tag:azuredocssignerct",
-        }),
-      }),
-    );
+    expect(dbInsertReturning).not.toHaveBeenCalled();
+    expect(createWorkflowDispatch).not.toHaveBeenCalled();
   });
 
   it("marks the deployment failed and rethrows when workflow dispatch fails", async () => {

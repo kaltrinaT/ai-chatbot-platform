@@ -37,7 +37,7 @@ Before any document can be uploaded, the tenant needs its own docs-signer Lambda
    - a Function URL (`authorization_type = "NONE"` — no AWS SigV4 required to call it; auth happens inside the handler instead)
    - CORS on the docs bucket, so the browser's direct upload in Step 2 is allowed
 4. The workflow reads the new `docs_signer_url` Terraform output and posts it back through the existing deployment-status webhook, same as `chatbotUrl`/`albDnsName` always have been. It lands in `tenants.docsSignerUrl`.
-5. **Existing tenants** (onboarded before this feature existed) get the secret lazily: `triggerDeployment` in `src/lib/deploy.ts` checks for a missing `docsSignerSecretArn` and generates one on their next redeploy — no manual DB fix needed.
+5. **A tenant without the secret is refused.** Onboarding always creates it before the tenant row exists, so `triggerDeployment` in `src/lib/deploy.ts` treats a missing `docsSignerSecretArn` as an inconsistent tenant and refuses to dispatch, rather than generating one. That keeps a redeploy from ever calling STS into the customer's account: onboarding is the only time the platform assumes a customer role itself.
 
 Until this finishes, the tenant page shows "Document upload will be available here once the first deployment succeeds" instead of the upload UI.
 

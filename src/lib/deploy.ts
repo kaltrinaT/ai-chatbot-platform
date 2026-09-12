@@ -3,8 +3,6 @@ import { deployments, tenants, tenantDocuments } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { decryptSecret } from "@/lib/crypto";
 import { getChatbotRepo, getDeployWorkflowId, getDestroyWorkflowId, getOctokit } from "@/lib/github";
-import { ensureDocsSignerSecret } from "@/lib/aws";
-import { generateDocsSignerSecret } from "@/lib/azure";
 import { deleteViaSigner } from "@/lib/docsSigner";
 
 type TriggerInput = {
@@ -18,7 +16,7 @@ export async function triggerDeployment({
   chatbotVersion,
   triggeredByUserId,
 }: TriggerInput) {
-  let [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
+  const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
   if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
 
   const { owner, repo } = getChatbotRepo();
@@ -48,9 +46,9 @@ export async function triggerDeployment({
   if (tenant.cloudProvider === "azure" && !tenant.llmApiKeyEncrypted) {
     throw new Error(`Tenant ${tenant.id} has no encrypted LLM key.`);
   }
-  // Tenants onboarded before the vector-store choice existed have no customer
-  // Pinecone key on file — they ran against the platform's shared index, which
-  // no longer exists. They must be re-onboarded rather than silently redeployed.
+  // Onboarding requires the customer's own Pinecone key whenever this store is
+  // chosen, so its absence means an inconsistent tenant row. Refuse rather than
+  // dispatch a deploy that would fail midway through Terraform.
   if (tenant.vectorStore === "pinecone") {
     const hasKey =
       tenant.cloudProvider === "aws"
@@ -63,44 +61,20 @@ export async function triggerDeployment({
       );
     }
   }
+  // Onboarding creates the docs-signer secret before the tenant row exists, on
+  // both clouds, so a tenant without one is inconsistent rather than old.
+  // Refusing here instead of generating one also means a redeploy never calls
+  // STS into the customer's account: onboarding is the only time the platform
+  // assumes a customer role itself.
   if (tenant.cloudProvider === "aws" && !tenant.docsSignerSecretArn) {
-    // Tenants onboarded before the docs-signer feature shipped have no
-    // secret on file yet — generate and store it lazily on their next
-    // deploy rather than requiring a manual DB backfill.
-    const docsSigner = await ensureDocsSignerSecret({
-      roleArn: tenant.deploymentRoleArn!,
-      region: tenant.awsRegion!,
-      slug: tenant.slug,
-      sessionName: `tenant-redeploy-docs-${tenant.slug}`,
-    });
-    await db
-      .update(tenants)
-      .set({
-        docsSignerSecretArn: docsSigner.docsSignerSecretArn,
-        docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted,
-        updatedAt: new Date(),
-      })
-      .where(eq(tenants.id, tenant.id));
-    tenant = {
-      ...tenant,
-      docsSignerSecretArn: docsSigner.docsSignerSecretArn,
-      docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted,
-    };
+    throw new Error(
+      `Tenant ${tenant.id} has no docsSignerSecretArn — the secret was not written during onboarding.`
+    );
   }
   if (tenant.cloudProvider === "azure" && !tenant.docsSignerSecretEncrypted) {
-    // Azure tenants onboarded before the docs-signer feature shipped have no
-    // secret on file yet — generate and store it lazily on their next
-    // deploy, exactly like the AWS backfill above. No Azure API call here:
-    // see generateDocsSignerSecret in azure.ts for why.
-    const docsSigner = generateDocsSignerSecret();
-    await db
-      .update(tenants)
-      .set({
-        docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted,
-        updatedAt: new Date(),
-      })
-      .where(eq(tenants.id, tenant.id));
-    tenant = { ...tenant, docsSignerSecretEncrypted: docsSigner.docsSignerSecretEncrypted };
+    throw new Error(
+      `Tenant ${tenant.id} has no encrypted docs-signer secret — it was not generated during onboarding.`
+    );
   }
 
   const [deployment] = await db
@@ -244,11 +218,10 @@ function buildAwsDestroyInputs(tenant: TenantRow, deploymentId: string): Record<
     llm_model: tenant.llmModel ?? "",
     vector_store: tenant.vectorStore,
     pinecone_secret_arn: tenant.pineconeSecretArn ?? "",
-    // Nullable here, unlike on the deploy path below, where triggerDeployment
-    // has already backfilled it. A tenant onboarded before the docs-signer
-    // shipped has no secret to name, and asserting non-null dropped the key
-    // from the dispatch entirely, which GitHub rejects as a missing required
-    // input — making exactly those legacy tenants impossible to tear down.
+    // Coalesced rather than asserted. Teardown must never be blocked by a
+    // missing field: asserting non-null would drop the key from the dispatch
+    // entirely, which GitHub rejects as a missing required input, leaving the
+    // tenant's infrastructure impossible to remove from the platform.
     docs_signer_secret_arn: tenant.docsSignerSecretArn ?? "",
   };
 }

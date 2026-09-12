@@ -17,8 +17,9 @@ import { ACTIVE_STATUSES, reconcileCompletedRun } from "../src/lib/reconcile";
  * That endpoint is pull-based, so it only heals a deployment somebody had
  * open in a browser while it completed. A deployment whose completion webhook
  * was lost AND that nobody was watching stays active forever, including past
- * the 45-minute staleness cutoff, because that cutoff lives behind the same
- * poll. This script is the out-of-band way to close those.
+ * the staleness cutoff (STALE_DEPLOYMENT_MS in the progress route), because
+ * that cutoff lives behind the same poll. This script is the out-of-band way to
+ * close those.
  *
  * Usage:
  *   npx tsx scripts/reconcile-deployment.ts            # every stuck row
