@@ -177,6 +177,15 @@ function describeProvisioningFailure(err: unknown): string {
     if (e.name === "HttpError" && e.message) {
       return `GitHub rejected the deployment dispatch: ${e.message}`;
     }
+    // The platform's own AWS sign-in, rather than the customer's account: a
+    // stored key it refuses, or a session that is missing or expired. Both are
+    // fixed on the machine running the platform, so both say so.
+    if (e.name === "LongLivedAwsKeyError" && e.message) {
+      return e.message;
+    }
+    if (e.name === "CredentialsProviderError") {
+      return "The platform has no AWS sign-in session, or it has expired. Run aws login --profile platform-operator on the machine running the platform.";
+    }
     if (e.message?.includes("PLATFORM_ENCRYPTION_KEY")) {
       return e.message;
     }

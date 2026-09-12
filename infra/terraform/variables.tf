@@ -139,11 +139,10 @@ variable "docs_signer_secret_arn" {
   type        = string
   default     = ""
 
-  # Empty is permitted for ONE case: destroying a tenant onboarded before the
-  # docs-signer shipped, which has no such secret to name. A deploy always
-  # carries a real ARN, because triggerDeployment backfills one before
-  # dispatching (see the docsSignerSecretArn branch in src/lib/deploy.ts), so
-  # the empty case never reaches an apply.
+  # Empty is permitted only so teardown can never be blocked by a missing
+  # field. A deploy always carries a real ARN: triggerDeployment refuses to
+  # dispatch a tenant without one (see src/lib/deploy.ts), so the empty case
+  # never reaches an apply.
   validation {
     condition     = var.docs_signer_secret_arn == "" || can(regex("^arn:aws:secretsmanager:[a-z]{2}-[a-z]+-[0-9]:[0-9]{12}:secret:.+$", var.docs_signer_secret_arn))
     error_message = "docs_signer_secret_arn must be empty or a valid Secrets Manager ARN."

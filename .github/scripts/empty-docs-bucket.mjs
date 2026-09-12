@@ -8,9 +8,10 @@
  * cover a bucket whose versioning was enabled outside Terraform. Noncurrent
  * versions and delete markers survive, and DeleteBucket then fails with
  * "BucketNotEmpty: You must delete all versions in the bucket". That stranded
- * chatbot-tenat1012-docs, which had to be purged by hand. Versioning is not
- * declared anywhere in the Terraform, so its state is undefined per tenant and
- * free to drift; emptying the bucket here does not depend on it.
+ * chatbot-tenat1012-docs, which had to be purged by hand. Versioning is now
+ * declared deliberately (aws_s3_bucket_versioning.docs), so every tenant has
+ * noncurrent versions to clear rather than only the ones that had drifted —
+ * which makes this script load-bearing on every teardown, not a backstop.
  *
  * Shells out to the AWS CLI rather than using an SDK: the CLI is present on the
  * runner and already holds the assumed tenant-role credentials from the

@@ -390,6 +390,41 @@ describe("createTenantAndDeploy", () => {
       expect(triggerDeployment).not.toHaveBeenCalled();
     });
 
+    it("tells the operator to sign in when the platform has no AWS session of its own", async () => {
+      assumeTenantRole.mockRejectedValue(
+        Object.assign(
+          new Error(
+            "Failed to load a token for session arn:aws:iam::229647349798:user/operator, please re-authenticate using aws login",
+          ),
+          { name: "CredentialsProviderError" },
+        ),
+      );
+
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.errors._form).toContain("aws login");
+      // The SDK's own text names a local cache path; only the instruction goes out.
+      expect(result?.errors._form).not.toContain("Failed to load a token");
+      expect(triggerDeployment).not.toHaveBeenCalled();
+    });
+
+    it("surfaces the refusal to call AWS with a long-lived access key", async () => {
+      assumeTenantRole.mockRejectedValue(
+        Object.assign(
+          new Error(
+            "The platform refuses to call AWS with a long-lived access key. Remove AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from its environment, run aws login --profile platform-operator, and set AWS_PROFILE=platform-control-plane.",
+          ),
+          { name: "LongLivedAwsKeyError" },
+        ),
+      );
+
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.errors._form).toContain("long-lived access key");
+      expect(result?.errors._form).toContain("AWS_PROFILE=platform-control-plane");
+      expect(triggerDeployment).not.toHaveBeenCalled();
+    });
+
     it("does not forward an unrecognised error's message to the browser", async () => {
       assumeTenantRole.mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.1:5432"));
 

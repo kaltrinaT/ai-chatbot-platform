@@ -427,6 +427,48 @@ resource "aws_s3_bucket" "docs" {
   force_destroy = true
 }
 
+# A deleted document is otherwise gone for good, and the chatbot's index only
+# upserts — it never removes the vectors for a document that has disappeared.
+# Without versioning the failure mode is the worst available combination: the
+# source document is unrecoverable while its embeddings keep answering
+# questions about it. The destroy workflow already empties this bucket
+# "object versions included", so teardown still works.
+resource "aws_s3_bucket_versioning" "docs" {
+  bucket = aws_s3_bucket.docs.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Versioning without an expiry is a slow cost leak: every re-upload of a
+# document keeps the previous copy forever, on a bucket the customer pays for
+# and nobody ever prunes. Thirty days matches the Azure container's soft-delete
+# window, so a mistaken delete is recoverable for the same period on both
+# clouds and costs the same bounded amount.
+resource "aws_s3_bucket_lifecycle_configuration" "docs" {
+  bucket = aws_s3_bucket.docs.id
+
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    # An upload the browser abandons midway otherwise bills indefinitely for
+    # parts no request will ever complete.
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.docs]
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "docs" {
   bucket = aws_s3_bucket.docs.id
   rule {
@@ -881,6 +923,24 @@ resource "aws_ecs_service" "this" {
   # changes on its own, is better but means changing how versions are minted.
   force_new_deployment = true
 
+  # Without these two, force_new_deployment above is a loaded gun. A broken
+  # image gets rolled out, the tasks fail their health checks, ECS replaces
+  # them forever, and `terraform apply` returns success the moment it has
+  # registered the new task definition — so the workflow goes green and the
+  # platform records a succeeded deployment for a tenant that is down.
+  #
+  # The circuit breaker gives ECS permission to give up and put the previous
+  # task definition back; wait_for_steady_state makes Terraform stay until the
+  # service actually settles, so a rollback surfaces as a failed apply and a
+  # failed deployment rather than a silent one. The cost is that an apply now
+  # takes as long as the service takes to become healthy.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  wait_for_steady_state = true
+
   network_configuration {
     subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.task.id]
@@ -941,6 +1001,14 @@ resource "aws_ecs_service" "frontend" {
 
   # Same mutable-tag problem as the backend service above.
   force_new_deployment = true
+
+  # Same reasoning as the backend service above.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  wait_for_steady_state = true
 
   network_configuration {
     subnets          = aws_subnet.public[*].id
