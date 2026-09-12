@@ -337,7 +337,7 @@ CUSTOMER AZURE SUBSCRIPTION
 ─────────────────────────────────────────────────────────────
 Resource Group: chatbot-{slug}
 │
-├── Container Registry: chatbot{slug}acr  (Basic SKU, admin enabled)
+├── Container Registry: chatbot{slug}acr  (Basic SKU, admin user disabled)
 │   │  images are the platform's prebuilt golden images, pulled from the
 │   │  platform ECR and replicated here by deploy-tenant-azure.yml — same
 │   │  model AWS uses to replicate into the customer's ECR
@@ -348,7 +348,8 @@ Resource Group: chatbot-{slug}
 │   ├── secret: llm-api-key        ← written by Terraform during apply
 │   ├── secret: pinecone-api-key   ← customer's own key  [vector_store = pinecone]
 │   ├── secret: vector-db-url      ← Postgres URL        [vector_store = pgvector]
-│   ├── secret: storage-key        ← storage account primary access key
+│   │   (no storage-key — the account key is deliberately stored nowhere;
+│   │    both containers reach Blob Storage through managed identities)
 │   ├── secret: docs-signer-secret ← shared auth secret for the Function below
 │   └── Access policy: the deploying service principal ONLY. The Container App
 │       does not read from this vault — Terraform sets its app secrets directly
@@ -397,7 +398,15 @@ Resource Group: chatbot-{slug}
     ├── Revision mode: Single
     ├── Ingress: external, target port 80  → frontend container
     ├── Scaling: min 1 replica, max 3
-    ├── App secrets: acr-password, llm-api-key, storage-key,
+    ├── Identity: user-assigned (chatbot-{slug}-chatbot-id), created in the
+    │             bootstrap apply before the app exists, holding:
+    │               AcrPull on the registry — image pulls, no admin user
+    │               containers/read + blobs/read on the docs storage account
+    │             Separate from the docs-signer's write+delete identity —
+    │             neither can perform the other's operation, and neither
+    │             holds the storage account key or a registry password.
+    ├── Registry: identity-based pull; the ACR admin user is disabled
+    ├── App secrets: llm-api-key,
     │                + pinecone-api-key OR vector-db-url (per vector_store)
     ├── Container: chatbot   (backend, 0.5 vCPU / 1 Gi, :8000)
     │   ├── env:    PORT, LLM_PROVIDER, AZURE_STORAGE_ACCOUNT,
@@ -406,7 +415,6 @@ Resource Group: chatbot-{slug}
     │   │           [pinecone] PINECONE_INDEX (=chatbot-{slug}), PINECONE_ENVIRONMENT
     │   │           [pgvector] PGVECTOR_TABLE (=embeddings), PGVECTOR_DIMENSION (=384)
     │   └── secret: LLM_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY ← llm-api-key,
-    │               AZURE_STORAGE_KEY ← storage-key,
     │               [pinecone] PINECONE_API_KEY ← pinecone-api-key
     │               [pgvector] DATABASE_URL, PGVECTOR_URL ← vector-db-url
     └── Container: frontend  (chat UI, nginx :80, 0.25 vCPU / 0.5 Gi)

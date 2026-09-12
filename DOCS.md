@@ -193,15 +193,17 @@ Managed by Drizzle ORM, running on Neon Postgres.
 
 ### AWS — `.github/workflows/deploy-tenant.yml`
 
+**Required GitHub repo variable:**
+- `AWS_PLATFORM_DEPLOY_ROLE_ARN` — the platform role GitHub Actions assumes through OIDC. No AWS access key is stored in GitHub; see [`infra/platform/github-oidc`](infra/platform/github-oidc) for the one-time setup and cutover
+
 **Required GitHub repo secrets:**
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (platform's AWS principal)
 - `TF_STATE_BUCKET`, `TF_STATE_REGION` (S3 backend for Terraform state)
 - `PLATFORM_BASE_URL` (e.g. `https://platform.example.com`)
 - `PLATFORM_WEBHOOK_SECRET`
 
 **Workflow steps:**
-1. Pull **backend** and **frontend (chat UI)** images from platform ECR (platform credentials)
-2. AssumeRole into customer account (3600s, `role-skip-session-tagging: true`)
+1. Exchange GitHub's OIDC token for one-hour credentials on the platform role; pull **backend** and **frontend (chat UI)** images from platform ECR
+2. Chain from the platform role into the customer account's deployment role (`role-chaining: true`, one-hour cap, `role-skip-session-tagging: true`)
 3. Create ECR repos in customer account if absent (`{slug}/chatbot`, `{slug}/chatbot-frontend`); tag and push both images
 4. `terraform init` with S3 backend (`tenants/{slug}.tfstate`)
 5. For Pinecone tenants: read the customer's Pinecone key back from **their** Secrets Manager under the assumed role and `::add-mask::` it, so Terraform can create the index without the key ever being a workflow input
@@ -230,7 +232,8 @@ Managed by Drizzle ORM, running on Neon Postgres.
 Secret-valued inputs are `::add-mask::`ed as the first step so they cannot appear in step logs. (Dispatch inputs are still visible to anyone with read access to the private repo's runs — same trust boundary as the repo secrets they replaced.)
 
 **Required GitHub repo secrets:**
-- `TF_STATE_BUCKET`, `TF_STATE_REGION` (S3 backend), `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (to reach the S3 state backend, and to pull the platform's golden images from ECR)
+- `TF_STATE_BUCKET`, `TF_STATE_REGION` (S3 backend)
+- Repo variable `AWS_PLATFORM_DEPLOY_ROLE_ARN` — the same OIDC-assumed platform role as the AWS workflow, used here both to pull the golden images and to reach the S3 state backend (`azure/tenants/*` only). No AWS access key is stored in GitHub
 - `PLATFORM_BASE_URL`, `PLATFORM_WEBHOOK_SECRET` (status callbacks)
 
 The `AZURE_*`, `LLM_API_KEY`, and `PINECONE_API_KEY` repo secrets are no longer used — Azure login, Key Vault contents, and vector storage are all per-tenant now.
@@ -337,8 +340,8 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 | Resource | Name pattern | Notes |
 |---|---|---|
 | Resource Group | `chatbot-{slug}` | Container for all resources |
-| Container Registry | `chatbot{slug}acr` | Basic SKU, admin enabled (name: hyphens stripped, 50-char max) |
-| Key Vault | `cb-{slug}-kv` | Standard SKU; stores `llm-api-key`, `storage-key`, and either `pinecone-api-key` or `vector-db-url` (all written by Terraform) |
+| Container Registry | `chatbot{slug}acr` | Basic SKU, admin user disabled — images are pulled by the chatbot's user-assigned identity holding `AcrPull` (name: hyphens stripped, 50-char max) |
+| Key Vault | `cb-{slug}-kv` | Standard SKU; stores `llm-api-key`, `docs-signer-secret`, and either `pinecone-api-key` or `vector-db-url` (all written by Terraform). The storage account key is deliberately not stored: both containers reach Blob Storage through managed identities instead |
 | PostgreSQL Flexible Server | `chatbot-{slug}-pg` | Only when `vector_store = pgvector`; B1ms / 32 GB / PG 16, `azure.extensions = VECTOR`, database `vectors` |
 | Storage Account | `chatbot{slug}` | Hyphens removed; 24-char max enforced |
 | Blob container | `documents` | Private access |
@@ -348,9 +351,10 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 
 ### Container App config
 - Min 1 replica, max 3 (autoscaling)
-- Container App secrets: `acr-password`, `llm-api-key`, `storage-key`, plus `pinecone-api-key` or `vector-db-url` depending on `vector_store`
+- Container App secrets: `llm-api-key`, plus `pinecone-api-key` or `vector-db-url` depending on `vector_store`
+- Container App identity: user-assigned `chatbot-{slug}-chatbot-id`, created in the bootstrap apply, holding `AcrPull` on the registry and a custom role on the docs storage account granting `containers/read` and `blobs/read` only — separate from the docs-signer's write-and-delete identity. The registry's admin user is disabled; images are pulled with this identity, and `AZURE_CLIENT_ID` tells the backend's `DefaultAzureCredential` which identity to use
 - **Two containers in one app** (Container Apps has no path-based ingress routing, so both share localhost):
-  - `chatbot` (backend, 0.5 vCPU / 1 Gi) — env `PORT`, `LLM_PROVIDER`, `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`, `VECTOR_STORE`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, plus `PINECONE_INDEX` / `PINECONE_ENVIRONMENT` or `PGVECTOR_TABLE` / `PGVECTOR_DIMENSION`; secret-backed env `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (← `llm-api-key`), `AZURE_STORAGE_KEY` (← `storage-key`), plus `PINECONE_API_KEY` (← `pinecone-api-key`) or `DATABASE_URL` / `PGVECTOR_URL` (← `vector-db-url`)
+  - `chatbot` (backend, 0.5 vCPU / 1 Gi) — env `PORT`, `LLM_PROVIDER`, `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_CONTAINER`, `VECTOR_STORE`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, plus `PINECONE_INDEX` / `PINECONE_ENVIRONMENT` or `PGVECTOR_TABLE` / `PGVECTOR_DIMENSION`; secret-backed env `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (← `llm-api-key`), plus `PINECONE_API_KEY` (← `pinecone-api-key`) or `DATABASE_URL` / `PGVECTOR_URL` (← `vector-db-url`)
   - `frontend` (chat UI, nginx :80, 0.25 vCPU / 0.5 Gi) — env `BACKEND_PORT`; nginx serves the SPA and proxies `/api` → `localhost:8000`
 - External ingress on **target port 80** → frontend container
 
@@ -431,8 +435,12 @@ DEPLOY_WEBHOOK_SECRET=          # shared with GitHub Actions PLATFORM_WEBHOOK_SE
 PLATFORM_ENCRYPTION_KEY=        # openssl rand -hex 32
 
 # ── AWS (platform's own principal) ────────────────────────────────────
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
+# Used by this application only, for onboarding's sts:AssumeRole into the
+# customer's role. No key: the profile assumes the role in
+# infra/platform/control-plane from `aws login --profile platform-operator`,
+# and the application refuses long-lived keys. GitHub Actions reaches its own
+# platform role through OIDC (see infra/platform/github-oidc).
+AWS_PROFILE=platform-control-plane
 
 # ── Chatbot images (replicated into each tenant's own registry — ECR for AWS, ACR for Azure) ──
 PLATFORM_CHATBOT_IMAGE_URI=     # backend ECR URI without tag, e.g.:
