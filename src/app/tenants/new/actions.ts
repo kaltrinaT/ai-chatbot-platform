@@ -169,7 +169,7 @@ export type FormState = {
  */
 function describeProvisioningFailure(err: unknown): string {
   if (typeof err === "object" && err !== null) {
-    const e = err as { name?: string; message?: string; $metadata?: unknown };
+    const e = err as { name?: string; message?: string; code?: string; $metadata?: unknown };
     // $metadata is present on every AWS SDK v3 error.
     if (e.$metadata && e.message) {
       return e.name ? `${e.name}: ${e.message}` : e.message;
@@ -194,8 +194,17 @@ function describeProvisioningFailure(err: unknown): string {
         "federate to that role instead."
       );
     }
-    if (e.message?.includes("PLATFORM_ENCRYPTION_KEY")) {
+    // Platform configuration rather than customer data: the message names a
+    // setting the operator controls, which is the useful thing to put on
+    // screen and reveals nothing about anyone's account.
+    if (e.message?.includes("PLATFORM_")) {
       return e.message;
+    }
+    // Postgres unique violation. The only unique value onboarding writes is
+    // the slug, and it cannot be changed afterwards, so name it rather than
+    // sending the operator to the server log.
+    if (e.code === "23505") {
+      return "A tenant with that slug already exists. Slugs are permanent, so choose a different one.";
     }
   }
   return "Could not provision the tenant. The platform's server log has the reason.";

@@ -425,6 +425,31 @@ describe("createTenantAndDeploy", () => {
       expect(triggerDeployment).not.toHaveBeenCalled();
     });
 
+    it("names the platform setting an operator forgot to configure", async () => {
+      triggerDeployment.mockRejectedValue(
+        new Error(
+          "PLATFORM_CHATBOT_IMAGE_URI is not set. Should be the source image URI in your ECR, without a tag.",
+        ),
+      );
+
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.errors._form).toContain("PLATFORM_CHATBOT_IMAGE_URI");
+    });
+
+    it("says the slug is taken instead of sending the operator to the server log", async () => {
+      dbInsertReturning.mockRejectedValue(
+        Object.assign(new Error('duplicate key value violates unique constraint "tenants_slug_unique"'), {
+          code: "23505",
+        }),
+      );
+
+      const result = await createTenantAndDeploy(null, formData(validAws));
+
+      expect(result?.errors._form).toContain("already exists");
+      expect(result?.errors._form).not.toContain("duplicate key value");
+    });
+
     it("does not forward an unrecognised error's message to the browser", async () => {
       assumeTenantRole.mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.1:5432"));
 
