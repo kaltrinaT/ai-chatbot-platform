@@ -67,13 +67,16 @@ Every tenant deployment runs in the **customer's** cloud account. The platform o
 
 - Provider: GitHub OAuth via NextAuth v5 (`next-auth` beta)
 - Strategy: database sessions (stored in the `sessions` table)
-- Middleware at `src/middleware.ts` blocks all routes except `/signin`, `/api/auth/*`, and static assets
+- Middleware at `src/middleware.ts` blocks all routes except `/signin`, `/api/auth/*`, and static assets — through the `authorized` callback in [`src/auth.ts`](src/auth.ts), since `next-auth` authorizes every request when that callback is absent
+- **Authorization:** `AUTH_ALLOWED_EMAILS` names the accounts that may hold a session, by the email address on the GitHub account (see [`src/lib/operators.ts`](src/lib/operators.ts)). It is checked when a session is created and again whenever `auth()` resolves one, so striking an address off ends that operator's access on their next request instead of when their session row expires. A production start without the list is refused, because GitHub OAuth on its own admits every GitHub account
+- The deployment status webhook is the one path let through without a session; it authenticates its own `x-webhook-secret` header
 
 **Setup:**
 ```
-AUTH_SECRET=          # npx auth secret
-AUTH_GITHUB_ID=       # GitHub OAuth App client ID
-AUTH_GITHUB_SECRET=   # GitHub OAuth App client secret
+AUTH_SECRET=            # npx auth secret
+AUTH_GITHUB_ID=         # GitHub OAuth App client ID
+AUTH_GITHUB_SECRET=     # GitHub OAuth App client secret
+AUTH_ALLOWED_EMAILS=    # operator emails, comma-separated
 ```
 
 ---
@@ -420,6 +423,7 @@ DATABASE_URL=postgres://user:password@host/db?sslmode=require
 AUTH_SECRET=                    # npx auth secret
 AUTH_GITHUB_ID=
 AUTH_GITHUB_SECRET=
+AUTH_ALLOWED_EMAILS=            # operator emails, comma-separated; required in production
 
 # ── GitHub (trigger workflows) ────────────────────────────────────────
 GITHUB_PAT=                     # Personal Access Token: repo + workflow scopes
@@ -441,6 +445,7 @@ PLATFORM_ENCRYPTION_KEY=        # openssl rand -hex 32
 # and the application refuses long-lived keys. GitHub Actions reaches its own
 # platform role through OIDC (see infra/platform/github-oidc).
 AWS_PROFILE=platform-control-plane
+PLATFORM_AWS_ROLE_ARN=          # instead of AWS_PROFILE on a host that signs its own OIDC token
 
 # ── Chatbot images (replicated into each tenant's own registry — ECR for AWS, ACR for Azure) ──
 PLATFORM_CHATBOT_IMAGE_URI=     # backend ECR URI without tag, e.g.:
