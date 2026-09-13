@@ -187,7 +187,12 @@ function describeProvisioningFailure(err: unknown): string {
       return e.message;
     }
     if (e.name === "CredentialsProviderError") {
-      return "The platform has no AWS sign-in session, or it has expired. Run aws login --profile platform-operator on the machine running the platform.";
+      return (
+        "The platform has no AWS credentials of its own. On a developer machine, " +
+        "run aws login --profile platform-operator. On a hosted deployment, set " +
+        "PLATFORM_AWS_ROLE_ARN and turn on the host's OIDC federation so it can " +
+        "federate to that role instead."
+      );
     }
     if (e.message?.includes("PLATFORM_ENCRYPTION_KEY")) {
       return e.message;
