@@ -446,6 +446,7 @@ PLATFORM_ENCRYPTION_KEY=        # openssl rand -hex 32
 # platform role through OIDC (see infra/platform/github-oidc).
 AWS_PROFILE=platform-control-plane
 PLATFORM_AWS_ROLE_ARN=          # instead of AWS_PROFILE on a host that signs its own OIDC token
+PLATFORM_ENABLE_CDN=            # false for accounts AWS has not verified for CloudFront; those tenants get plain HTTP
 
 # ── Chatbot images (replicated into each tenant's own registry — ECR for AWS, ACR for Azure) ──
 PLATFORM_CHATBOT_IMAGE_URI=     # backend ECR URI without tag, e.g.:

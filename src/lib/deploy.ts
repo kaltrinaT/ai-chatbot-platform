@@ -226,6 +226,12 @@ function buildAwsDestroyInputs(tenant: TenantRow, deploymentId: string): Record<
   };
 }
 
+/** Whether AWS tenants are fronted by CloudFront. See enable_cdn below. */
+function cdnEnabled(): boolean {
+  const configured = process.env.PLATFORM_ENABLE_CDN?.trim().toLowerCase();
+  return configured !== "false" && configured !== "0" && configured !== "off";
+}
+
 function buildAwsInputs(
   tenant: Awaited<ReturnType<typeof db.select>>["0"] & { cloudProvider: string },
   deploymentId: string,
@@ -245,6 +251,12 @@ function buildAwsInputs(
     // Terraform tear the HTTPS listener back down and silently return an
     // already-encrypted tenant to plain HTTP.
     acm_certificate_arn: tenant.acmCertificateArn ?? "",
+    // On by default, since it is what gives a tenant without a certificate any
+    // HTTPS at all. Overridable because an AWS account that has not been
+    // verified for CloudFront cannot create a distribution, and the deploy
+    // fails on it: those tenants have to be served by the load balancer alone,
+    // which means plain HTTP until they bring a certificate.
+    enable_cdn: cdnEnabled() ? "true" : "false",
     s3_docs_prefix: tenant.s3DocsPrefix ?? "",
     llm_provider: tenant.llmProvider,
     llm_secret_arn: tenant.llmSecretArn!,

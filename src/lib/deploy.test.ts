@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   selectWhereChain,
   updateSetWhereChain,
@@ -259,6 +259,42 @@ describe("triggerDeployment", () => {
 
     const call = createWorkflowDispatch.mock.calls[0][0];
     expect(call.inputs.acm_certificate_arn).toBe("");
+  });
+
+  describe("the CloudFront front door", () => {
+    const saved = process.env.PLATFORM_ENABLE_CDN;
+
+    afterEach(() => {
+      if (saved === undefined) delete process.env.PLATFORM_ENABLE_CDN;
+      else process.env.PLATFORM_ENABLE_CDN = saved;
+    });
+
+    async function dispatchAndReadInputs(id: string) {
+      dbSelectWhere.mockResolvedValue([baseAwsTenant]);
+      dbInsertReturning.mockResolvedValue([{ id, status: "pending" }]);
+      dbUpdateWhere.mockResolvedValue(undefined);
+      createWorkflowDispatch.mockResolvedValue({});
+
+      await triggerDeployment({
+        tenantId: baseAwsTenant.id,
+        chatbotVersion: "v1",
+        triggeredByUserId: "u1",
+      });
+
+      return createWorkflowDispatch.mock.calls[0][0].inputs;
+    }
+
+    it("is on unless the platform says otherwise, since it is the only HTTPS a tenant without a certificate gets", async () => {
+      delete process.env.PLATFORM_ENABLE_CDN;
+      expect((await dispatchAndReadInputs("deploy-cdn-1")).enable_cdn).toBe("true");
+    });
+
+    // An AWS account that has not been verified for CloudFront cannot create a
+    // distribution at all, and the whole deploy fails on it.
+    it.each(["false", "FALSE", "0", "off"])("is off when set to %s", async (value) => {
+      process.env.PLATFORM_ENABLE_CDN = value;
+      expect((await dispatchAndReadInputs("deploy-cdn-2")).enable_cdn).toBe("false");
+    });
   });
 
   // Onboarding writes this secret before the tenant row exists, so a tenant
