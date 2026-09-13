@@ -2,9 +2,12 @@ variable "tenant_slug" {
   description = "Lowercase-dash tenant identifier; used in every resource name."
   type        = string
 
+  # 21, not 32: the frontend's target group is named "chatbot-<slug>-ui" and
+  # AWS rejects any target group name over 32 characters — mid-apply, after
+  # the VPC and load balancer already exist.
   validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$", var.tenant_slug))
-    error_message = "tenant_slug must be 3–32 characters, lowercase alphanumeric and hyphens only, and must not start or end with a hyphen."
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,19}[a-z0-9]$", var.tenant_slug))
+    error_message = "tenant_slug must be 3–21 characters, lowercase alphanumeric and hyphens only, and must not start or end with a hyphen."
   }
 }
 

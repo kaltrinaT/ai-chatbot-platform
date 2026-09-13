@@ -59,7 +59,7 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 
 ### Phase B — Onboarding (platform server action `createTenantAndDeploy`)
 
-7. **The form is validated** (`TenantInput`). The slug must be 3–32 characters.
+7. **The form is validated** (`TenantInput`). The slug must be 3–21 characters, because the frontend target group is named `chatbot-<slug>-ui` and AWS caps that at 32.
 8. **The platform assumes the tenant role** with STS for a 15-minute session.
 9. **The platform writes the secrets into the customer's Secrets Manager:**
    - `<slug>/llm-api-key`
@@ -239,7 +239,7 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 | Secret delivery to containers | `valueFrom` ARN, resolved at task start | Container App secret values set from TF vars |
 | pgvector | RDS `db.t4g.micro`, private (SG from tasks only) | Flexible Server B1ms, public + "allow Azure services" |
 | Logs | CloudWatch, 14 days | Log Analytics, 30 days |
-| Slug length | 3–32 | 3–18 |
+| Slug length | 3–21 | 3–18 |
 
 ### 4.3 Secret handling
 

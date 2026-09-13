@@ -109,7 +109,7 @@ Managed by Drizzle ORM, running on Neon Postgres.
 |---|---|---|
 | `id` | UUID | PK, auto-generated |
 | `name` | text | Display name |
-| `slug` | text | Unique, URL-safe identifier (3–32 chars; 18 max for Azure) |
+| `slug` | text | Unique, URL-safe identifier (3–21 chars; 18 max for Azure) |
 | `ownerUserId` | text | FK → users |
 | `cloudProvider` | enum | `aws` \| `azure` |
 | `chatbotVersion` | text | Git/image tag deployed |
@@ -312,7 +312,7 @@ Selected per tenant by `vector_store`; exactly one of the following is created.
 
 | Variable | Required | Description |
 |---|---|---|
-| `tenant_slug` | yes | 3–32 chars, lowercase alphanumeric + hyphens |
+| `tenant_slug` | yes | 3–21 chars, lowercase alphanumeric + hyphens |
 | `aws_region` | yes | e.g. `us-east-1` |
 | `image_uri` | yes | Full backend ECR URI with tag in customer account |
 | `frontend_image_uri` | yes | Full frontend (chat UI) ECR URI with tag in customer account |

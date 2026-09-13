@@ -170,6 +170,33 @@ describe("createTenantAndDeploy", () => {
       expect(result?.errors.slug).toMatch(/at least 3 characters/);
     });
 
+    // AWS names the frontend's target group chatbot-<slug>-ui and rejects
+    // anything over 32 characters, which a 22-character slug exceeded only
+    // once the load balancer already existed.
+    it("rejects an AWS slug too long for a target group name", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({ ...validAws, slug: "company-info-chatbot-1" }),
+      );
+      expect(result?.errors.slug).toBeDefined();
+    });
+
+    it("accepts an AWS slug at the 21-character ceiling", async () => {
+      const slug = "company-info-chatbotx";
+      expect(slug).toHaveLength(21);
+
+      const result = await createTenantAndDeploy(null, formData({ ...validAws, slug }));
+      expect(result?.errors.slug).toBeUndefined();
+    });
+
+    it("rejects an Azure slug over 18 characters, which its Key Vault name cannot take", async () => {
+      const result = await createTenantAndDeploy(
+        null,
+        formData({ ...validAzure, slug: "nineteen-characters" }),
+      );
+      expect(result?.errors.slug).toBeDefined();
+    });
+
     it("rejects a slug with uppercase letters", async () => {
       const result = await createTenantAndDeploy(null, formData({ ...validAws, slug: "Acme-Co" }));
       expect(result?.errors.slug).toBeDefined();

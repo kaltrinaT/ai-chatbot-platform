@@ -19,7 +19,11 @@ const SharedInput = z.object({
   slug: z
     .string()
     .min(3, "Must be at least 3 characters")
-    .max(32, "Must be 32 characters or fewer")
+    // Every cloud resource is named after this, and the shortest ceiling wins.
+    // On AWS the frontend's target group is chatbot-<slug>-ui and AWS caps
+    // that name at 32 characters, so the slug cannot exceed 21. Azure's Key
+    // Vault is tighter still, and is checked per cloud below.
+    .max(21, "Must be 21 characters or fewer, since cloud resource names are built from it")
     .regex(
       /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
       "Lowercase letters, numbers, and hyphens only; cannot start or end with a hyphen"
@@ -137,7 +141,14 @@ const TenantInput = z
         "The certificate must live in the same region as the deployment. Request it again in the tenant's region.",
       path: ["acmCertificateArn"],
     },
-  );
+  )
+  // Azure's Key Vault is named cb-<slug>-kv and capped at 24 characters, which
+  // is stricter than the shared limit above. Caught here because a slug is
+  // permanent: a tenant created too long can never be deployed, only deleted.
+  .refine((v) => v.cloudProvider !== "azure" || v.slug.length <= 18, {
+    message: "An Azure tenant's slug must be 18 characters or fewer: its Key Vault is named cb-<slug>-kv.",
+    path: ["slug"],
+  });
 
 /**
  * `errors` is always present (empty on success) so callers can read it without

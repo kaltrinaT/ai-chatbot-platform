@@ -124,7 +124,7 @@ Put that ARN, and the same hostname, into the onboarding form. Both are needed: 
 | Field | Value |
 |---|---|
 | Cloud provider | AWS |
-| Tenant name / Slug | Your choice — slug is 3–32 chars, lowercase + hyphens, can't change later |
+| Tenant name / Slug | Your choice — slug is 3–21 chars, lowercase + hyphens, can't change later |
 | AWS account ID | From step 1 |
 | AWS region | From step 1 |
 | Deployment role ARN | From step 5 |

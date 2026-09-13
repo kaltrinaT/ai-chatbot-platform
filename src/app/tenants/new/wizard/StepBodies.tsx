@@ -210,10 +210,10 @@ export function StepCloudConfig({ values, set, errors }: StepProps) {
               hint={
                 azure
                   ? "3–18 chars, lowercase letters, numbers, hyphens. Limited by Azure Key Vault naming."
-                  : "3–32 chars, lowercase letters, numbers, hyphens."
+                  : "3–21 chars, lowercase letters, numbers, hyphens. Limited by AWS target group naming."
               }
               error={errors.slug}
-              maxLength={azure ? 18 : 32}
+              maxLength={azure ? 18 : 21}
               tooltip="You choose this: a short unique ID baked into every cloud resource name (bucket, cluster, vault). It cannot be changed after creation."
             />
           </div>
