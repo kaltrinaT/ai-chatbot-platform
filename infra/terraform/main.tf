@@ -953,7 +953,18 @@ resource "aws_ecs_service" "this" {
     container_port   = var.container_port
   }
 
-  depends_on = [aws_lb_listener_rule.backend_api]
+  # The secret version matters as much as the listener rule. The execution
+  # role resolves the pgvector URL when a task starts, and that secret only
+  # receives a value once RDS finishes creating, which took eight minutes on a
+  # fresh account. The task definition references the secret's ARN, which
+  # exists immediately, so without this nothing in the graph waits for the
+  # value: the service launches tasks against a secret whose AWSCURRENT
+  # version does not exist yet, every one fails to start, and the circuit
+  # breaker fails the deployment before the value ever appears.
+  depends_on = [
+    aws_lb_listener_rule.backend_api,
+    aws_secretsmanager_secret_version.vectors,
+  ]
 
   tags = local.common_tags
 }
