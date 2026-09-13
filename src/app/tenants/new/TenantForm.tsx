@@ -13,12 +13,14 @@ import {
   type Values,
 } from "./wizard/StepBodies";
 import {
+  FIELDS_BY_STEP,
   LAST_INPUT_STEP,
   REQUIRED_BY_CLOUD,
   REQUIRED_BY_STEP,
   STEPS,
   earliestStepForFields,
 } from "./wizard/steps";
+import { validateTenantValues } from "@/lib/tenantInput";
 
 const DEFAULTS: Values = {
   cloudProvider: "aws",
@@ -39,8 +41,14 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
   const [draftNote, setDraftNote] = useState<string | null>(null);
   const [savingDraft, startSavingDraft] = useTransition();
 
+  // Caught here rather than by the server: a slug too long for the names AWS
+  // builds from it, or a certificate from another region, otherwise fails
+  // minutes into a workflow run, with infrastructure already created.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
   const cloud = (values.cloudProvider ?? "aws") as "aws" | "azure";
-  const errors = state?.errors ?? {};
+  const errors = { ...fieldErrors, ...(state?.errors ?? {}) };
+  const rejectedOnSubmit = Object.keys(state?.errors ?? {}).length > 0;
   const deployed = state?.deployed;
 
   function set(key: string, value: string) {
@@ -48,6 +56,12 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
     // Clearing as soon as the field is touched — leaving the marker up while
     // the user types reads as "still wrong" when it no longer is.
     setBlocked((b) => b.filter((f) => f !== key));
+    setFieldErrors((e) => {
+      if (!(key in e)) return e;
+      const next = { ...e };
+      delete next[key];
+      return next;
+    });
   }
 
   // A rejected submission must not leave the user staring at the review step
@@ -76,13 +90,25 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
     return required.filter((f) => !(values[f] ?? "").trim());
   }
 
+  /** What the shared schema objects to among one step's own fields. */
+  function invalidFor(target: number): Record<string, string> {
+    return validateTenantValues(values, FIELDS_BY_STEP[target] ?? []);
+  }
+
   function goNext() {
     const missing = missingFor(step);
     if (missing.length > 0) {
       setBlocked(missing);
       return;
     }
+    const invalid = invalidFor(step);
+    if (Object.keys(invalid).length > 0) {
+      setBlocked([]);
+      setFieldErrors(invalid);
+      return;
+    }
     setBlocked([]);
+    setFieldErrors({});
     setStep((s) => Math.min(s + 1, LAST_INPUT_STEP));
   }
 
@@ -101,8 +127,16 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
         setStep(s);
         return;
       }
+      const invalid = invalidFor(s);
+      if (Object.keys(invalid).length > 0) {
+        setBlocked([]);
+        setFieldErrors(invalid);
+        setStep(s);
+        return;
+      }
     }
     setBlocked([]);
+    setFieldErrors({});
     setStep(target);
   }
 
@@ -148,7 +182,20 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
   }, [activeStep]);
 
   return (
-    <form action={formAction} className="pb-10">
+    <form
+      action={formAction}
+      // The last gate before real infrastructure: the review step can be
+      // reached with a draft restored straight into it, so Continue's checks
+      // may never have run over these values.
+      onSubmit={(e) => {
+        const invalid = validateTenantValues(values);
+        if (Object.keys(invalid).length === 0) return;
+        e.preventDefault();
+        setFieldErrors(invalid);
+        setStep(earliestStepForFields(Object.keys(invalid)));
+      }}
+      className="pb-10"
+    >
       {/* The wizard renders one step at a time, so its inputs are controlled
           and unnamed; these hidden fields are what the submission actually
           carries. Rendering the whole map (rather than the current step's
@@ -190,7 +237,9 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
 
       {Object.keys(errors).length > 0 && (
         <p role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          The deployment was not started — please correct the highlighted fields.
+          {rejectedOnSubmit
+            ? "The deployment was not started — please correct the highlighted fields."
+            : "Please correct the highlighted fields before continuing."}
         </p>
       )}
 

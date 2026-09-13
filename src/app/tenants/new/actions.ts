@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import { TenantInput, rawTenantInput, type TenantValues } from "@/lib/tenantInput";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { tenants, tenantDrafts } from "@/db/schema";
@@ -12,143 +12,6 @@ import { encryptSecret } from "@/lib/crypto";
 import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "@/lib/aws";
 import { generateDocsSignerSecret } from "@/lib/azure";
 
-// ── Shared fields ─────────────────────────────────────────────────────
-const SharedInput = z.object({
-  cloudProvider: z.enum(["aws", "azure"]),
-  name: z.string().min(1, "Required").max(100),
-  slug: z
-    .string()
-    .min(3, "Must be at least 3 characters")
-    // Every cloud resource is named after this, and the shortest ceiling wins.
-    // On AWS the frontend's target group is chatbot-<slug>-ui and AWS caps
-    // that name at 32 characters, so the slug cannot exceed 21. Azure's Key
-    // Vault is tighter still, and is checked per cloud below.
-    .max(21, "Must be 21 characters or fewer, since cloud resource names are built from it")
-    .regex(
-      /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
-      "Lowercase letters, numbers, and hyphens only; cannot start or end with a hyphen"
-    ),
-  chatbotVersion: z.string().min(1).default("latest"),
-  domain: z
-    .string()
-    .refine(
-      (v) => v === "" || /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/.test(v),
-      "Must be a valid hostname (e.g. chat.example.com) — no https:// or trailing slash"
-    )
-    .optional(),
-  llmProvider: z.enum(["openai", "anthropic", "openrouter"], {
-    message: "Select a provider",
-  }),
-  llmApiKey: z.string().min(10, "API key looks too short"),
-  llmModel: z.string().optional(),
-  vectorStore: z.enum(["pinecone", "pgvector"]).default("pinecone"),
-  // Required only for vectorStore = "pinecone"; enforced by the refine below.
-  pineconeApiKey: z.string().optional(),
-
-});
-
-
-// ── AWS fields ────────────────────────────────────────────────────────
-const AwsInput = SharedInput.extend({
-  cloudProvider: z.literal("aws"),
-  awsAccountId: z.string().regex(/^\d{12}$/, "Must be exactly 12 digits"),
-  awsRegion: z
-    .string()
-    .regex(/^[a-z]{2}-[a-z]+-[0-9]$/, "Must be a valid AWS region (e.g. us-east-1)"),
-  deploymentRoleArn: z
-    .string()
-    .regex(/^arn:aws:iam::\d{12}:role\/.+$/, "Must be a valid IAM role ARN"),
-  s3DocsPrefix: z
-    .string()
-    .refine((v) => !v.startsWith("/"), "Must not start with a leading slash")
-    .optional(),
-  // Optional, but it is the only thing that gets a tenant TLS: without it the
-  // ALB listens on port 80 only and every question and answer crosses the
-  // internet in clear text.
-  acmCertificateArn: z
-    .string()
-    .refine(
-      (v) => v === "" || /^arn:aws:acm:[a-z0-9-]+:\d{12}:certificate\/.+$/.test(v),
-      "Must be a valid ACM certificate ARN (arn:aws:acm:REGION:ACCOUNT:certificate/ID)",
-    )
-    .optional(),
-});
-
-// ── Azure fields ──────────────────────────────────────────────────────
-
-// All three Azure identifiers are UUIDs, and the deploy's own Terraform
-// validates them as such. Checking here too means a value pasted into the
-// wrong box is rejected on the form, rather than surfacing minutes later as
-// an opaque Entra error (AADSTS700016) from the middle of a workflow run.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const azureUuid = (label: string) =>
-  z.string().regex(UUID_RE, `${label} must be a valid UUID`);
-
-// The client secret is the one Azure field with no natural shape to validate,
-// which is why the two easy portal mistakes both used to reach Entra and come
-// back as an opaque AADSTS7000215 from the middle of a workflow run: pasting
-// the Secret ID (a UUID, always visible) instead of the Value (shown once, at
-// creation), or pasting an LLM key from the next step. Both are caught here.
-// The trim matters too — a copied trailing space is invisible and rejected.
-const azureClientSecret = z
-  .string()
-  .trim()
-  .min(1, "Required")
-  .refine((v) => !UUID_RE.test(v), {
-    message:
-      "That is the Secret ID. Copy the Value column instead — Azure shows it only once, when the secret is created.",
-  })
-  .refine((v) => !/^sk-/i.test(v), {
-    message:
-      "That looks like an LLM API key. This field wants the Azure service principal's client secret.",
-  });
-
-const AzureInput = SharedInput.extend({
-  cloudProvider: z.literal("azure"),
-  azureSubscriptionId: azureUuid("Subscription ID"),
-  azureTenantId: azureUuid("Tenant ID"),
-  azureClientId: azureUuid("Client ID"),
-  azureClientSecret,
-  azureRegion: z.string().min(1, "Required"),
-});
-
-// The Pinecone key is the customer's own, so it is mandatory when they pick
-// Pinecone and unused when the vectors stay inside their cloud account.
-const TenantInput = z
-  .discriminatedUnion("cloudProvider", [AwsInput, AzureInput])
-  .refine((v) => v.vectorStore !== "pinecone" || (v.pineconeApiKey ?? "").length >= 10, {
-    message: "Required when the vector store is Pinecone",
-    path: ["pineconeApiKey"],
-  })
-  // A certificate with no domain would open port 443 for a hostname nobody
-  // resolves, while the tenant's advertised URL stayed on plain HTTP.
-  .refine((v) => v.cloudProvider !== "aws" || !v.acmCertificateArn || Boolean(v.domain), {
-    message:
-      "A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.",
-    path: ["acmCertificateArn"],
-  })
-  // A load balancer can only use certificates from its own region. Caught
-  // here because otherwise it surfaces minutes later, as a Terraform error
-  // from the middle of a workflow run.
-  .refine(
-    (v) =>
-      v.cloudProvider !== "aws" ||
-      !v.acmCertificateArn ||
-      v.acmCertificateArn.split(":")[3] === v.awsRegion,
-    {
-      message:
-        "The certificate must live in the same region as the deployment. Request it again in the tenant's region.",
-      path: ["acmCertificateArn"],
-    },
-  )
-  // Azure's Key Vault is named cb-<slug>-kv and capped at 24 characters, which
-  // is stricter than the shared limit above. Caught here because a slug is
-  // permanent: a tenant created too long can never be deployed, only deleted.
-  .refine((v) => v.cloudProvider !== "azure" || v.slug.length <= 18, {
-    message: "An Azure tenant's slug must be 18 characters or fewer: its Key Vault is named cb-<slug>-kv.",
-    path: ["slug"],
-  });
 
 /**
  * `errors` is always present (empty on success) so callers can read it without
@@ -228,30 +91,13 @@ export async function createTenantAndDeploy(
   const session = await auth();
   if (!session?.user?.id) redirect("/signin");
 
-  const raw = {
-    cloudProvider: formData.get("cloudProvider"),
-    name: formData.get("name"),
-    slug: formData.get("slug"),
-    chatbotVersion: formData.get("chatbotVersion") || "latest",
-    domain: (formData.get("domain") as string) || undefined,
-    llmProvider: formData.get("llmProvider"),
-    llmApiKey: formData.get("llmApiKey"),
-    llmModel: (formData.get("llmModel") as string) || undefined,
-    vectorStore: formData.get("vectorStore") || "pinecone",
-    pineconeApiKey: (formData.get("pineconeApiKey") as string) || undefined,
-    // AWS
-    awsAccountId: formData.get("awsAccountId"),
-    awsRegion: formData.get("awsRegion"),
-    deploymentRoleArn: formData.get("deploymentRoleArn"),
-    s3DocsPrefix: (formData.get("s3DocsPrefix") as string) || undefined,
-    acmCertificateArn: (formData.get("acmCertificateArn") as string) || undefined,
-    // Azure
-    azureSubscriptionId: formData.get("azureSubscriptionId"),
-    azureTenantId: formData.get("azureTenantId"),
-    azureClientId: formData.get("azureClientId"),
-    azureClientSecret: formData.get("azureClientSecret"),
-    azureRegion: formData.get("azureRegion"),
-  };
+  // Parsed by the same schema the wizard uses while the operator types, so a
+  // value the form already rejected cannot arrive here by another route.
+  const submitted: TenantValues = {};
+  for (const [key, value] of formData.entries()) {
+    if (typeof value === "string") submitted[key] = value;
+  }
+  const raw = rawTenantInput(submitted);
 
   const result = TenantInput.safeParse(raw);
 
