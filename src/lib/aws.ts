@@ -44,6 +44,30 @@ export class LongLivedAwsKeyError extends PlatformCredentialsError {
 type PlatformCredentialProvider = () => Promise<AssumedCredentials & { expiration?: Date }>;
 
 /**
+ * The token the host signs to prove which workload is asking.
+ *
+ * Vercel mints one per invocation and delivers it as a request header, putting
+ * it in the environment only at build time — its own helper reads the header
+ * first for exactly that reason. Onboarding always runs inside a request, so
+ * the header is the path that matters; the environment variables cover another
+ * host, or a context with no request to read.
+ */
+async function hostOidcToken(): Promise<string | undefined> {
+  const fromEnvironment =
+    process.env.VERCEL_OIDC_TOKEN?.trim() || process.env.PLATFORM_AWS_WEB_IDENTITY_TOKEN?.trim();
+  if (fromEnvironment) return fromEnvironment;
+
+  try {
+    const { headers } = await import("next/headers");
+    return (await headers()).get("x-vercel-oidc-token")?.trim() || undefined;
+  } catch {
+    // No request to read a header from, which is itself an answer: there is
+    // no token here.
+    return undefined;
+  }
+}
+
+/**
  * The identity the platform itself acts as, before it assumes anything inside
  * a customer's account.
  *
@@ -55,14 +79,11 @@ type PlatformCredentialProvider = () => Promise<AssumedCredentials & { expiratio
  * inside AWS.
  */
 function platformCredentials(region: string): PlatformCredentialProvider | undefined {
-  const roleArn = process.env.PLATFORM_AWS_ROLE_ARN;
+  const roleArn = process.env.PLATFORM_AWS_ROLE_ARN?.trim();
   if (!roleArn) return undefined;
 
   return async () => {
-    // Vercel puts a freshly signed token in the environment of each
-    // invocation. Any other host can supply one the same way.
-    const webIdentityToken =
-      process.env.VERCEL_OIDC_TOKEN ?? process.env.PLATFORM_AWS_WEB_IDENTITY_TOKEN;
+    const webIdentityToken = await hostOidcToken();
     if (!webIdentityToken) {
       throw new PlatformCredentialsError(
         "PLATFORM_AWS_ROLE_ARN is set but this host issued no OIDC token, so the platform cannot federate to AWS. On Vercel, turn on OIDC federation for the project; on another host, supply PLATFORM_AWS_WEB_IDENTITY_TOKEN.",

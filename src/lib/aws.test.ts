@@ -1,9 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-const { stsSend, stsCredentials, secretsSend } = vi.hoisted(() => ({
+const { stsSend, stsCredentials, secretsSend, hostHeader } = vi.hoisted(() => ({
   stsSend: vi.fn(),
   stsCredentials: vi.fn(),
   secretsSend: vi.fn(),
+  // What the host puts on the incoming request, per test.
+  hostHeader: { oidcToken: undefined as string | undefined },
+}));
+
+vi.mock("next/headers", () => ({
+  headers: async () =>
+    new Headers(hostHeader.oidcToken ? { "x-vercel-oidc-token": hostHeader.oidcToken } : {}),
 }));
 
 // Mock implementations use `function` (not arrow functions) so `new` works,
@@ -319,6 +326,7 @@ describe("the platform's own credentials", () => {
     else process.env.PLATFORM_AWS_ROLE_ARN = savedRoleArn;
     if (savedToken === undefined) delete process.env.VERCEL_OIDC_TOKEN;
     else process.env.VERCEL_OIDC_TOKEN = savedToken;
+    hostHeader.oidcToken = undefined;
   });
 
   // A developer machine: the operator's own sign-in session, resolved by the
@@ -353,6 +361,26 @@ describe("the platform's own credentials", () => {
       DurationSeconds: 3600,
     });
     expect(credentials).toMatchObject({ accessKeyId: "ASIAHOST", sessionToken: "ht" });
+  });
+
+  // The path that actually runs in production: Vercel signs a token per
+  // invocation and sends it as a request header, leaving the environment
+  // variable empty outside a build.
+  it("takes the token from the request header when the environment has none", async () => {
+    process.env.PLATFORM_AWS_ROLE_ARN = PLATFORM_ROLE;
+    delete process.env.VERCEL_OIDC_TOKEN;
+    hostHeader.oidcToken = "header.host.token";
+
+    await assumeTenantRole({ roleArn: "arn:x", sessionName: "s", region: "us-east-1" });
+
+    stsSend.mockResolvedValueOnce({
+      Credentials: { AccessKeyId: "ASIAHOST", SecretAccessKey: "hs", SessionToken: "ht" },
+    });
+    await credentialProviderPassedToSts()!();
+
+    expect(AssumeRoleWithWebIdentityCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ WebIdentityToken: "header.host.token", RoleArn: PLATFORM_ROLE }),
+    );
   });
 
   // Silently falling back would mean a hosted platform quietly running as
