@@ -10,7 +10,12 @@ import {
   type SessionLike,
 } from "@/lib/operators";
 
-const authSecret = process.env.AUTH_SECRET ?? "dev-secret";
+// An environment variable added with no value is not the same as an unset one,
+// and only the second would fall through to the development default. An empty
+// string reaches NextAuth, which then answers every auth route with "there was
+// a problem with the server configuration" and says no more.
+const configuredAuthSecret = process.env.AUTH_SECRET?.trim();
+const authSecret = configuredAuthSecret || "dev-secret";
 
 // GitHub Actions posts deployment status to this path with an x-webhook-secret
 // header and no session, and the route checks that header itself. The proxy has
@@ -19,12 +24,17 @@ const authSecret = process.env.AUTH_SECRET ?? "dev-secret";
 // delivered callback.
 const WEBHOOK_PATH = /^\/api\/deployments\/[^/]+\/status\/?$/;
 
+// Trimmed for the same reason as the secret above: a value pasted into a
+// hosting dashboard with a stray newline is not a credential OAuth can use.
+const githubId = process.env.AUTH_GITHUB_ID?.trim();
+const githubSecret = process.env.AUTH_GITHUB_SECRET?.trim();
+
 const providers = [];
-if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
+if (githubId && githubSecret) {
   providers.push(
     GitHub({
-      clientId: process.env.AUTH_GITHUB_ID,
-      clientSecret: process.env.AUTH_GITHUB_SECRET,
+      clientId: githubId,
+      clientSecret: githubSecret,
     })
   );
 }
@@ -92,6 +102,30 @@ if (
     "DATABASE_URL is not set. Refusing to start: without it the auth adapter " +
       "cannot run, and the proxy that protects every route would allow " +
       "all requests through.",
+  );
+}
+
+if (
+  !configuredAuthSecret &&
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PHASE !== "phase-production-build"
+) {
+  throw new Error(
+    "AUTH_SECRET is not set, or is set to an empty value. Refusing to start: " +
+      "sessions could not be signed, and NextAuth would answer every auth route " +
+      "with an opaque configuration error instead of naming the cause.",
+  );
+}
+
+if (
+  providers.length === 0 &&
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PHASE !== "phase-production-build"
+) {
+  throw new Error(
+    "AUTH_GITHUB_ID and AUTH_GITHUB_SECRET are not both set. Refusing to start: " +
+      "with no provider configured nobody can sign in, and the auth routes answer " +
+      "with a configuration error rather than saying which value is missing.",
   );
 }
 
