@@ -372,7 +372,7 @@ export function StepCloudConfig({ values, set, errors }: StepProps) {
               value={values.awsRegion ?? ""}
               onChange={(v) => set("awsRegion", v)}
               placeholder="us-east-1"
-              hint="The AWS region where the chatbot will be deployed."
+              hint="Any TLS certificate must be issued in this same region."
               error={errors.awsRegion}
               tooltip="Pick the region closest to the customer's users, e.g. us-east-1, eu-central-1."
             />
