@@ -1,14 +1,14 @@
 /**
  * Who may sign in to the platform.
  *
- * GitHub OAuth proves only that someone has a GitHub account. On a laptop that
- * is harmless; on a public URL it is not authorization at all, because every
- * GitHub user in the world would reach tenant onboarding and be able to
- * dispatch deployments into customer accounts. AUTH_ALLOWED_EMAILS is the
- * authorization half: it names the accounts, by the email address on the
- * GitHub account, that may hold a session.
+ * GitHub OAuth proves only that someone has a GitHub account, and the
+ * prototype treats that as enough: authenticated means allowed. An invitation
+ * step between the two is future work — see Known Limitation #7 in SECURITY.md.
+ * AUTH_ALLOWED_EMAILS is the interim narrowing, worth setting wherever the
+ * platform is reachable from the internet: only those accounts, matched on the
+ * email address of the GitHub account, may hold a session.
  *
- * The list is enforced in two places (see src/auth.ts): when a session is
+ * When a list is configured it is enforced in two places (see src/auth.ts): when a session is
  * created, so an unlisted account never gets one, and again whenever a session
  * is resolved, so striking an address off ends that operator's access on their
  * next request rather than whenever their session row happens to expire.
@@ -17,11 +17,7 @@
 /** A session as far as this module cares: it only needs the email. */
 export type SessionLike = { user?: { email?: string | null } | null } | null | undefined;
 
-/**
- * Parses the configured list. Returns null when nothing is configured, which
- * is a different case from an empty list: production refuses to start without
- * a list, and development treats "no list" as "no restriction".
- */
+/** Parses the configured list. Null means nothing is configured, so no restriction applies. */
 export function parseAllowedOperators(raw: string | undefined | null): Set<string> | null {
   if (!raw) return null;
   const entries = raw

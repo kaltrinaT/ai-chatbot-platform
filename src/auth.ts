@@ -95,31 +95,10 @@ if (
   );
 }
 
-/**
- * GitHub OAuth only proves that the visitor has a GitHub account. The
- * allow-list is what separates that from "may onboard tenants into customer
- * cloud accounts", so a served deployment must name its operators. On a
- * developer machine an unset list means no restriction, which the warning
- * below makes visible.
- */
-if (
-  allowedOperators() === null &&
-  process.env.NODE_ENV === "production" &&
-  process.env.NEXT_PHASE !== "phase-production-build"
-) {
-  throw new Error(
-    "AUTH_ALLOWED_EMAILS is not set. Refusing to start: sign-in would be open to " +
-      "every GitHub account. Set it to the comma-separated email addresses of the " +
-      "accounts allowed to operate this platform.",
-  );
-}
-
-if (allowedOperators() === null) {
-  console.warn(
-    "[auth] AUTH_ALLOWED_EMAILS is not set — any GitHub account may sign in. " +
-      "Development only.",
-  );
-}
+// Access stops at authentication on purpose: a completed GitHub sign-in
+// reaches the platform. AUTH_ALLOWED_EMAILS narrows that to named accounts
+// when it is set, and an invitation step is future work — see Known
+// Limitation #7 in SECURITY.md.
 
 if (!process.env.DATABASE_URL) {
   console.warn(

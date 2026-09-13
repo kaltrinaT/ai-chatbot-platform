@@ -18,7 +18,7 @@ describe("parseAllowedOperators", () => {
   });
 
   // Someone who sets the variable to nothing means "not configured", not
-  // "nobody may sign in" — and production refuses to start in that state.
+  // "nobody may sign in", which would lock every operator out.
   it("treats a blank or separator-only value as no list", () => {
     expect(parseAllowedOperators("")).toBeNull();
     expect(parseAllowedOperators("   ")).toBeNull();

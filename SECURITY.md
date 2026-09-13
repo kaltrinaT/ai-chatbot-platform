@@ -188,6 +188,30 @@ Data residency is consequently a property of choosing `pgvector`, not something 
 
 ---
 
+### 7. Any GitHub account may sign in
+
+Access stops at authentication. Anyone who completes the GitHub OAuth flow reaches the dashboard and the onboarding form, and onboarding dispatches deployments and writes secrets into a customer's cloud account.
+
+```
+GitHub login → authenticated → platform
+```
+
+On a developer machine the exposure is nil, because nothing is reachable. It becomes the platform's weakest control the moment the control plane is hosted, and it is a deliberate scope decision rather than an oversight: the prototype's operator is also its only user.
+
+**Available today:** `AUTH_ALLOWED_EMAILS` lists the accounts that may hold a session, matched on the email address of the GitHub account. Set, it is enforced as the session is created and again on every request that resolves one, so removing an address ends that operator's access on their next request (see [`src/lib/operators.ts`](src/lib/operators.ts)). It is a single environment variable, which is why it stays optional.
+
+**Planned fix:** an approval step between authentication and access, so an account nobody invited lands in a pending state instead of the dashboard.
+
+```
+GitHub login → authenticated → invited or approved?
+                                 yes → platform
+                                 no  → pending / denied
+```
+
+That makes operator access data the platform owns rather than a string in its environment, which is what an environment variable cannot express: who invited whom, revocation as an event, and more than one level of access.
+
+---
+
 ## Platform Operator Responsibilities
 
 The following must be secured by the platform operator:
@@ -202,7 +226,7 @@ The following must be secured by the platform operator:
 
 These values must never be committed to source control, logged, or included in error responses.
 
-**Who may sign in.** GitHub OAuth proves only that a visitor holds a GitHub account, which is not authorization: with no list, every GitHub user could reach tenant onboarding and dispatch deployments. `AUTH_ALLOWED_EMAILS` names the operator accounts by the email address on the GitHub account, and the application refuses to start in production without it. The list is checked when a session is created and again on every request that resolves one, so removing an address ends that operator's access immediately rather than whenever their session expires. That same check is what makes the middleware block at all — `next-auth` authorizes every request unless an `authorized` callback says otherwise.
+**Who may sign in.** Anyone who completes the GitHub OAuth flow, unless `AUTH_ALLOWED_EMAILS` narrows it to named accounts — see [Known Limitation #7](#7-any-github-account-may-sign-in). Either way the middleware requires a session for every route except the sign-in page and the deployment webhook, which authenticates its own header. That holds because [`src/auth.ts`](src/auth.ts) supplies an `authorized` callback: `next-auth` authorizes every request when one is absent.
 
 **GitHub Actions holds no AWS key.** Deploy and teardown workflows exchange GitHub's signed OIDC token for one-hour credentials on the platform role defined in [`infra/platform/github-oidc`](infra/platform/github-oidc), whose trust policy admits only runs on this repository's deploy branch. Nothing reusable is stored, and each customer-role session is named after the workflow run that opened it, so a customer's CloudTrail ties every action to one run.
 
