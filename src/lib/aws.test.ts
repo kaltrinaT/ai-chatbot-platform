@@ -23,7 +23,10 @@ vi.mock("@aws-sdk/client-sts", () => {
   const AssumeRoleCommand = vi.fn(function (this: MockInstance, input: unknown) {
     this.input = input;
   });
-  return { STSClient, AssumeRoleCommand };
+  const AssumeRoleWithWebIdentityCommand = vi.fn(function (this: MockInstance, input: unknown) {
+    this.input = input;
+  });
+  return { STSClient, AssumeRoleCommand, AssumeRoleWithWebIdentityCommand };
 });
 
 vi.mock("@aws-sdk/client-secrets-manager", () => {
@@ -40,13 +43,18 @@ vi.mock("@aws-sdk/client-secrets-manager", () => {
   return { SecretsManagerClient, CreateSecretCommand, UpdateSecretCommand };
 });
 
-import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
+import {
+  STSClient,
+  AssumeRoleCommand,
+  AssumeRoleWithWebIdentityCommand,
+} from "@aws-sdk/client-sts";
 import { CreateSecretCommand, UpdateSecretCommand } from "@aws-sdk/client-secrets-manager";
 import {
   assumeTenantRole,
   writeTenantSecret,
   ensureDocsSignerSecret,
   LongLivedAwsKeyError,
+  PlatformCredentialsError,
 } from "./aws";
 import { decryptSecret } from "@/lib/crypto";
 
@@ -282,5 +290,82 @@ describe("ensureDocsSignerSecret", () => {
     ).rejects.toThrow(/incomplete credentials/);
 
     expect(CreateSecretCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe("the platform's own credentials", () => {
+  const savedRoleArn = process.env.PLATFORM_AWS_ROLE_ARN;
+  const savedToken = process.env.VERCEL_OIDC_TOKEN;
+  const PLATFORM_ROLE = "arn:aws:iam::229647349798:role/platform-control-plane";
+
+  /** The credential provider assumeTenantRole handed to its STS client, if any. */
+  function credentialProviderPassedToSts() {
+    const opts = vi.mocked(STSClient).mock.calls[0][0] as {
+      credentials?: () => Promise<{ accessKeyId: string; sessionToken: string }>;
+    };
+    return opts.credentials;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stsCredentials.mockResolvedValue(signInSession);
+    stsSend.mockResolvedValue({
+      Credentials: { AccessKeyId: "ASIATENANT", SecretAccessKey: "s", SessionToken: "t" },
+    });
+  });
+
+  afterEach(() => {
+    if (savedRoleArn === undefined) delete process.env.PLATFORM_AWS_ROLE_ARN;
+    else process.env.PLATFORM_AWS_ROLE_ARN = savedRoleArn;
+    if (savedToken === undefined) delete process.env.VERCEL_OIDC_TOKEN;
+    else process.env.VERCEL_OIDC_TOKEN = savedToken;
+  });
+
+  // A developer machine: the operator's own sign-in session, resolved by the
+  // SDK's chain, which is why no provider is passed at all.
+  it("leaves the SDK's default chain in place when no platform role is configured", async () => {
+    delete process.env.PLATFORM_AWS_ROLE_ARN;
+
+    await assumeTenantRole({ roleArn: "arn:x", sessionName: "s", region: "us-east-1" });
+
+    expect(credentialProviderPassedToSts()).toBeUndefined();
+    expect(AssumeRoleWithWebIdentityCommand).not.toHaveBeenCalled();
+  });
+
+  it("exchanges the host's OIDC token for the platform role when one is configured", async () => {
+    process.env.PLATFORM_AWS_ROLE_ARN = PLATFORM_ROLE;
+    process.env.VERCEL_OIDC_TOKEN = "signed.host.token";
+
+    await assumeTenantRole({ roleArn: "arn:x", sessionName: "s", region: "eu-central-1" });
+
+    const provider = credentialProviderPassedToSts();
+    expect(provider).toBeTypeOf("function");
+
+    stsSend.mockResolvedValueOnce({
+      Credentials: { AccessKeyId: "ASIAHOST", SecretAccessKey: "hs", SessionToken: "ht" },
+    });
+    const credentials = await provider!();
+
+    expect(AssumeRoleWithWebIdentityCommand).toHaveBeenCalledWith({
+      RoleArn: PLATFORM_ROLE,
+      RoleSessionName: "platform-control-plane",
+      WebIdentityToken: "signed.host.token",
+      DurationSeconds: 3600,
+    });
+    expect(credentials).toMatchObject({ accessKeyId: "ASIAHOST", sessionToken: "ht" });
+  });
+
+  // Silently falling back would mean a hosted platform quietly running as
+  // whatever else the chain can find, which is the failure this whole change
+  // exists to prevent.
+  it("refuses to reach for anything else when the host issued no token", async () => {
+    process.env.PLATFORM_AWS_ROLE_ARN = PLATFORM_ROLE;
+    delete process.env.VERCEL_OIDC_TOKEN;
+
+    await assumeTenantRole({ roleArn: "arn:x", sessionName: "s", region: "us-east-1" });
+    const provider = credentialProviderPassedToSts();
+
+    await expect(provider!()).rejects.toBeInstanceOf(PlatformCredentialsError);
+    expect(AssumeRoleWithWebIdentityCommand).not.toHaveBeenCalled();
   });
 });

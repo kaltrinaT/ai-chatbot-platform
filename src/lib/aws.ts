@@ -1,5 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
+import {
+  STSClient,
+  AssumeRoleCommand,
+  AssumeRoleWithWebIdentityCommand,
+} from "@aws-sdk/client-sts";
 import {
   SecretsManagerClient,
   CreateSecretCommand,
@@ -13,14 +17,22 @@ export type AssumedCredentials = {
   sessionToken: string;
 };
 
+/** The platform's own credentials are unusable, before any customer is touched. */
+export class PlatformCredentialsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlatformCredentialsError";
+  }
+}
+
 /**
- * The platform calls AWS only from a sign-in session, through AWS_PROFILE (see
- * .env.example), never with a stored access key. The SDK's default chain does
- * not know that: with no profile set it falls back to any static key in the
- * environment or ~/.aws/credentials. Temporary credentials always carry a
- * session token, and long-lived IAM user keys never do.
+ * The platform calls AWS only with temporary credentials, never with a stored
+ * access key. The SDK's default chain does not know that: with no profile set
+ * it falls back to any static key in the environment or ~/.aws/credentials.
+ * Temporary credentials always carry a session token, and long-lived IAM user
+ * keys never do.
  */
-export class LongLivedAwsKeyError extends Error {
+export class LongLivedAwsKeyError extends PlatformCredentialsError {
   constructor() {
     super(
       "The platform refuses to call AWS with a long-lived access key. Remove AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from its environment, run aws login --profile platform-operator, and set AWS_PROFILE=platform-control-plane.",
@@ -29,15 +41,75 @@ export class LongLivedAwsKeyError extends Error {
   }
 }
 
+type PlatformCredentialProvider = () => Promise<AssumedCredentials & { expiration?: Date }>;
+
+/**
+ * The identity the platform itself acts as, before it assumes anything inside
+ * a customer's account.
+ *
+ * On a host that signs its own OIDC token — Vercel, and the same shape any
+ * other federating host uses — PLATFORM_AWS_ROLE_ARN names the role to
+ * exchange that token for, and no key, profile or human is involved. Unset,
+ * the SDK's default chain applies instead: the operator's `aws login` session
+ * on a developer machine, or the compute role if the platform is ever hosted
+ * inside AWS.
+ */
+function platformCredentials(region: string): PlatformCredentialProvider | undefined {
+  const roleArn = process.env.PLATFORM_AWS_ROLE_ARN;
+  if (!roleArn) return undefined;
+
+  return async () => {
+    // Vercel puts a freshly signed token in the environment of each
+    // invocation. Any other host can supply one the same way.
+    const webIdentityToken =
+      process.env.VERCEL_OIDC_TOKEN ?? process.env.PLATFORM_AWS_WEB_IDENTITY_TOKEN;
+    if (!webIdentityToken) {
+      throw new PlatformCredentialsError(
+        "PLATFORM_AWS_ROLE_ARN is set but this host issued no OIDC token, so the platform cannot federate to AWS. On Vercel, turn on OIDC federation for the project; on another host, supply PLATFORM_AWS_WEB_IDENTITY_TOKEN.",
+      );
+    }
+
+    // This call needs no credentials of its own: the signed token is the proof
+    // of identity, which is the whole point of federating.
+    const sts = new STSClient({ region });
+    const res = await sts.send(
+      new AssumeRoleWithWebIdentityCommand({
+        RoleArn: roleArn,
+        RoleSessionName: "platform-control-plane",
+        WebIdentityToken: webIdentityToken,
+        DurationSeconds: 3600,
+      }),
+    );
+
+    const c = res.Credentials;
+    if (!c?.AccessKeyId || !c.SecretAccessKey || !c.SessionToken) {
+      throw new PlatformCredentialsError(
+        "STS AssumeRoleWithWebIdentity returned incomplete credentials",
+      );
+    }
+    return {
+      accessKeyId: c.AccessKeyId,
+      secretAccessKey: c.SecretAccessKey,
+      sessionToken: c.SessionToken,
+      expiration: c.Expiration,
+    };
+  };
+}
+
 export async function assumeTenantRole(opts: {
   roleArn: string;
   sessionName: string;
   region: string;
 }): Promise<AssumedCredentials> {
-  const sts = new STSClient({ region: opts.region });
-  // Resolved before send, so a refused key never signs a request.
-  const platformCredentials = await sts.config.credentials();
-  if (!platformCredentials.sessionToken) {
+  const sts = new STSClient({
+    region: opts.region,
+    credentials: platformCredentials(opts.region),
+  });
+  // Resolved before send, so a refused key never signs a request. Whatever the
+  // source was — federation above, a sign-in session, a compute role — this is
+  // where a static key is caught.
+  const callerCredentials = await sts.config.credentials();
+  if (!callerCredentials.sessionToken) {
     throw new LongLivedAwsKeyError();
   }
   const res = await sts.send(

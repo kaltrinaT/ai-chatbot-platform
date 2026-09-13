@@ -6,25 +6,33 @@
 # into a customer's chatbot-client-deploy-* role. Everything after that runs
 # as the customer's role, so this role is allowed nothing else.
 #
-# No access key exists for it. The operator signs in with `aws login`, and the
-# AWS SDK assumes this role from that session through two profiles in
-# ~/.aws/config:
+# Two ways in, and no access key for either.
 #
-#   [profile platform-operator]          # `aws login` adds login_session
-#   region = us-east-1
+#   Hosted   Vercel signs a short OIDC token for each invocation, which the
+#            application exchanges for this role (platformCredentials in
+#            src/lib/aws.ts). Set vercel_team_slug and vercel_project_name
+#            here, and PLATFORM_AWS_ROLE_ARN in the project's environment.
+#            Only the named environment is trusted, so a preview deployment of
+#            any branch cannot reach a customer's account.
 #
-#   [profile platform-control-plane]
-#   role_arn          = <role_arn output>
-#   source_profile    = platform-operator
-#   role_session_name = platform-control-plane-local
-#   region            = us-east-1
+#   Local    The operator signs in with `aws login`, and the SDK assumes this
+#            role from that session through two profiles in ~/.aws/config:
 #
-# with AWS_PROFILE=platform-control-plane in the application's .env. An IAM
-# Identity Center session can be the source profile instead, once the account
-# belongs to an AWS Organization; add its role to operator_principal_arns.
+#              [profile platform-operator]     # `aws login` adds login_session
+#              region = us-east-1
+#
+#              [profile platform-control-plane]
+#              role_arn          = <role_arn output>
+#              source_profile    = platform-operator
+#              role_session_name = platform-control-plane-local
+#              region            = us-east-1
+#
+#            with AWS_PROFILE=platform-control-plane in .env.
 #
 #   terraform init
-#   terraform apply -var 'operator_principal_arns=["arn:aws:iam::<account>:user/<operator>"]'
+#   terraform apply \
+#     -var 'operator_principal_arns=["arn:aws:iam::<account>:user/<operator>"]' \
+#     -var 'vercel_team_slug=<team>' -var 'vercel_project_name=<project>'
 #
 # State stays local on purpose, as in infra/platform/github-oidc.
 # ──────────────────────────────────────────────────────────────────────
@@ -44,8 +52,48 @@ provider "aws" {
   region = var.aws_region
 }
 
+locals {
+  federate_from_vercel = var.vercel_team_slug != "" && var.vercel_project_name != ""
+
+  # Vercel's defaults. Both are shown on the project's OIDC settings page;
+  # override the variables if that page disagrees.
+  vercel_issuer   = var.vercel_oidc_issuer != "" ? var.vercel_oidc_issuer : "https://oidc.vercel.com/${var.vercel_team_slug}"
+  vercel_audience = var.vercel_oidc_audience != "" ? var.vercel_oidc_audience : "https://vercel.com/${var.vercel_team_slug}"
+
+  # One environment only. Every branch gets a preview deployment, and a subject
+  # that did not pin the environment would hand any of them a role that can
+  # reach every customer's account.
+  vercel_subject = "owner:${var.vercel_team_slug}:project:${var.vercel_project_name}:environment:${var.vercel_environment}"
+
+  # IAM names OIDC condition keys after the issuer with its scheme stripped.
+  vercel_condition_prefix = replace(local.vercel_issuer, "https://", "")
+
+  vercel_provider_arn = (
+    local.federate_from_vercel
+    ? (var.create_vercel_oidc_provider
+      ? one(aws_iam_openid_connect_provider.vercel[*].arn)
+    : one(data.aws_iam_openid_connect_provider.vercel[*].arn))
+    : ""
+  )
+}
+
+# An account holds one provider per issuer URL. Each Vercel team has its own
+# issuer, so this is separate from GitHub's in infra/platform/github-oidc.
+resource "aws_iam_openid_connect_provider" "vercel" {
+  count = local.federate_from_vercel && var.create_vercel_oidc_provider ? 1 : 0
+
+  url            = local.vercel_issuer
+  client_id_list = [local.vercel_audience]
+}
+
+data "aws_iam_openid_connect_provider" "vercel" {
+  count = local.federate_from_vercel && !var.create_vercel_oidc_provider ? 1 : 0
+  url   = local.vercel_issuer
+}
+
 data "aws_iam_policy_document" "trust" {
   statement {
+    sid     = "OperatorSignInSession"
     actions = ["sts:AssumeRole"]
 
     principals {
@@ -62,11 +110,36 @@ data "aws_iam_policy_document" "trust" {
       values   = ["false"]
     }
   }
+
+  dynamic "statement" {
+    for_each = local.federate_from_vercel ? [1] : []
+    content {
+      sid     = "HostWorkloadIdentity"
+      actions = ["sts:AssumeRoleWithWebIdentity"]
+
+      principals {
+        type        = "Federated"
+        identifiers = [local.vercel_provider_arn]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "${local.vercel_condition_prefix}:aud"
+        values   = [local.vercel_audience]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "${local.vercel_condition_prefix}:sub"
+        values   = [local.vercel_subject]
+      }
+    }
+  }
 }
 
 resource "aws_iam_role" "control_plane" {
   name                 = var.role_name
-  description          = "Assumed by the platform application from an operator sign-in session, for onboarding's sts:AssumeRole into customer deployment roles. Nothing else."
+  description          = "Assumed by the platform application, from its host's workload identity or an operator sign-in session, for onboarding's sts:AssumeRole into customer deployment roles. Nothing else."
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = 3600
 }

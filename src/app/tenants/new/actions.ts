@@ -180,7 +180,10 @@ function describeProvisioningFailure(err: unknown): string {
     // The platform's own AWS sign-in, rather than the customer's account: a
     // stored key it refuses, or a session that is missing or expired. Both are
     // fixed on the machine running the platform, so both say so.
-    if (e.name === "LongLivedAwsKeyError" && e.message) {
+    if (
+      (e.name === "LongLivedAwsKeyError" || e.name === "PlatformCredentialsError") &&
+      e.message
+    ) {
       return e.message;
     }
     if (e.name === "CredentialsProviderError") {
