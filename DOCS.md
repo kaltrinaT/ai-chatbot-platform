@@ -67,7 +67,7 @@ Every tenant deployment runs in the **customer's** cloud account. The platform o
 
 - Provider: GitHub OAuth via NextAuth v5 (`next-auth` beta)
 - Strategy: database sessions (stored in the `sessions` table)
-- Middleware at `src/middleware.ts` blocks all routes except `/signin`, `/api/auth/*`, and static assets — through the `authorized` callback in [`src/auth.ts`](src/auth.ts), since `next-auth` authorizes every request when that callback is absent
+- A request proxy at `src/proxy.ts` blocks all routes except `/signin`, `/api/auth/*`, and static assets — through the `authorized` callback in [`src/auth.ts`](src/auth.ts), since `next-auth` authorizes every request when that callback is absent. Next 16 renamed the middleware convention to `proxy`, whose runtime is Node.js; as edge middleware this guard could not open a database session at all
 - **Authorization:** none by default — a completed GitHub sign-in reaches the platform. `AUTH_ALLOWED_EMAILS` optionally narrows that to named accounts, by the email address on the GitHub account (see [`src/lib/operators.ts`](src/lib/operators.ts)); when set it is checked as the session is created and again whenever `auth()` resolves one, so striking an address off ends that operator's access on their next request. An invitation step is future work — see Known Limitation #7 in [`SECURITY.md`](SECURITY.md)
 - The deployment status webhook is the one path let through without a session; it authenticates its own `x-webhook-secret` header
 
@@ -494,7 +494,7 @@ src/
     layout.tsx                          # Root layout
     globals.css
   auth.ts                               # NextAuth config
-  middleware.ts                         # Route auth guard
+  proxy.ts                              # Route auth guard (Next 16's renamed middleware)
   db/
     index.ts                            # Drizzle + Neon setup
     schema.ts                           # All table definitions and relations

@@ -226,7 +226,7 @@ The following must be secured by the platform operator:
 
 These values must never be committed to source control, logged, or included in error responses.
 
-**Who may sign in.** Anyone who completes the GitHub OAuth flow, unless `AUTH_ALLOWED_EMAILS` narrows it to named accounts — see [Known Limitation #7](#7-any-github-account-may-sign-in). Either way the middleware requires a session for every route except the sign-in page and the deployment webhook, which authenticates its own header. That holds because [`src/auth.ts`](src/auth.ts) supplies an `authorized` callback: `next-auth` authorizes every request when one is absent.
+**Who may sign in.** Anyone who completes the GitHub OAuth flow, unless `AUTH_ALLOWED_EMAILS` narrows it to named accounts — see [Known Limitation #7](#7-any-github-account-may-sign-in). Either way the request proxy requires a session for every route except the sign-in page and the deployment webhook, which authenticates its own header. That holds because [`src/auth.ts`](src/auth.ts) supplies an `authorized` callback: `next-auth` authorizes every request when one is absent.
 
 **GitHub Actions holds no AWS key.** Deploy and teardown workflows exchange GitHub's signed OIDC token for one-hour credentials on the platform role defined in [`infra/platform/github-oidc`](infra/platform/github-oidc), whose trust policy admits only runs on this repository's deploy branch. Nothing reusable is stored, and each customer-role session is named after the workflow run that opened it, so a customer's CloudTrail ties every action to one run.
 

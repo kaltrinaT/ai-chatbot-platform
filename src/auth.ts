@@ -13,10 +13,10 @@ import {
 const authSecret = process.env.AUTH_SECRET ?? "dev-secret";
 
 // GitHub Actions posts deployment status to this path with an x-webhook-secret
-// header and no session, and the route checks that header itself. The
-// middleware has to let it past: redirecting the workflow's POST to the
-// sign-in page would answer it with HTTP 200 and an HTML body, which the
-// workflow reads as a delivered callback.
+// header and no session, and the route checks that header itself. The proxy has
+// to let it past: redirecting the workflow's POST to the sign-in page would
+// answer it with HTTP 200 and an HTML body, which the workflow reads as a
+// delivered callback.
 const WEBHOOK_PATH = /^\/api\/deployments\/[^/]+\/status\/?$/;
 
 const providers = [];
@@ -47,9 +47,9 @@ const authOptions = {
       return isAllowedOperator(user?.email ?? profile?.email, allowedOperators());
     },
 
-    // What the middleware consults, since src/middleware.ts exports `auth`
-    // itself. Without this callback next-auth authorizes every request, so
-    // this is what makes the middleware a perimeter rather than a no-op.
+    // What the proxy consults, since src/proxy.ts exports `auth` itself.
+    // Without this callback next-auth authorizes every request, so this is
+    // what makes the proxy a perimeter rather than a no-op.
     authorized({
       request,
       auth: session,
@@ -71,8 +71,8 @@ let auth: any;
 /**
  * The no-database branch below exists so the app can be started locally
  * without Postgres. It is not safe anywhere else: `auth` becomes a function
- * that returns null, and `middleware` IS `auth` (see src/middleware.ts), so a
- * middleware that returns nothing waves every request through. Route handlers
+ * that returns null, and the proxy IS `auth` (see src/proxy.ts), so a guard
+ * that returns nothing waves every request through. Route handlers
  * and pages still check the session individually, but the one control that is
  * supposed to cover everything by default would be silently absent.
  *
@@ -90,7 +90,7 @@ if (
 ) {
   throw new Error(
     "DATABASE_URL is not set. Refusing to start: without it the auth adapter " +
-      "cannot run, and the middleware that protects every route would allow " +
+      "cannot run, and the proxy that protects every route would allow " +
       "all requests through.",
   );
 }
@@ -103,7 +103,7 @@ if (
 if (!process.env.DATABASE_URL) {
   console.warn(
     "[auth] DATABASE_URL is not set — authentication is DISABLED and the " +
-      "middleware will not block anything. Development only.",
+      "proxy will not block anything. Development only.",
   );
   handlers = {
     GET: async () => new Response("Auth not configured", { status: 404 }),
@@ -138,8 +138,8 @@ if (!process.env.DATABASE_URL) {
   // auth(), so the allow-list is applied once here and covers all of them.
   // That is also what makes striking an address off the list take effect on
   // the operator's next request, rather than whenever their session row
-  // expires. Called with arguments, this is next-auth's middleware wrapper
-  // instead, which does its own check through the authorized callback above.
+  // expires. Called with arguments, this is next-auth's proxy wrapper instead,
+  // which does its own check through the authorized callback above.
   const resolveSession = nextAuth.auth;
   auth = (...args: unknown[]) =>
     args.length > 0
