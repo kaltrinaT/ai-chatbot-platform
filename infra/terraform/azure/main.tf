@@ -16,7 +16,20 @@
 # actions its Contributor role already holds, while reading or listing blob
 # content needs data actions it deliberately does not have.
 provider "azurerm" {
-  features {}
+  features {
+    key_vault {
+      # Destroying a vault soft-deletes it, and purging it afterwards is a
+      # subscription-level action (Microsoft.KeyVault/locations/deletedVaults/
+      # purge/action). The deployment identity's roles stop at the chatbot's
+      # resource group, so with the provider's default of true, every
+      # teardown failed at the vault after deleting everything else. The
+      # vault's secrets are still purged first (the access policy grants
+      # Purge), so the soft-deleted vault holds nothing and expires on its
+      # own. Its name stays reserved until then, which costs nothing: a slug
+      # is never reused, even after its tenant is deleted.
+      purge_soft_delete_on_destroy = false
+    }
+  }
   subscription_id            = var.azure_subscription_id
   tenant_id                  = var.azure_tenant_id
   client_id                  = var.azure_client_id

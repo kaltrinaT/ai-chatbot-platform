@@ -187,11 +187,11 @@ jobs:
       # A best-effort `az storage blob delete-batch` here would therefore fail
       # on every single run while looking like a safeguard.
 
-      # Key Vault soft-delete would otherwise keep the name reserved, and a
-      # redeploy of the same tenant slug fails on the conflict. Purge
-      # protection, where the customer has enabled it on the subscription,
-      # makes this fail — which is their policy working as intended, so it
-      # does not fail the teardown.
+      # The Key Vault is soft-deleted, not purged: purging is a
+      # subscription-level action and the deployment identity's roles stop at
+      # the resource group (see the azurerm provider block in main.tf). Its
+      # secrets are purged before it is deleted, so what remains holds
+      # nothing and expires on its own.
       - name: Terraform destroy
         working-directory: ${{ env.TF_DIR }}
         env:
