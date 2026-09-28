@@ -38,7 +38,7 @@
       <text x="104" y="320">Pull both golden images from the platform's own registry</text>
       <text x="104" y="372">Assume the tenant role and replicate both images into their registry</text>
       <text x="104" y="424">Ensure the ECS service-linked role exists</text>
-      <text x="104" y="476">terraform init, against state held in the platform's bucket</text>
+      <text x="104" y="476">terraform init, against state in the customer's own bucket, locked</text>
       <text x="104" y="528">Read the customer's Pinecone key from their Secrets Manager</text>
       <text x="104" y="580">Install the signer's Node dependencies</text>
       <text x="104" y="632">terraform apply — a single pass</text>

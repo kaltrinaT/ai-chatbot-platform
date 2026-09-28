@@ -272,18 +272,13 @@ jobs:
 
       # State lives in the customer's own account, in the bucket their
       # bootstrap stack creates, and is locked there while this run holds it.
-      # A tenant deployed before that bucket existed has its state moved on
-      # this run, from the platform's old shared bucket; the script refuses
-      # to continue on anything but a definite answer about where the state
-      # is. See .github/scripts/terraform-init-aws.sh.
+      # See .github/scripts/terraform-init-aws.sh.
       - name: Terraform init (state in the customer's account)
         working-directory: infra/terraform
         env:
           TENANT_SLUG: ${{ inputs.tenant_slug }}
           AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
           TENANT_REGION: ${{ inputs.aws_region }}
-          LEGACY_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
-          LEGACY_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
         run: bash "$GITHUB_WORKSPACE/.github/scripts/terraform-init-aws.sh"
 
       # The customer's Pinecone key lives in THEIR Secrets Manager and is never

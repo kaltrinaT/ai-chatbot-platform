@@ -8,7 +8,6 @@
 #
 #   terraform init
 #   terraform apply \
-#     -var 'state_bucket_name=<TF_STATE_BUCKET>' \
 #     -var 'golden_image_repository_arns=["arn:aws:ecr:<region>:<account>:repository/<backend>", "arn:aws:ecr:<region>:<account>:repository/<frontend>"]'
 #
 # Cutover, in this order:
@@ -133,42 +132,15 @@ data "aws_iam_policy_document" "permissions" {
     resources = var.golden_image_repository_arns
   }
 
-  # Terraform's S3 backend lists the bucket; HashiCorp's documented minimum
-  # grants ListBucket on the bucket itself.
-  statement {
-    sid       = "StateBucketList"
-    actions   = ["s3:ListBucket"]
-    resources = ["arn:aws:s3:::${var.state_bucket_name}"]
-  }
-
-  # Read-only, and only for moving an Azure tenant's old state out. Every
-  # tenant's state now lives in the customer's own cloud: AWS in
-  # tfstate-<slug>-<account>-<region>-an, Azure in storage account cbtf<slug>.
-  # Nothing writes here any more, so there is no PutObject. Apply this only
-  # after the new Azure workflows are live — the old ones wrote state here.
-  # The per-account grants that let AWS customer roles read their old
-  # tenants/<slug>.tfstate live in the bucket policy. Remove both once every
-  # tenant has moved (SECURITY.md, Known Limitation #9).
-  statement {
-    sid       = "AzureTenantStateMove"
-    actions   = ["s3:GetObject"]
-    resources = ["arn:aws:s3:::${var.state_bucket_name}/azure/tenants/*"]
-  }
-
+  # No Terraform state access. Every tenant's state lives in the customer's
+  # own cloud (AWS tfstate-<slug>-<account>-<region>-an, Azure cbtf<slug>),
+  # reached as the customer's identity, never as this role.
+  #
   # No sts:AssumeRole. Deploys, teardowns and connection checks sign in to a
   # customer's role directly with the run's own OIDC token, which that role
   # trusts for one tenant's environment only. The only principal that still
   # assumes customer roles is the control-plane role, at onboarding
   # (infra/platform/control-plane).
-
-  dynamic "statement" {
-    for_each = var.state_bucket_kms_key_arn == "" ? [] : [1]
-    content {
-      sid       = "StateBucketKms"
-      actions   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"]
-      resources = [var.state_bucket_kms_key_arn]
-    }
-  }
 }
 
 resource "aws_iam_role_policy" "github_deploy" {

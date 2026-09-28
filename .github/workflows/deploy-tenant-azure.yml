@@ -202,11 +202,9 @@ jobs:
 
       # Pull the same platform golden image AWS deploys replicate — see
       # deploy-tenant.yml for the AWS-side twin of these two steps.
-      # OIDC, not a stored key. On this path the platform-role credentials
-      # pull the golden images here, and read a tenant's old Terraform state
-      # from the platform's bucket the one time it is moved (see the init step
-      # below). The state itself lives in the customer's subscription.
-      - name: Configure AWS credentials (platform role via OIDC — ECR read and moving old state)
+      # OIDC, not a stored key. The platform-role credentials pull the golden
+      # images, and that is all they are used for on this path.
+      - name: Configure AWS credentials (platform role via OIDC — ECR read)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
@@ -241,15 +239,8 @@ jobs:
 
       # State lives in the customer's own subscription, in the storage account
       # their bootstrap creates, reached through Entra ID with this run's OIDC
-      # token and locked with a blob lease while the run holds it. A tenant
-      # deployed before that account existed has its state moved on this run,
-      # from the platform's old S3 bucket; the script refuses to continue on
-      # anything but a definite answer about where the state is. See
+      # token and locked with a blob lease while the run holds it. See
       # .github/scripts/terraform-init-azure.sh.
-      #
-      # No AWS_* env here, deliberately: step-level env would override the
-      # platform-role credentials the OIDC step exported, which the script
-      # uses to read old state.
       - name: Terraform init (state in the customer's subscription)
         working-directory: ${{ env.TF_DIR }}
         env:
@@ -257,8 +248,6 @@ jobs:
           AZURE_SUBSCRIPTION_ID: ${{ steps.cfg.outputs.azure_subscription_id }}
           AZURE_TENANT_ID: ${{ steps.cfg.outputs.azure_tenant_id }}
           AZURE_CLIENT_ID: ${{ steps.cfg.outputs.azure_client_id }}
-          LEGACY_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
-          LEGACY_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
         run: bash "$GITHUB_WORKSPACE/.github/scripts/terraform-init-azure.sh"
 
       # Creates what must exist before the Container App can: the registry to

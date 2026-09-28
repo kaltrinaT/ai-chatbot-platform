@@ -79,26 +79,15 @@ const AZURE_TENANT_WORKFLOWS = [
 ] as const;
 
 // Only the workflows that still need something from the platform's own AWS
-// account: the golden images in its ECR, and (for Azure tenants, which have
-// no customer AWS role to reach it as) the Terraform state bucket. Neither
-// AWS teardown nor any check needs either.
-const PLATFORM_ROLE_WORKFLOWS = [
-  "deploy-tenant.yml",
-  "deploy-tenant-azure.yml",
-  "destroy-tenant-azure.yml",
-] as const;
+// account: the golden images in its ECR. No teardown and no check needs it.
+const PLATFORM_ROLE_WORKFLOWS = ["deploy-tenant.yml", "deploy-tenant-azure.yml"] as const;
 
-// Deploy status callbacks and the Terraform state location. None of them
-// grants access to a customer's cloud.
-const PERMITTED_SECRETS = [
-  "PLATFORM_BASE_URL",
-  "PLATFORM_WEBHOOK_SECRET",
-  "TF_STATE_BUCKET",
-  "TF_STATE_REGION",
-];
+// Deploy status callbacks. Neither grants access to a customer's cloud, and
+// neither says where a tenant's state is: that is always the customer's own.
+const PERMITTED_SECRETS = ["PLATFORM_BASE_URL", "PLATFORM_WEBHOOK_SECRET"];
 
 describe.each(TENANT_WORKFLOWS)("%s — no stored cloud credential", (file) => {
-  it("reads no repository secret beyond the callback and state settings", () => {
+  it("reads no repository secret beyond the callback settings", () => {
     const { raw } = workflow(file);
     const used = [...new Set([...raw.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]))].sort();
 
@@ -165,14 +154,27 @@ describe.each(["deploy-tenant.yml", "deploy-tenant-azure.yml"])(
   },
 );
 
-// Teardown used to assume a platform role for the sole purpose of chaining
-// into the customer's. With the customer's role trusting GitHub directly
-// there is nothing left for the platform account to do, and this pins that:
-// reintroducing the step would put the platform back in the middle of a
-// teardown without anyone noticing.
-describe("destroy-tenant.yml — no platform account involvement", () => {
-  it("never assumes the platform's role", () => {
-    expect(workflow("destroy-tenant.yml").raw).not.toContain("AWS_PLATFORM_DEPLOY_ROLE_ARN");
+// Teardown used to assume a platform role: on AWS to chain into the
+// customer's, on Azure to read old state out of the platform's bucket. With
+// the customer's identity trusting GitHub directly and every tenant's state in
+// its own cloud, there is nothing left for the platform account to do, and
+// this pins that: reintroducing the step would put the platform back in the
+// middle of a teardown without anyone noticing.
+describe.each(["destroy-tenant.yml", "destroy-tenant-azure.yml"])(
+  "%s — no platform account involvement",
+  (file) => {
+    it("never assumes the platform's role", () => {
+      expect(workflow(file).raw).not.toContain("AWS_PLATFORM_DEPLOY_ROLE_ARN");
+    });
+  },
+);
+
+// The platform's old shared state bucket is empty and no longer granted to
+// anyone. A workflow that looked there again would be looking for state that
+// no longer exists, or recreating it outside the customer's cloud.
+describe.each(WORKFLOWS)("%s — no state in the platform's account", (file) => {
+  it("never looks for state in the platform's old bucket", () => {
+    expect(workflow(file).raw).not.toMatch(/LEGACY_STATE_BUCKET|TF_STATE_BUCKET|TF_STATE_REGION/);
   });
 });
 
@@ -225,9 +227,9 @@ describe.each(["deploy-tenant.yml", "destroy-tenant.yml"])("%s — state in the 
     });
   });
 
-  // The platform's bucket is read only to move a tenant's old state out.
-  it("never points Terraform at the platform's bucket directly", () => {
-    expect(raw).not.toMatch(/-backend-config="bucket=\$\{\{ secrets\.TF_STATE_BUCKET \}\}"/);
+  // The bucket is chosen by the script, never by a workflow-level setting.
+  it("never points Terraform at a bucket directly", () => {
+    expect(raw).not.toMatch(/-backend-config="bucket=/);
   });
 
   // S3-native locking is stable from 1.11.
@@ -276,7 +278,7 @@ describe.each(["deploy-tenant-azure.yml", "destroy-tenant-azure.yml"])(
       });
     });
 
-    it("never points Terraform at the platform's bucket", () => {
+    it("never points Terraform at an S3 bucket", () => {
       expect(raw).not.toMatch(/-backend-config="bucket=/);
     });
 
@@ -545,9 +547,9 @@ describe("infra/terraform/azure — federated provider", () => {
   });
 });
 
-// Terraform state lives outside the customer's account and records every
-// credential a resource exposes, used or not. These keep the ones that would
-// reach tenant documents from authorizing anything.
+// Terraform state records every credential a resource exposes, used or not.
+// These keep the ones that would reach tenant documents from authorizing
+// anything, wherever the state is read.
 describe("infra/terraform/azure — credentials in state cannot be used", () => {
   const main = source("infra/terraform/azure/main.tf");
 

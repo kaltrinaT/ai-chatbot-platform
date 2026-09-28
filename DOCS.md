@@ -205,7 +205,6 @@ Managed by Drizzle ORM, running on Neon Postgres.
 - `AWS_PLATFORM_DEPLOY_ROLE_ARN` — the platform role GitHub Actions assumes through OIDC. No AWS access key is stored in GitHub; see [`infra/platform/github-oidc`](infra/platform/github-oidc) for the one-time setup and cutover
 
 **Required GitHub repo secrets:**
-- `TF_STATE_BUCKET`, `TF_STATE_REGION` (the platform's old shared state bucket, read only to move a tenant's state out; see step 4)
 - `PLATFORM_BASE_URL` (e.g. `https://platform.example.com`)
 - `PLATFORM_WEBHOOK_SECRET`
 
@@ -213,7 +212,7 @@ Managed by Drizzle ORM, running on Neon Postgres.
 1. Exchange GitHub's OIDC token for one-hour credentials on the platform role; pull **backend** and **frontend (chat UI)** images from platform ECR
 2. Drop those credentials and federate straight into the customer account's deployment role with a fresh GitHub OIDC token (`unset-current-credentials: true`, one-hour cap). The role trusts only this tenant's environment subject; the platform account is not a principal here
 3. Create ECR repos in customer account if absent (`{slug}/chatbot`, `{slug}/chatbot-frontend`); tag and push both images
-4. `terraform init` through [`.github/scripts/terraform-init-aws.sh`](.github/scripts/terraform-init-aws.sh): state in the customer's own bucket `tfstate-{slug}-{account}-{region}-an`, locked with an S3 lock file. A tenant whose state is still in the platform's bucket has it moved and verified first
+4. `terraform init` through [`.github/scripts/terraform-init-aws.sh`](.github/scripts/terraform-init-aws.sh): state in the customer's own bucket `tfstate-{slug}-{account}-{region}-an`, checked to belong to the customer's account, and locked with an S3 lock file
 5. For Pinecone tenants: read the customer's Pinecone key back from **their** Secrets Manager under the assumed role and `::add-mask::` it, so Terraform can create the index without the key ever being a workflow input
 6. `terraform apply -auto-approve` — provisions all infra
 7. Read outputs: `alb_dns_name`, `chatbot_url`
@@ -240,8 +239,7 @@ Managed by Drizzle ORM, running on Neon Postgres.
 Secret-valued inputs are `::add-mask::`ed as the first step so they cannot appear in step logs. (Dispatch inputs are still visible to anyone with read access to the private repo's runs — same trust boundary as the repo secrets they replaced.)
 
 **Required GitHub repo secrets:**
-- `TF_STATE_BUCKET`, `TF_STATE_REGION` (the platform's old shared state bucket, read only to move a tenant's state out; see step 7)
-- Repo variable `AWS_PLATFORM_DEPLOY_ROLE_ARN` — the same OIDC-assumed platform role as the AWS workflow, used here to pull the golden images and, once per tenant, to read its old state (`azure/tenants/*` only). No AWS access key is stored in GitHub
+- Repo variable `AWS_PLATFORM_DEPLOY_ROLE_ARN` — the same OIDC-assumed platform role as the AWS workflow, used here only to pull the golden images. No AWS access key is stored in GitHub
 - `PLATFORM_BASE_URL`, `PLATFORM_WEBHOOK_SECRET` (status callbacks)
 
 No Azure credential exists anywhere in this pipeline: not as a repo secret, not as an input, not in the platform database. The `AZURE_*`, `LLM_API_KEY`, and `PINECONE_API_KEY` repo secrets are no longer used — Azure login, Key Vault contents, and vector storage are all per-tenant now.
@@ -255,7 +253,7 @@ No Azure credential exists anywhere in this pipeline: not as a repo secret, not 
 4. Compute resource names (ACR name, destination image URIs tagged with `chatbot_version`) and derive the source ECR registry/region from `your_ecr_image`
 5. Pull the platform's golden **backend** and **frontend (chat UI)** images from the platform's ECR (platform AWS credentials — same images AWS deploys replicate)
 6. Azure login into the **customer's subscription** through the tenant's federated credential (no secret); a refusal reports the exact subject the credential must trust
-7. `terraform init` through [`.github/scripts/terraform-init-azure.sh`](.github/scripts/terraform-init-azure.sh): state in the customer's own storage account `cbtf{slug}` (container `tfstate`), found in the chatbot's resource group, reached through Entra ID with the run's OIDC token, locked with a blob lease. A tenant whose state is still in the platform's bucket has it copied across and verified first
+7. `terraform init` through [`.github/scripts/terraform-init-azure.sh`](.github/scripts/terraform-init-azure.sh): state in the customer's own storage account `cbtf{slug}` (container `tfstate`), found in the chatbot's resource group, reached through Entra ID with the run's OIDC token, locked with a blob lease
 8. `terraform apply` (bootstrap, `-target` RG + ACR) with placeholder image URIs
 9. `az acr login`, then retag and push both pulled images into the customer's ACR
 10. `terraform apply` (full) — provisions infra and writes the LLM key plus either the customer's Pinecone key or the generated pgvector connection URL to Key Vault (secrets passed via `TF_VAR_*` env, not argv)

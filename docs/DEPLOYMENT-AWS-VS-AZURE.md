@@ -39,8 +39,7 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 | Platform env | `PLATFORM_CHATBOT_IMAGE_URI`, `PLATFORM_FRONTEND_IMAGE_URI` (no tag) | `triggerDeployment` — without them, dispatch is refused |
 | Platform env | `CHATBOT_DEPLOY_REF` (default `main`) | git ref the workflow runs from |
 | Platform env | `AWS_PROFILE` (`platform-control-plane`) | onboarding's `sts:AssumeRole`, assumed from the operator's `aws login` session. **No AWS access key is stored for the application either**; see [`infra/platform/control-plane`](../infra/platform/control-plane/) |
-| GitHub variable | `AWS_PLATFORM_DEPLOY_ROLE_ARN` | the platform role GitHub Actions assumes through OIDC: pulling from platform ECR, and reading an Azure tenant's old state the one time it is moved. AWS deploys federate into the tenant role directly and do not chain through it. **No AWS access key is stored in GitHub**; see [`infra/platform/github-oidc`](../infra/platform/github-oidc/) |
-| GitHub secret | `TF_STATE_BUCKET`, `TF_STATE_REGION` | the platform's old shared state bucket, read only for the one-time move of a tenant's state into its own cloud (both) |
+| GitHub variable | `AWS_PLATFORM_DEPLOY_ROLE_ARN` | the platform role GitHub Actions assumes through OIDC, used only to pull from the platform ECR. AWS deploys federate into the tenant role directly and do not chain through it. **No AWS access key is stored in GitHub**; see [`infra/platform/github-oidc`](../infra/platform/github-oidc/) |
 | GitHub secret | `PLATFORM_BASE_URL`, `PLATFORM_WEBHOOK_SECRET` | status callbacks, CORS origin for document uploads |
 | GitHub variable | `EXTRA_CORS_ORIGIN` (optional) | an extra upload origin, e.g. `http://localhost:3000` |
 
@@ -80,7 +79,7 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 | 15 | Configure AWS credentials (client) | **Chains from the platform role into `deployment_role_arn`** (`role-chaining: true`). AWS caps a chained session at 1 hour. |
 | 16 | Replicate images to client ECR | Creates `<slug>/chatbot` and `<slug>/chatbot-frontend` if missing (scan on push), then tags and pushes `:<chatbot_version>` |
 | 17 | Ensure ECS service-linked role | Idempotent `iam create-service-linked-role` |
-| 18 | Terraform init | Terraform 1.15.3 through `.github/scripts/terraform-init-aws.sh`: the customer's own bucket `tfstate-<slug>-<account>-<region>-an`, key `terraform.tfstate`, S3 lock file. A tenant whose state is still in the platform's bucket has it moved and verified first; anything short of a definite answer about where the state is stops the run |
+| 18 | Terraform init | Terraform 1.15.3 through `.github/scripts/terraform-init-aws.sh`: the customer's own bucket `tfstate-<slug>-<account>-<region>-an`, key `terraform.tfstate`, S3 lock file. A bucket that is missing or owned by another account stops the run |
 | 19 | Read customer Pinecone key | Pinecone only: reads the value from **the customer's** Secrets Manager under the assumed role and masks it |
 | 20 | Install docs-signer Lambda deps | `npm install --production`, because `archive_file` zips whatever is on disk |
 | 21 | **Terraform apply** | Single apply; resources are listed below |
@@ -156,10 +155,10 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 | 12 | Parse tenant config | `jq` checks the IDs are present and applies defaults: region `eastus`, version `latest`, vector store `pinecone` |
 | 13 | Checkout | |
 | 14 | Compute resource names | ACR name `chatbot<slug-without-hyphens>`. The source ECR region is **read from the image URI**, not taken from the tenant's region. |
-| 15 | Configure AWS credentials (platform role via OIDC) | Same OIDC platform role as AWS. Its credentials pull from the source ECR here, and read a tenant's old state in step 18 the one time it is moved. |
+| 15 | Configure AWS credentials (platform role via OIDC) | Same OIDC platform role as AWS. Its credentials pull from the source ECR, and are used for nothing else. |
 | 16 | Pull source images | Same golden images as AWS |
 | 17 | Azure login | `azure/login@v2` with **no secret**: the job's GitHub OIDC token is exchanged through the customer's federated credential. Refused here, before anything is created, if the credential is missing or names another subject; the failure callback reports the expected subject. Terraform later authenticates the same way (`use_oidc = true`). |
-| 18 | Terraform init | Terraform 1.15.3 through `.github/scripts/terraform-init-azure.sh`: **azurerm** backend on the customer's storage account `cbtf<slug>` (container `tfstate`), looked up in the chatbot's resource group first, reached through Entra ID with the run's OIDC token, locked with a blob lease. A tenant whose state is still in the platform's bucket has it copied across and verified first; anything short of a definite answer about where the state is stops the run |
+| 18 | Terraform init | Terraform 1.15.3 through `.github/scripts/terraform-init-azure.sh`: **azurerm** backend on the customer's storage account `cbtf<slug>` (container `tfstate`), looked up in the chatbot's resource group first, reached through Entra ID with the run's OIDC token, locked with a blob lease. A missing account or container, or one the identity cannot read, stops the run |
 | 19 | **Terraform apply — bootstrap** | `-target` the resource group, the ACR, the chatbot's **user-assigned identity** and its **`AcrPull`** grant, with placeholder image URIs. The registry must exist before images are pushed, and the identity must hold `AcrPull` before the app's first revision pulls. A 90-second pause follows for the grant to propagate. |
 | 20 | Log in to ACR | `az acr login` |
 | 21 | Retag and push images to ACR | `chatbot-backend:<version>`, `chatbot-frontend:<version>` |
@@ -305,7 +304,7 @@ These come straight from the code and its comments. They are useful as limitatio
 7. **Azure `chatbot_url` with a domain.** `outputs.tf` reports `https://<domain>`, but no custom domain or certificate is configured. The AWS output had the same bug and was fixed to report only a scheme the endpoint actually answers on.
 8. **No rollout gate on Azure.** AWS turns a failed rollout into a failed deployment. Azure relies on revision probes and has no equivalent of the circuit breaker plus steady-state wait.
 9. **No Azure teardown.** `triggerTenantDestroy` handles AWS only, and a misconfigured Azure tenant can only be fixed with the scripts in `scripts/`.
-10. **Cross-cloud dependency.** Azure deploys still need AWS for the ECR source images, and, until a tenant's state has moved, to read its old state once. They no longer need a stored AWS key, since GitHub Actions reaches the platform role through OIDC, but an AWS outage or a broken OIDC trust still blocks Azure deployments too. Azure state itself no longer depends on AWS.
+10. **Cross-cloud dependency.** Azure deploys still need AWS for the ECR source images. They no longer need a stored AWS key, since GitHub Actions reaches the platform role through OIDC, but an AWS outage or a broken OIDC trust still blocks Azure deployments too. Azure state itself no longer depends on AWS.
 11. **AWS tasks run in public subnets** with public IPs to avoid NAT gateway costs, a trade-off the Terraform comments accept for the MVP. Azure Container Apps without VNet integration make a similar trade-off.
 
 ---

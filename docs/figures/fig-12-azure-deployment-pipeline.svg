@@ -42,7 +42,7 @@
       <text x="104" y="372">Compute the deterministic resource names</text>
       <text x="104" y="424">Pull both golden images from the platform's own registry</text>
       <text x="104" y="476">Sign in to the subscription through federation — no secret</text>
-      <text x="104" y="528">terraform init, against state held in the platform's bucket</text>
+      <text x="104" y="528">terraform init, against state in the customer's own storage, locked</text>
       <text x="104" y="580">terraform apply, first pass — targeted</text>
       <text x="104" y="632">Sign in to the new registry, retag and push both images</text>
       <text x="104" y="684">terraform apply, second pass — the full graph</text>

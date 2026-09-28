@@ -140,17 +140,14 @@ jobs:
         with:
           terraform_version: 1.15.3
 
-      # Same script as a deploy. A tenant torn down before it was ever
-      # redeployed has its state moved first — without that, destroy would
-      # start from empty state and report success while deleting nothing.
+      # Same script as a deploy, so a teardown reads exactly the state the
+      # deploys wrote.
       - name: Terraform init (state in the customer's account)
         working-directory: infra/terraform
         env:
           TENANT_SLUG: ${{ inputs.tenant_slug }}
           AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
           TENANT_REGION: ${{ inputs.aws_region }}
-          LEGACY_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
-          LEGACY_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
         run: bash "$GITHUB_WORKSPACE/.github/scripts/terraform-init-aws.sh"
 
       # Destroying pinecone_index.this actually calls Pinecone's API, which

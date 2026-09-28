@@ -130,18 +130,6 @@ jobs:
       - name: Checkout platform repo
         uses: actions/checkout@v4
 
-      # Terraform state lives in the customer's subscription. This role is
-      # needed only to read a tenant's old state from the platform's S3 bucket
-      # the one time it is moved — a tenant torn down before it was ever
-      # redeployed — and goes once every Azure tenant has moved.
-      - name: Configure AWS credentials (platform role via OIDC — moving old state)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
-          role-session-name: platform-azure-destroy-${{ github.run_id }}
-          role-duration-seconds: 3600
-          aws-region: ${{ secrets.TF_STATE_REGION }}
-
       # No client secret: azure/login exchanges this job's GitHub OIDC token
       # for an Entra access token on the customer's identity. It fails here,
       # before anything is destroyed, if the customer has already revoked the
@@ -160,9 +148,8 @@ jobs:
         with:
           terraform_version: 1.15.3
 
-      # Same script as a deploy. A tenant torn down before it was ever
-      # redeployed has its state moved first — without that, destroy would
-      # start from empty state and report success while deleting nothing.
+      # Same script as a deploy, so a teardown reads exactly the state the
+      # deploys wrote.
       - name: Terraform init (state in the customer's subscription)
         working-directory: ${{ env.TF_DIR }}
         env:
@@ -170,8 +157,6 @@ jobs:
           AZURE_SUBSCRIPTION_ID: ${{ steps.cfg.outputs.azure_subscription_id }}
           AZURE_TENANT_ID: ${{ steps.cfg.outputs.azure_tenant_id }}
           AZURE_CLIENT_ID: ${{ steps.cfg.outputs.azure_client_id }}
-          LEGACY_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
-          LEGACY_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
         run: bash "$GITHUB_WORKSPACE/.github/scripts/terraform-init-azure.sh"
 
       # No "empty the container first" step here, unlike the AWS path.

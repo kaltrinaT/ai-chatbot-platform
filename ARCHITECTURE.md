@@ -34,7 +34,7 @@ The only information that crosses from data plane to control plane is deployment
 | Where its shared secret lives | The tenant's Secrets Manager, read at runtime (`secretsmanager:GetSecretValue` on that one ARN) | An application setting, set by Terraform. The identity has **no Key Vault access at all** |
 | Upload protocol | S3 presigned POST — a URL plus form fields the browser submits as multipart | Blob user-delegation SAS — a single URL the browser sends one `PUT` to |
 
-The platform reaches either one only over plain authenticated HTTPS (a shared secret, no SigV4 and no Entra token), the same shape as the existing deployment-status webhook. File bytes go from the operator's browser straight to the tenant's storage and never pass through the platform's server. The platform's own Postgres (`tenant_documents`), not a listing call, is what the document list in the UI is drawn from — so the platform knows filenames and sizes (it needs to, to render a list), but at no point holds a credential capable of reading a document's content. One qualification: each tenant's Terraform state is kept in the platform's bucket and records the Azure docs storage account's access key. That account refuses Shared Key authorization, so the recorded key authorizes nothing, and state written before that change still holds a working key until the keys are rotated (Known Limitation #9 in `SECURITY.md`). Deleting a document does purge its vectors. The reindex that follows every delete is a full resync, and it removes vectors for any document no longer in storage. That is also why the backend takes the storage prefix only from its own environment, never from the request: a caller-chosen empty prefix would make the resync purge everything (see "The chatbot's public `/api/index`" in `SECURITY.md`).
+The platform reaches either one only over plain authenticated HTTPS (a shared secret, no SigV4 and no Entra token), the same shape as the existing deployment-status webhook. File bytes go from the operator's browser straight to the tenant's storage and never pass through the platform's server. The platform's own Postgres (`tenant_documents`), not a listing call, is what the document list in the UI is drawn from — so the platform knows filenames and sizes (it needs to, to render a list), but at no point holds a credential capable of reading a document's content. One qualification: each Azure tenant's Terraform state records the docs storage account's access key. That account refuses Shared Key authorization, so the recorded key authorizes nothing, and the state is kept in the customer's own subscription, not with the platform (Known Limitation #9 in `SECURITY.md`). Deleting a document does purge its vectors. The reindex that follows every delete is a full resync, and it removes vectors for any document no longer in storage. That is also why the backend takes the storage prefix only from its own environment, never from the request: a caller-chosen empty prefix would make the resync purge everything (see "The chatbot's public `/api/index`" in `SECURITY.md`).
 
 ### Configurable vector store
 
@@ -333,10 +333,6 @@ S3 Bucket: tfstate-{slug}-{account}-{region}-an   (created by the bootstrap stac
 ├── versioned (superseded versions expire after 30 days), private, TLS-only
 ├── S3 lock file per run (use_lockfile, Terraform 1.15.3)
 └── retained when the stack is deleted — the customer deletes it last
-
-Tenants deployed before this bucket existed kept their state at
-s3://{TF_STATE_BUCKET}/tenants/{slug}.tfstate; the next deploy or teardown
-moves it (.github/scripts/terraform-init-aws.sh).
 ```
 
 ---
@@ -456,10 +452,6 @@ Storage Account: cbtf{slug}   (hyphens stripped; created by the bootstrap)
 ├── Terraform's backend signs in with the run's GitHub OIDC token
 │   (use_oidc, use_azuread_auth) and takes a blob lease per run
 └── versioned; superseded versions expire after 30 days
-
-Tenants deployed before this account existed kept their state at
-s3://{TF_STATE_BUCKET}/azure/tenants/{slug}/terraform.tfstate; the next
-deploy or teardown moves it (.github/scripts/terraform-init-azure.sh).
 ```
 
 ---
