@@ -9,6 +9,10 @@ on:
       deployment_id:
         required: true
         type: string
+      tenant_id:
+        required: true
+        type: string
+        description: "Platform tenant row UUID. Names the GitHub environment the job runs in, which is the subject the customer's trust policy federates on — see src/lib/githubOidc.ts"
       tenant_slug:
         required: true
         type: string
@@ -56,6 +60,11 @@ on:
         required: false
         type: string
         default: ""
+      retrieval_min_score:
+        required: false
+        type: string
+        default: ""
+        description: "Minimum cosine similarity a retrieved chunk must clear to be used as context. Empty uses the container default. Raise it to make the chatbot more willing to refuse, lower it if it refuses questions its documents can answer."
       your_ecr_image:
         required: true
         type: string
@@ -78,6 +87,33 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # The customer's account is reached with no stored credential and without
+    # the platform standing in the middle. Their deployment role trusts
+    # GitHub's OIDC token for exactly this subject:
+    #
+    #   repo:<owner>/<repo>:environment:tenant-<tenant_id>
+    #
+    # GitHub puts the environment name into the token's `sub` claim, so each
+    # tenant's runs carry a subject no other tenant's role accepts. A ref
+    # subject would be identical for every customer (see src/lib/githubOidc.ts,
+    # which builds the subject the wizard and the bootstrap stack show, and
+    # must stay in sync with this line). The environment is created on first
+    # use and needs no configuration.
+    #
+    # Private repositories need GitHub Pro, Team or Enterprise for
+    # environments. Without them this fails closed: the token carries no
+    # environment, the subject does not match, and AWS refuses the assume.
+    environment: tenant-${{ inputs.tenant_id }}
+    # One run at a time per tenant, across all four deploy and teardown
+    # workflows on both clouds: they share this group name, so a redeploy and
+    # a teardown of the same tenant queue behind each other instead of running
+    # Terraform against the same state at once. Never cancel-in-progress — a
+    # half-applied Terraform run is worse than a delayed one. The platform
+    # enforces the same rule before dispatching (deployments_one_active_per_tenant
+    # in src/db/schema.ts); this covers a run started by hand in GitHub too.
+    concurrency:
+      group: tenant-${{ inputs.tenant_id }}
+      cancel-in-progress: false
     # OIDC needs id-token: write, or GitHub never issues the token and the
     # credentials steps fail. A job-level block drops every scope it does not
     # list, which is safe here: no step calls the GitHub API with the job
@@ -134,10 +170,10 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # No stored AWS key. GitHub presents a signed OIDC token for this run,
       # and STS exchanges it for one-hour credentials on the platform role,
-      # which trusts only this repository's deploy branch (see
-      # infra/platform/github-oidc). The next credentials step chains from
-      # here into the customer's role, exactly as it chained from the static
-      # key before.
+      # which trusts this repository's tenant-* environments and can pull the
+      # golden images but assume no customer role (see
+      # infra/platform/github-oidc). The customer's role is reached by a
+      # separate sign-in in the next credentials step.
       - name: Configure AWS credentials (platform role via OIDC — for source ECR read)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -146,10 +182,16 @@ jobs:
           role-duration-seconds: 3600
           aws-region: ${{ inputs.aws_region }}
 
+      # ECR login tokens are regional. The source registry is the platform's,
+      # so the token comes from the registry's own region — the fourth field
+      # of <account>.dkr.ecr.<region>.amazonaws.com — not the tenant's: asking
+      # the tenant's region failed every tenant deployed outside the region the
+      # platform's images live in. deploy-tenant-azure.yml derives it the same way.
       - name: Pull source images (backend + frontend)
         run: |
           SOURCE_REGISTRY=$(echo "${{ inputs.your_ecr_image }}" | cut -d/ -f1)
-          aws ecr get-login-password --region ${{ inputs.aws_region }} \
+          SOURCE_REGION=$(echo "$SOURCE_REGISTRY" | cut -d. -f4)
+          aws ecr get-login-password --region "$SOURCE_REGION" \
             | docker login --username AWS --password-stdin "$SOURCE_REGISTRY"
           docker pull "${{ inputs.your_ecr_image }}"
           docker pull "${{ inputs.your_frontend_ecr_image }}"
@@ -157,20 +199,29 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # 2. Assume client deployment role, push image to client ECR
       # ─────────────────────────────────────────────────────────────
-      # role-chaining is what makes this assume the customer's role USING the
-      # platform-role credentials above. Without it the action attempts OIDC
-      # again, directly against a role whose trust policy only names the
-      # platform account, and fails. AWS caps a chained session at one hour,
-      # which is why role-duration-seconds cannot go above 3600 here.
-      - name: Configure AWS credentials (client — assume tenant role)
+      # A second, independent OIDC exchange — not a chain from the platform
+      # role above. The customer's role trusts GitHub directly, through the
+      # OIDC provider in their own account, so the platform account is not a
+      # principal here and nothing it holds is involved in this sign-in.
+      #
+      # unset-current-credentials is what makes that true in practice. The
+      # platform-role credentials from the step above are still in the
+      # environment, and the action would otherwise chain from them; the
+      # customer's trust policy does not name the platform account for
+      # sts:AssumeRoleWithWebIdentity, so the attempt would fail — and if it
+      # ever stopped failing, it would mean the tenant was still on the old
+      # cross-account trust and the per-tenant binding was not being enforced.
+      #
+      # role-duration-seconds stays at 3600 because the role's
+      # MaxSessionDuration is one hour (see the bootstrap template).
+      - name: Configure AWS credentials (client — tenant role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ inputs.aws_region }}
           role-to-assume: ${{ inputs.deployment_role_arn }}
-          role-chaining: true
           role-session-name: deploy-${{ inputs.tenant_slug }}-${{ github.run_id }}
           role-duration-seconds: 3600
-          role-skip-session-tagging: true
+          unset-current-credentials: true
 
       - name: Replicate images to client ECR
         id: client_image
@@ -212,18 +263,28 @@ jobs:
           aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com 2>&1 \
             | grep -qE "already exists|NoSuchEntity" || true
 
+      # 1.11 or later: S3-native state locking (use_lockfile) is stable from
+      # 1.11. Pinned exactly, to the version the configuration is validated
+      # against.
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: 1.15.3
 
-      - name: Terraform init
+      # State lives in the customer's own account, in the bucket their
+      # bootstrap stack creates, and is locked there while this run holds it.
+      # A tenant deployed before that bucket existed has its state moved on
+      # this run, from the platform's old shared bucket; the script refuses
+      # to continue on anything but a definite answer about where the state
+      # is. See .github/scripts/terraform-init-aws.sh.
+      - name: Terraform init (state in the customer's account)
         working-directory: infra/terraform
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="region=${{ secrets.TF_STATE_REGION }}" \
-            -backend-config="key=tenants/${{ inputs.tenant_slug }}.tfstate" \
-            -backend-config="encrypt=true"
+        env:
+          TENANT_SLUG: ${{ inputs.tenant_slug }}
+          AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+          TENANT_REGION: ${{ inputs.aws_region }}
+          LEGACY_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          LEGACY_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/terraform-init-aws.sh"
 
       # The customer's Pinecone key lives in THEIR Secrets Manager and is never
       # passed as a workflow input. Terraform needs the value only to create
@@ -265,6 +326,7 @@ jobs:
             -var "llm_provider=${{ inputs.llm_provider }}" \
             -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
             -var "llm_model=${{ inputs.llm_model }}" \
+            -var "retrieval_min_score=${{ inputs.retrieval_min_score }}" \
             -var "vector_store=${{ inputs.vector_store }}" \
             -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
             -var "domain=${{ inputs.domain }}" \

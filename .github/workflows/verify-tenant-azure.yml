@@ -1,0 +1,109 @@
+name: Verify tenant connection (Azure)
+# See verify-tenant-aws.yml for why the check ID is in the run name and why
+# there is no status callback.
+run-name: "Verify ${{ inputs.tenant_slug }} (Azure) [${{ inputs.check_id }}]"
+
+# Proves the customer's bootstrap worked, before a deploy is allowed to start.
+# Read-only throughout: it exchanges the token, asks Azure who it is, and
+# checks that the resource group and state storage the deploy will need are
+# there.
+on:
+  workflow_dispatch:
+    inputs:
+      check_id:
+        required: true
+        type: string
+        description: "Platform-generated ID for this check. Appears in the run name so the platform can find the run."
+      tenant_id:
+        required: true
+        type: string
+        description: "Platform tenant row UUID. Names the GitHub environment the job runs in, which is the subject the customer's federated credential trusts — see src/lib/githubOidc.ts"
+      tenant_slug:
+        required: true
+        type: string
+      azure_client_id:
+        required: true
+        type: string
+      azure_tenant_id:
+        required: true
+        type: string
+      azure_subscription_id:
+        required: true
+        type: string
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # The same environment a deploy runs in. The check is only meaningful if
+    # the token carries exactly the subject a real deploy would carry.
+    environment: tenant-${{ inputs.tenant_id }}
+    permissions:
+      id-token: write
+      contents: read
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # Where the run stops for every federation problem: a credential that
+      # was never added, one added with a different subject, or one added to
+      # the wrong identity. The step name is what the customer is shown.
+      - name: Exchange the GitHub token for an Azure token
+        uses: azure/login@v2
+        with:
+          client-id: ${{ inputs.azure_client_id }}
+          tenant-id: ${{ inputs.azure_tenant_id }}
+          subscription-id: ${{ inputs.azure_subscription_id }}
+
+      # Separate from the sign-in so the two failures stay distinguishable:
+      # federation that does not work at all, versus federation that works
+      # into a subscription where the bootstrap never ran.
+      #
+      # Terraform reads this group rather than creating it — the bootstrap
+      # creates it, so that the identity's permissions can be confined to it
+      # (see infra/bootstrap/azure/tenant-bootstrap.json). Without it the
+      # deploy fails on the very first data source.
+      - name: Confirm the chatbot's resource group exists
+        env:
+          RESOURCE_GROUP: chatbot-${{ inputs.tenant_slug }}
+        run: |
+          if ! az group show --name "$RESOURCE_GROUP" --output none 2>/dev/null; then
+            echo "::error title=Resource group missing::'$RESOURCE_GROUP' does not exist in this subscription. Run the Configure Azure bootstrap for this chatbot, which creates it."
+            exit 1
+          fi
+          echo "Resource group $RESOURCE_GROUP is present."
+
+      # Deploys keep this chatbot's deployment state in a storage account the
+      # bootstrap creates, and read it as the deployment identity through a
+      # data role on its state container. A bootstrap run before that account
+      # existed passes the checks above but stops the first deploy before
+      # anything is created, so check both here. Read-only: it looks the
+      # account up in the chatbot's own resource group, then asks whether the
+      # state exists — which is the read the role grants.
+      - name: Find the chatbot's state storage (run the bootstrap again if this fails)
+        env:
+          RESOURCE_GROUP: chatbot-${{ inputs.tenant_slug }}
+          SLUG: ${{ inputs.tenant_slug }}
+        run: |
+          account="cbtf${SLUG//-/}"
+          az storage account show --resource-group "$RESOURCE_GROUP" --name "$account" --output none
+          az storage blob exists --auth-mode login --account-name "$account" \
+            --container-name tfstate --name terraform.tfstate --output none
+          echo "State storage account $account is present and readable by the deployment identity."
+          echo "| State storage | \`$account\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report the subscription
+        run: |
+          name="$(az account show --query name --output tsv)"
+          echo "Signed in to subscription $name (${{ inputs.azure_subscription_id }})"
+          {
+            echo "### Azure connection verified"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Subscription | \`$name\` |"
+            echo "| Identity | \`${{ inputs.azure_client_id }}\` |"
+            echo "| Resource group | \`chatbot-${{ inputs.tenant_slug }}\` |"
+            echo "| Environment | \`tenant-${{ inputs.tenant_id }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

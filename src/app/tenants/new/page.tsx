@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { tenantDrafts } from "@/db/schema";
+import { findChatbotRepo } from "@/lib/github";
 import DashboardShell from "@/app/(dashboard)/_components/DashboardShell";
 import TenantForm from "./TenantForm";
 
@@ -56,6 +58,13 @@ export default async function NewTenantPage({
                 }
               : undefined
           }
+          // Issued now rather than at insert, because an Azure customer has
+          // to create a federated credential naming it before the first
+          // deploy can log in. A resumed draft keeps the ID it was saved with.
+          tenantId={randomUUID()}
+          githubRepo={findChatbotRepo()}
+          platformAccountId={process.env.PLATFORM_AWS_ACCOUNT_ID?.trim() || null}
+          templateBaseUrl={process.env.PLATFORM_BOOTSTRAP_TEMPLATE_BASE_URL?.trim() || null}
         />
       </div>
     </DashboardShell>

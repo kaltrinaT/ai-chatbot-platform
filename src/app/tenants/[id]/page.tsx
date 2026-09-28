@@ -22,6 +22,8 @@ import { tenants, deployments, tenantDocuments, users } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { estimateMonthlyCost } from "@/lib/pricing";
 import { docsBucketName } from "@/lib/reindex";
+import { findChatbotRepo } from "@/lib/github";
+import { AwsBootstrapPanel, AzureBootstrapPanel } from "../new/wizard/BootstrapPanel";
 import RedeployButton from "./RedeployButton";
 import DeploymentProgress from "./DeploymentProgress";
 import DeleteTenantButton from "./DeleteTenantButton";
@@ -415,14 +417,8 @@ export default async function TenantDetailPage({
                 <DeleteTenantButton
                   tenantId={tenant.id}
                   slug={tenant.slug}
-                  disabled={isDeploying || tenant.cloudProvider !== "aws"}
-                  disabledReason={
-                    isDeploying
-                      ? "A deployment is already in progress"
-                      : tenant.cloudProvider !== "aws"
-                        ? "Tenant deletion isn't available for Azure tenants yet"
-                        : undefined
-                  }
+                  disabled={isDeploying}
+                  disabledReason={isDeploying ? "A deployment is already in progress" : undefined}
                 />
               </div>
             )}
@@ -731,6 +727,51 @@ export default async function TenantDetailPage({
 
               <CostEstimateCard provider={tenant.cloudProvider} slug={tenant.slug} vectorStore={tenant.vectorStore} />
             </div>
+
+            {tenant.cloudProvider === "aws" && (
+              <div className="rounded-lg border bg-white p-4">
+                <h2 className="text-sm font-semibold">Deployment Access</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  The platform stores no AWS key for this tenant. Deployments authenticate to role{" "}
+                  <span className="font-mono">{tenant.deploymentRoleArn ?? "—"}</span> through
+                  GitHub&apos;s identity provider and hold credentials only for the length of a run.
+                  The customer revokes access by deleting the bootstrap stack, or the role itself.
+                </p>
+                <AwsBootstrapPanel
+                  githubRepo={findChatbotRepo()}
+                  platformAccountId={process.env.PLATFORM_AWS_ACCOUNT_ID?.trim() || null}
+                  templateBaseUrl={process.env.PLATFORM_BOOTSTRAP_TEMPLATE_BASE_URL?.trim() || null}
+                  tenantId={tenant.id}
+                  tenantSlug={tenant.slug}
+                  awsAccountId={tenant.awsAccountId ?? ""}
+                  awsRegion={tenant.awsRegion ?? ""}
+                  existingStack
+                />
+              </div>
+            )}
+
+            {tenant.cloudProvider === "azure" && (
+              <div className="rounded-lg border bg-white p-4">
+                <h2 className="text-sm font-semibold">Deployment Access</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  The platform stores no Azure credential for this tenant. Deployments sign in to identity{" "}
+                  <span className="font-mono">{tenant.azureClientId ?? "—"}</span> through the federated
+                  credential below, which must exist on that identity. The customer revokes access by
+                  deleting it, or the whole resource group.
+                </p>
+                <AzureBootstrapPanel
+                  githubRepo={findChatbotRepo()}
+                  platformAccountId={null}
+                  templateBaseUrl={process.env.PLATFORM_BOOTSTRAP_TEMPLATE_BASE_URL?.trim() || null}
+                  tenantId={tenant.id}
+                  tenantSlug={tenant.slug}
+                  clientId={tenant.azureClientId ?? ""}
+                  azureRegion={tenant.azureRegion ?? ""}
+                  subscriptionId={tenant.azureSubscriptionId ?? ""}
+                  existingDeployment
+                />
+              </div>
+            )}
 
             <div className="flex items-start gap-3 rounded-lg border bg-blue-50 p-4 text-sm">
               <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />

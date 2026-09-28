@@ -84,6 +84,27 @@ variable "llm_model" {
   default     = ""
 }
 
+# Cosine-similarity floor a retrieved chunk must clear to reach the prompt.
+# Too high and the chatbot answers every question with "I don't have enough
+# information", because the gate empties the match list before the LLM is
+# called — which is exactly what the container's old hard-coded 0.5 did to
+# every real document. Left unset here, the container's own default applies;
+# this exists so a tenant can be retuned without rebuilding the image.
+variable "retrieval_min_score" {
+  description = "Minimum cosine similarity for a retrieved chunk to be used as context. Empty string uses the container default."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = var.retrieval_min_score == "" || (
+      can(tonumber(var.retrieval_min_score)) &&
+      tonumber(var.retrieval_min_score) >= 0 &&
+      tonumber(var.retrieval_min_score) <= 1
+    )
+    error_message = "retrieval_min_score must be empty or a number between 0 and 1."
+  }
+}
+
 
 variable "vector_store" {
   description = "Where embeddings live: \"pinecone\" (customer's own Pinecone project) or \"pgvector\" (RDS PostgreSQL inside this VPC)."

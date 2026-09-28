@@ -1,0 +1,2 @@
+ALTER TABLE "tenants" ALTER COLUMN "llm_api_key_encrypted" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "tenants" ADD CONSTRAINT "tenants_llm_key_while_live" CHECK ("tenants"."deleted_at" IS NOT NULL OR "tenants"."llm_api_key_encrypted" IS NOT NULL);

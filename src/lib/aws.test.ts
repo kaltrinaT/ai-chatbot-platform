@@ -128,6 +128,39 @@ describe("assumeTenantRole", () => {
     });
   });
 
+  // The confused-deputy guard: a customer's trust policy conditions on this
+  // value, so a call made for another tenant is refused by STS.
+  it("sends the tenant's ExternalId when one is given", async () => {
+    stsSend.mockResolvedValue({
+      Credentials: { AccessKeyId: "a", SecretAccessKey: "b", SessionToken: "c" },
+    });
+
+    await assumeTenantRole({
+      roleArn: "arn:aws:iam::111111111111:role/deploy",
+      sessionName: "session-1",
+      region: "us-east-1",
+      externalId: "0b6f3c7e-9a1d-4a7e-8f53-2d1c6b9e4a10",
+    });
+
+    expect(AssumeRoleCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ ExternalId: "0b6f3c7e-9a1d-4a7e-8f53-2d1c6b9e4a10" }),
+    );
+  });
+
+  // Omitted rather than sent empty: STS rejects an empty ExternalId outright,
+  // which would break every tenant onboarded before this existed.
+  it("omits ExternalId entirely when none is given", async () => {
+    stsSend.mockResolvedValue({
+      Credentials: { AccessKeyId: "a", SecretAccessKey: "b", SessionToken: "c" },
+    });
+
+    await assumeTenantRole({ roleArn: "arn:x", sessionName: "s", region: "us-east-1" });
+
+    expect(AssumeRoleCommand).toHaveBeenCalledWith(
+      expect.not.objectContaining({ ExternalId: expect.anything() }),
+    );
+  });
+
   it("throws when Credentials is missing entirely", async () => {
     stsSend.mockResolvedValue({});
 
@@ -241,7 +274,14 @@ describe("ensureDocsSignerSecret", () => {
       region: "us-east-1",
       slug: "acme-co",
       sessionName: "tenant-onboarding-docs-acme-co",
+      externalId: "0b6f3c7e-9a1d-4a7e-8f53-2d1c6b9e4a10",
     });
+
+    // Onboarding's second assume must carry the condition too, or a customer
+    // who applied it could complete neither half of onboarding.
+    expect(AssumeRoleCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ ExternalId: "0b6f3c7e-9a1d-4a7e-8f53-2d1c6b9e4a10" }),
+    );
 
     expect(result.docsSignerSecretArn).toBe(
       "arn:aws:secretsmanager:us-east-1:111111111111:secret:acme-co/docs-signer-secret",

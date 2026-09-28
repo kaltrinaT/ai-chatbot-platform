@@ -43,12 +43,20 @@ provider "aws" {
 locals {
   github_oidc_url = "https://token.actions.githubusercontent.com"
 
-  # The only subject allowed to assume the platform role: workflow runs on the
-  # deploy branch of this repository. src/lib/deploy.ts dispatches every
-  # workflow on CHATBOT_DEPLOY_REF, so that is the ref the token carries. A
-  # wildcard here would let anyone able to push any branch hold a role that
-  # can assume every customer's deployment role.
-  github_subject = "repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/${var.deploy_ref}"
+  # The subjects allowed to assume the platform role: jobs of this repository
+  # running in a tenant's GitHub environment. Every deploy and teardown job
+  # runs in environment tenant-<tenant id>, and GitHub then writes the
+  # environment into the token's subject in place of the branch, so a
+  # branch subject would refuse every run.
+  #
+  # This is a wildcard, and the branch cannot be checked alongside it: AWS
+  # evaluates only the `sub` and `aud` claims of a GitHub token, and putting
+  # the workflow ref into `sub` would change the subject every customer's
+  # trust policy matches on. What makes the wildcard acceptable is what the
+  # role can do (below): pull the golden images and read old Azure state
+  # while it is moved. It can no longer assume any customer's role — each
+  # customer's own role trusts one exact tenant subject instead.
+  github_subject = "repo:${var.github_owner}/${var.github_repo}:environment:tenant-*"
 
   oidc_provider_arn = (
     var.create_oidc_provider
@@ -89,9 +97,10 @@ data "aws_iam_policy_document" "trust" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # StringEquals rather than StringLike: the subject must match exactly.
+    # StringLike for the tenant-* environment pattern above. Customer roles,
+    # which are what reach a customer's account, match with StringEquals.
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values   = [local.github_subject]
     }
@@ -100,7 +109,7 @@ data "aws_iam_policy_document" "trust" {
 
 resource "aws_iam_role" "github_deploy" {
   name                 = var.role_name
-  description          = "Assumed by GitHub Actions through OIDC for tenant deploys and teardowns. No tenant document or data access."
+  description          = "Assumed by GitHub Actions through OIDC to pull the golden images. No access to customer accounts, documents or data."
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = 3600
 }
@@ -132,22 +141,25 @@ data "aws_iam_policy_document" "permissions" {
     resources = ["arn:aws:s3:::${var.state_bucket_name}"]
   }
 
-  # State objects for Azure tenants only. AWS tenant deploys reach their state
-  # as the customer's own role, through the bucket's existing per-account
-  # grants, so this role never needs the tenants/ prefix.
+  # Read-only, and only for moving an Azure tenant's old state out. Every
+  # tenant's state now lives in the customer's own cloud: AWS in
+  # tfstate-<slug>-<account>-<region>-an, Azure in storage account cbtf<slug>.
+  # Nothing writes here any more, so there is no PutObject. Apply this only
+  # after the new Azure workflows are live — the old ones wrote state here.
+  # The per-account grants that let AWS customer roles read their old
+  # tenants/<slug>.tfstate live in the bucket policy. Remove both once every
+  # tenant has moved (SECURITY.md, Known Limitation #9).
   statement {
-    sid       = "AzureTenantState"
-    actions   = ["s3:GetObject", "s3:PutObject"]
+    sid       = "AzureTenantStateMove"
+    actions   = ["s3:GetObject"]
     resources = ["arn:aws:s3:::${var.state_bucket_name}/azure/tenants/*"]
   }
 
-  # Assume customer deployment roles, and only those, matching the naming
-  # restriction customers are told to follow (see SECURITY.md).
-  statement {
-    sid       = "AssumeCustomerDeploymentRoles"
-    actions   = ["sts:AssumeRole"]
-    resources = ["arn:aws:iam::*:role/chatbot-client-deploy-*"]
-  }
+  # No sts:AssumeRole. Deploys, teardowns and connection checks sign in to a
+  # customer's role directly with the run's own OIDC token, which that role
+  # trusts for one tenant's environment only. The only principal that still
+  # assumes customer roles is the control-plane role, at onboarding
+  # (infra/platform/control-plane).
 
   dynamic "statement" {
     for_each = var.state_bucket_kms_key_arn == "" ? [] : [1]

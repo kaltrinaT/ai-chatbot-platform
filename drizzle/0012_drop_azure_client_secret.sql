@@ -1,0 +1,1 @@
+ALTER TABLE "tenants" DROP COLUMN "azure_client_secret_encrypted";

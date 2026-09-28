@@ -1,5 +1,7 @@
 terraform {
-  required_version = ">= 1.6"
+  # 1.11: the S3 backend's native lock file (use_lockfile) is stable from here,
+  # and the deploy and destroy workflows configure it (backend.tf).
+  required_version = ">= 1.11"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -867,6 +869,9 @@ resource "aws_ecs_task_definition" "this" {
         { name = "OPENAI_API_BASE", value = local.llm_base_url },
         { name = "LLM_MODEL", value = local.llm_model }
       ],
+      var.retrieval_min_score != "" ? [
+        { name = "RETRIEVAL_MIN_SCORE", value = var.retrieval_min_score }
+      ] : [],
       local.use_pinecone ? [
         { name = "PINECONE_INDEX", value = pinecone_index.this[0].name }
       ] : [],

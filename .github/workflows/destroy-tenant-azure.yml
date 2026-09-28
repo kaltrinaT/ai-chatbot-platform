@@ -1,0 +1,278 @@
+name: Destroy Tenant (Azure)
+# The deployment ID in the run name lets the platform find this run by
+# display_title if the "run started" callback below never arrives.
+run-name: "Destroy ${{ inputs.tenant_slug }} (Azure) [${{ inputs.deployment_id }}]"
+
+# The Azure counterpart of destroy-tenant.yml. Non-secret settings travel
+# packed into one JSON `config` input, exactly as deploy-tenant-azure.yml
+# takes them — see buildAzureDestroyInputs in src/lib/deploy.ts, which must
+# stay in sync with the "Parse tenant config" step below.
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: "Platform deployment row UUID (status callbacks post to it)"
+        required: true
+      tenant_id:
+        description: "Platform tenant row UUID. Names the GitHub environment the job runs in, which is the subject the customer's federated credential trusts"
+        required: true
+      tenant_slug:
+        description: "Tenant identifier (3-18 chars, lowercase, hyphens ok — e.g. acme-corp)"
+        required: true
+      config:
+        description: 'JSON: {"azure_subscription_id","azure_tenant_id","azure_client_id","azure_region","llm_provider","llm_model","domain","vector_store"}'
+        required: true
+      # No secret is an input: the Pinecone key a teardown needs is fetched
+      # from the platform by the run itself, as deploy-tenant-azure.yml does.
+
+env:
+  TF_DIR: infra/terraform/azure
+
+jobs:
+  destroy:
+    name: Destroy chatbot-${{ inputs.tenant_slug }}
+    runs-on: ubuntu-latest
+    # Teardown federates exactly as a deploy does, so it carries the same
+    # per-tenant subject. See deploy-tenant-azure.yml.
+    environment: tenant-${{ inputs.tenant_id }}
+    # One run at a time per tenant, across all four deploy and teardown
+    # workflows on both clouds: they share this group name, so a redeploy and
+    # a teardown of the same tenant queue behind each other instead of running
+    # Terraform against the same state at once. Never cancel-in-progress — a
+    # half-applied Terraform run is worse than a delayed one. The platform
+    # enforces the same rule before dispatching (deployments_one_active_per_tenant
+    # in src/db/schema.ts); this covers a run started by hand in GitHub too.
+    concurrency:
+      group: tenant-${{ inputs.tenant_id }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    # Under an hour for the same reason a deploy is: `az` cannot refresh a
+    # federated login, and the access token Entra issues lasts 60-90 minutes.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Notify platform — run started
+        continue-on-error: true
+        run: |
+          cat > /tmp/callback.json <<EOF
+          {
+            "status": "running",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'running' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+            exit 1
+          fi
+
+      # Destroying pinecone_index.this calls Pinecone's API, which Azure
+      # credentials do not cover, so a teardown needs the customer's Pinecone
+      # key and nothing else. Released the same way as on deploy — see the
+      # "Fetch tenant secrets" step in deploy-tenant-azure.yml.
+      - name: Fetch tenant secrets from the platform
+        env:
+          AUDIENCE: ai-chatbot-platform:tenant-secrets
+        run: |
+          set -euo pipefail
+          umask 077
+          audience=$(jq -rn --arg a "$AUDIENCE" '$a|@uri')
+          token=$(curl -sS --fail --max-time 15 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}" | jq -r '.value')
+          echo "::add-mask::${token}"
+          out="$RUNNER_TEMP/tenant-secrets.json"
+          code=$(curl -sS --max-time 15 -o "$out" -w '%{http_code}' -X POST \
+            -H "authorization: Bearer ${token}" \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/secrets") || code=000
+          if [ "$code" != "200" ]; then
+            reason=$(jq -r '.error // empty' "$out" 2>/dev/null | head -c 300 || true)
+            rm -f "$out"
+            echo "::error title=Tenant secrets refused::HTTP $code from the platform. ${reason}"
+            exit 1
+          fi
+          value=$(jq -r '.pineconeApiKey // ""' "$out")
+          if [ -n "$value" ]; then echo "::add-mask::${value}"; fi
+          # 'unused' keeps the provider able to initialize when the tenant
+          # stores vectors in Postgres instead.
+          jq -r '
+            "export TF_VAR_pinecone_api_key=\((if (.pineconeApiKey // "") == "" then "unused" else .pineconeApiKey end) | @sh)"
+          ' "$out" > "$RUNNER_TEMP/tenant-secrets.env"
+          rm -f "$out"
+
+      - name: Parse tenant config
+        id: cfg
+        env:
+          CONFIG_JSON: ${{ inputs.config }}
+        run: |
+          echo "$CONFIG_JSON" | jq -e 'has("azure_subscription_id") and has("azure_tenant_id") and has("azure_client_id")' > /dev/null
+          {
+            echo "azure_subscription_id=$(echo "$CONFIG_JSON" | jq -r '.azure_subscription_id')"
+            echo "azure_tenant_id=$(echo "$CONFIG_JSON" | jq -r '.azure_tenant_id')"
+            echo "azure_client_id=$(echo "$CONFIG_JSON" | jq -r '.azure_client_id')"
+            echo "azure_region=$(echo "$CONFIG_JSON" | jq -r '.azure_region // "eastus"')"
+            echo "llm_provider=$(echo "$CONFIG_JSON" | jq -r '.llm_provider')"
+            echo "llm_model=$(echo "$CONFIG_JSON" | jq -r '.llm_model // ""')"
+            echo "domain=$(echo "$CONFIG_JSON" | jq -r '.domain // ""')"
+            echo "vector_store=$(echo "$CONFIG_JSON" | jq -r '.vector_store // "pinecone"')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      # Terraform state lives in the customer's subscription. This role is
+      # needed only to read a tenant's old state from the platform's S3 bucket
+      # the one time it is moved — a tenant torn down before it was ever
+      # redeployed — and goes once every Azure tenant has moved.
+      - name: Configure AWS credentials (platform role via OIDC — moving old state)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-session-name: platform-azure-destroy-${{ github.run_id }}
+          role-duration-seconds: 3600
+          aws-region: ${{ secrets.TF_STATE_REGION }}
+
+      # No client secret: azure/login exchanges this job's GitHub OIDC token
+      # for an Entra access token on the customer's identity. It fails here,
+      # before anything is destroyed, if the customer has already revoked the
+      # federated credential — in which case the infrastructure has to be
+      # removed from the portal, which is the customer's prerogative.
+      - name: Azure login (customer subscription, federated credential)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ steps.cfg.outputs.azure_client_id }}
+          tenant-id: ${{ steps.cfg.outputs.azure_tenant_id }}
+          subscription-id: ${{ steps.cfg.outputs.azure_subscription_id }}
+
+      # Same version as deploy-tenant-azure.yml.
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.3
+
+      # Same script as a deploy. A tenant torn down before it was ever
+      # redeployed has its state moved first — without that, destroy would
+      # start from empty state and report success while deleting nothing.
+      - name: Terraform init (state in the customer's subscription)
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          TENANT_SLUG: ${{ inputs.tenant_slug }}
+          AZURE_SUBSCRIPTION_ID: ${{ steps.cfg.outputs.azure_subscription_id }}
+          AZURE_TENANT_ID: ${{ steps.cfg.outputs.azure_tenant_id }}
+          AZURE_CLIENT_ID: ${{ steps.cfg.outputs.azure_client_id }}
+          LEGACY_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          LEGACY_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/terraform-init-azure.sh"
+
+      # No "empty the container first" step here, unlike the AWS path.
+      #
+      # Two reasons, and both matter. Azure deletes a storage account together
+      # with everything in it, so there is no BucketNotEmpty equivalent to work
+      # around. And the deployment identity could not do it anyway: it holds
+      # Contributor, which is control-plane only — reading or deleting blobs
+      # needs a data-plane role (Storage Blob Data Contributor) that the
+      # bootstrap deliberately does not grant, since the platform has no
+      # business reading tenant documents.
+      #
+      # A best-effort `az storage blob delete-batch` here would therefore fail
+      # on every single run while looking like a safeguard.
+
+      # Key Vault soft-delete would otherwise keep the name reserved, and a
+      # redeploy of the same tenant slug fails on the conflict. Purge
+      # protection, where the customer has enabled it on the subscription,
+      # makes this fail — which is their policy working as intended, so it
+      # does not fail the teardown.
+      - name: Terraform destroy
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          # Terraform resolves every variable regardless of what is being
+          # destroyed, and prompts — hanging the job — if one has no value.
+          # Neither is used by a destroy.
+          TF_VAR_llm_api_key: unused
+          TF_VAR_docs_signer_secret: unused
+        run: |
+          source "$RUNNER_TEMP/tenant-secrets.env"
+          rm -f "$RUNNER_TEMP/tenant-secrets.env"
+          terraform destroy -auto-approve \
+            -var="tenant_slug=${{ inputs.tenant_slug }}" \
+            -var="azure_subscription_id=${{ steps.cfg.outputs.azure_subscription_id }}" \
+            -var="azure_tenant_id=${{ steps.cfg.outputs.azure_tenant_id }}" \
+            -var="azure_client_id=${{ steps.cfg.outputs.azure_client_id }}" \
+            -var="azure_region=${{ steps.cfg.outputs.azure_region }}" \
+            -var="llm_provider=${{ steps.cfg.outputs.llm_provider }}" \
+            -var="llm_model=${{ steps.cfg.outputs.llm_model }}" \
+            -var="domain=${{ steps.cfg.outputs.domain }}" \
+            -var="vector_store=${{ steps.cfg.outputs.vector_store }}" \
+            -var="image_uri=placeholder" \
+            -var="frontend_image_uri=placeholder" \
+            -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
+
+      # What Terraform does not own. The resource group and the deployment
+      # identity inside it were created by the customer's bootstrap, not by
+      # this configuration, so `terraform destroy` empties the group and
+      # leaves it standing. That is deliberate: deleting the group would
+      # delete the very identity this job is signed in as, and it would take
+      # away the customer's own revocation handle. The platform tells them the
+      # group is now empty and theirs to remove.
+      - name: Report what the customer still owns
+        if: success()
+        run: |
+          {
+            echo "### Chatbot infrastructure removed"
+            echo ""
+            echo "The resource group \`chatbot-${{ inputs.tenant_slug }}\` is now empty apart from"
+            echo "what the setup created: the deployment identity, and the storage account"
+            echo "that keeps this chatbot's Terraform state."
+            echo ""
+            echo "Delete the resource group in the Azure portal to remove both and revoke"
+            echo "this platform's access to the subscription entirely."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify platform — success
+        if: success()
+        run: |
+          cat > /tmp/callback.json <<EOF
+          {
+            "status": "succeeded",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'succeeded' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+          fi
+
+      - name: Notify platform — failure
+        if: failure()
+        run: |
+          cat > /tmp/callback.json <<EOF
+          {
+            "status": "failed",
+            "errorMessage": "Destroy workflow run ${{ github.run_id }} failed; see GitHub Actions logs.",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'failed' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+          fi

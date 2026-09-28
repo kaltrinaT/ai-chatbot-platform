@@ -16,7 +16,7 @@ const AWS_STEPS: Step[] = [
   {
     title: "Create the IAM role",
     detail:
-      "IAM → Roles → Create role → Custom trust policy, trusting the platform's account. Don't add an sts:ExternalId condition — the platform's AssumeRole call doesn't send one, and a trust policy that requires it will make every deploy fail.",
+      "IAM → Roles → Create role → Custom trust policy, trusting the platform's account with the sts:ExternalId condition the onboarding form shows for this chatbot. The condition is what keeps the role usable for this chatbot only; apply it before submitting the form, since onboarding assumes the role immediately.",
   },
   {
     title: "Name it correctly",
@@ -41,18 +41,19 @@ const AZURE_STEPS: Step[] = [
       "Azure Portal → Subscriptions for the Subscription ID; Microsoft Entra ID → Overview for the Tenant ID. Or run az account show --query \"{sub:id, tenant:tenantId}\".",
   },
   {
-    title: "Create a service principal",
-    detail: "Microsoft Entra ID → App registrations → New registration. Copy the Application (client) ID.",
+    title: "Create a deployment identity",
+    detail:
+      "Microsoft Entra ID → App registrations → New registration, or a user-assigned managed identity. Copy its client ID. Do not create a client secret — the platform never asks for one.",
   },
   {
-    title: "Create a client secret",
+    title: "Grant Contributor and User Access Administrator at the subscription level",
     detail:
-      "Certificates & secrets → New client secret. Copy the \"Value\" column immediately — it's shown only once.",
+      "Must be subscription-scoped, not a resource group — Terraform creates the resource group itself during deployment, so a narrower scope will fail at the very first deploy step. User Access Administrator lets it create the chatbot's narrow role assignments.",
   },
   {
-    title: "Grant Contributor at the subscription level",
+    title: "Add the federated credential shown during onboarding",
     detail:
-      "Must be subscription-scoped, not a resource group — Terraform creates the resource group itself during deployment, so a narrower scope will fail at the very first deploy step.",
+      "The Cloud Configuration step shows an issuer, audience and subject naming this chatbot, with a ready-made az command. Add it to the identity before pressing Deploy. It trusts this chatbot's deployments only; delete it to revoke the platform's access.",
   },
 ];
 
@@ -62,7 +63,12 @@ const AWS_TRUST_POLICY = `{
     {
       "Effect": "Allow",
       "Principal": { "AWS": "arn:aws:iam::PLATFORM_ACCOUNT_ID:root" },
-      "Action": "sts:AssumeRole"
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "TENANT_ID_SHOWN_IN_THE_ONBOARDING_FORM"
+        }
+      }
     }
   ]
 }`;
@@ -97,8 +103,12 @@ const AWS_PERMISSIONS_POLICY = `{
 }`;
 
 const AZURE_ROLE_ASSIGNMENT_CMD = `az role assignment create \\
-  --assignee <app-client-id> \\
+  --assignee <identity-client-id> \\
   --role Contributor \\
+  --scope /subscriptions/<subscription-id>
+az role assignment create \\
+  --assignee <identity-client-id> \\
+  --role "User Access Administrator" \\
   --scope /subscriptions/<subscription-id>`;
 
 const TOC = [
@@ -228,7 +238,7 @@ export default function CloudPrerequisitesContent() {
             <div className="mt-6">
               <h2 className="text-base font-semibold text-gray-900">Azure Prerequisites</h2>
               <p className="mt-1 text-sm text-gray-500">
-                Create a service principal that the platform will use to provision resources in your Azure subscription.
+                Create an identity the platform&apos;s deployments sign in as through a federated credential. No secret is created or shared.
               </p>
 
               <div className="mt-6">

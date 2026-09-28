@@ -7,6 +7,10 @@ on:
       deployment_id:
         required: true
         type: string
+      tenant_id:
+        required: true
+        type: string
+        description: "Platform tenant row UUID. Names the GitHub environment the job runs in, which is the subject the customer's trust policy federates on — see src/lib/githubOidc.ts"
       tenant_slug:
         required: true
         type: string
@@ -59,6 +63,20 @@ on:
 jobs:
   destroy:
     runs-on: ubuntu-latest
+    # Teardown federates into the customer's account exactly as a deploy does,
+    # so it carries the same per-tenant subject and the same environment. See
+    # deploy-tenant.yml for why the environment is the security boundary.
+    environment: tenant-${{ inputs.tenant_id }}
+    # One run at a time per tenant, across all four deploy and teardown
+    # workflows on both clouds: they share this group name, so a redeploy and
+    # a teardown of the same tenant queue behind each other instead of running
+    # Terraform against the same state at once. Never cancel-in-progress — a
+    # half-applied Terraform run is worse than a delayed one. The platform
+    # enforces the same rule before dispatching (deployments_one_active_per_tenant
+    # in src/db/schema.ts); this covers a run started by hand in GitHub too.
+    concurrency:
+      group: tenant-${{ inputs.tenant_id }}
+      cancel-in-progress: false
     # Same reasoning as deploy-tenant.yml: id-token: write is what lets the
     # OIDC credentials step run, and no step here uses the job token for the
     # GitHub API, so dropping the other scopes removes nothing.
@@ -72,9 +90,9 @@ jobs:
     # and still billing, so the budget here is generous on purpose.
     #
     # Do not raise this above 60 without also refreshing AWS credentials
-    # immediately before `terraform destroy`. The chained customer-role
-    # session is capped at one hour by AWS, and today this timeout is the
-    # thing that keeps the job shorter than its credentials.
+    # immediately before `terraform destroy`. The customer-role session is
+    # capped at one hour by the role's MaxSessionDuration, and today this
+    # timeout is the thing that keeps the job shorter than its credentials.
     timeout-minutes: 60
     defaults:
       run:
@@ -103,43 +121,37 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      # Teardown needs nothing in the platform account except the right to
-      # assume the customer's role, and that right now lives on the platform
-      # role, reached through GitHub's OIDC token rather than a stored key.
-      - name: Configure AWS credentials (platform role via OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
-          role-session-name: platform-destroy-${{ github.run_id }}
-          role-duration-seconds: 3600
-          aws-region: ${{ inputs.aws_region }}
-
-      # Chained from the platform role above; see deploy-tenant.yml for why
-      # role-chaining is required. Both sessions start within the job's first
-      # minute and last one hour, and the job's own 60-minute timeout ends it
-      # before they can expire (see the note on timeout-minutes above).
-      - name: Configure AWS credentials (client — assume tenant role)
+      # Teardown now touches the platform's AWS account not at all. It used to
+      # assume a platform role purely to chain into the customer's; with the
+      # customer's role trusting GitHub directly there is nothing left for the
+      # platform account to do here, so the step is gone rather than kept for
+      # symmetry. The Terraform state is in the customer's own account, in the
+      # bucket their bootstrap stack creates, and is reached as their role.
+      - name: Configure AWS credentials (client — tenant role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ inputs.aws_region }}
           role-to-assume: ${{ inputs.deployment_role_arn }}
-          role-chaining: true
           role-session-name: destroy-${{ inputs.tenant_slug }}-${{ github.run_id }}
           role-duration-seconds: 3600
-          role-skip-session-tagging: true
 
+      # Same version as deploy-tenant.yml, for the same reason.
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: 1.15.3
 
-      - name: Terraform init
+      # Same script as a deploy. A tenant torn down before it was ever
+      # redeployed has its state moved first — without that, destroy would
+      # start from empty state and report success while deleting nothing.
+      - name: Terraform init (state in the customer's account)
         working-directory: infra/terraform
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="region=${{ secrets.TF_STATE_REGION }}" \
-            -backend-config="key=tenants/${{ inputs.tenant_slug }}.tfstate" \
-            -backend-config="encrypt=true"
+        env:
+          TENANT_SLUG: ${{ inputs.tenant_slug }}
+          AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+          TENANT_REGION: ${{ inputs.aws_region }}
+          LEGACY_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          LEGACY_STATE_REGION: ${{ secrets.TF_STATE_REGION }}
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/terraform-init-aws.sh"
 
       # Destroying pinecone_index.this actually calls Pinecone's API, which
       # needs a real key — AWS credentials alone don't cover that provider.
@@ -226,6 +238,23 @@ jobs:
               --secret-id "${{ inputs.tenant_slug }}/pinecone-api-key" \
               --force-delete-without-recovery || true
           fi
+
+      # What teardown deliberately leaves. The bootstrap stack is the
+      # customer's revocation handle, and the state bucket is retained by that
+      # stack on purpose (see the template), so both are theirs to remove.
+      - name: Report what the customer still owns
+        if: success()
+        env:
+          STATE_BUCKET: tfstate-${{ inputs.tenant_slug }}-${{ inputs.aws_account_id }}-${{ inputs.aws_region }}-an
+        run: |
+          {
+            echo "### Chatbot infrastructure removed"
+            echo ""
+            echo "Still in AWS account \`${{ inputs.aws_account_id }}\`, and yours to remove:"
+            echo ""
+            echo "- The bootstrap stack \`chatbot-bootstrap-${{ inputs.tenant_slug }}\`. Deleting it revokes this platform's access to the account."
+            echo "- The Terraform state bucket \`$STATE_BUCKET\`, which the stack keeps on purpose. Empty and delete it once you no longer need the state."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify platform — success
         if: success()

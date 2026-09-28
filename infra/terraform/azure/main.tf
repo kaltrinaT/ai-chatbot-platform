@@ -1,10 +1,29 @@
+# No client secret. The provider authenticates as the customer's identity by
+# exchanging the workflow's GitHub OIDC token, which it requests itself through
+# ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN whenever it needs a fresh one, so a long
+# apply never outlives its credential. The customer's federated credential
+# decides which runs may do this (see src/lib/azureFederation.ts).
+#
+# use_cli = false keeps authentication explicit: without it, a missing OIDC
+# token would fall back silently to whatever `az` session the runner holds,
+# and a run could succeed on a credential this configuration never names.
+#
+# storage_use_azuread = true because the docs storage account refuses Shared
+# Key authorization (see azurerm_storage_account.docs), and azurerm otherwise
+# manages containers with the account key. It does not give the deploy
+# identity access to documents: with Entra ID, container-level operations
+# (create, read properties, delete) are authorized by the control-plane
+# actions its Contributor role already holds, while reading or listing blob
+# content needs data actions it deliberately does not have.
 provider "azurerm" {
   features {}
   subscription_id            = var.azure_subscription_id
   tenant_id                  = var.azure_tenant_id
   client_id                  = var.azure_client_id
-  client_secret              = var.azure_client_secret
+  use_oidc                   = true
+  use_cli                    = false
   skip_provider_registration = true
+  storage_use_azuread        = true
 }
 
 provider "pinecone" {
@@ -48,10 +67,36 @@ locals {
 # Resource group
 # ──────────────────────────────────────────────────────────────────────
 
-resource "azurerm_resource_group" "this" {
-  name     = local.name
-  location = var.azure_region
-  tags     = local.common_tags
+# Read, not created. The customer's bootstrap deployment creates this group
+# and then scopes the deployment identity's permissions to it — see
+# infra/bootstrap/azure/tenant-bootstrap.json. Creating it here instead would
+# force the identity to hold subscription-wide Contributor, since a group has
+# to exist before anything can be confined to it.
+#
+# The consequence for teardown is deliberate: `terraform destroy` empties this
+# group but leaves the group and the identity standing, so a redeploy needs no
+# second bootstrap. Deleting the group — which also deletes the identity and
+# its federated credential — is the customer's revocation handle, and it is
+# theirs to pull rather than the platform's.
+#
+# A deploy that runs before the bootstrap fails here, naming the missing
+# group, which is a far clearer failure than the permission error it would
+# otherwise hit somewhere in the middle of the apply.
+data "azurerm_resource_group" "this" {
+  name = local.name
+}
+
+# Tenants deployed before the bootstrap existed had Terraform create this
+# group, so their state still holds it as a managed resource. Without this
+# block, reading it instead would plan to destroy it — and with it the
+# identity and state account the bootstrap has since put inside it. This drops
+# it from state and leaves it standing. For any other tenant it does nothing.
+removed {
+  from = azurerm_resource_group.this
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -60,8 +105,8 @@ resource "azurerm_resource_group" "this" {
 
 resource "azurerm_container_registry" "this" {
   name                = local.acr_name
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = data.azurerm_resource_group.this.name
+  location            = data.azurerm_resource_group.this.location
   sku                 = "Basic"
   tags                = local.common_tags
 
@@ -92,8 +137,8 @@ resource "azurerm_container_registry" "this" {
 
 resource "azurerm_user_assigned_identity" "chatbot" {
   name                = "${local.name}-chatbot-id"
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = data.azurerm_resource_group.this.name
+  location            = data.azurerm_resource_group.this.location
   tags                = local.common_tags
 }
 
@@ -121,8 +166,8 @@ resource "azurerm_role_assignment" "chatbot_acr_pull" {
 // reference — see azurerm_linux_function_app.docs_signer.
 resource "azurerm_key_vault" "this" {
   name                = local.kv_name
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
+  location            = data.azurerm_resource_group.this.location
+  resource_group_name = data.azurerm_resource_group.this.name
   tenant_id           = var.azure_tenant_id
   sku_name            = "standard"
   tags                = local.common_tags
@@ -200,8 +245,8 @@ resource "azurerm_postgresql_flexible_server" "vectors" {
   count = local.use_pgvector ? 1 : 0
 
   name                = local.pg_name
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = data.azurerm_resource_group.this.name
+  location            = data.azurerm_resource_group.this.location
 
   version                = "16"
   sku_name               = var.vector_db_sku
@@ -271,13 +316,24 @@ resource "azurerm_key_vault_secret" "vector_db_url" {
 
 resource "azurerm_storage_account" "docs" {
   name                     = local.storage_name
-  resource_group_name      = azurerm_resource_group.this.name
-  location                 = azurerm_resource_group.this.location
+  resource_group_name      = data.azurerm_resource_group.this.name
+  location                 = data.azurerm_resource_group.this.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
   tags                     = local.common_tags
 
   min_tls_version = "TLS1_2"
+
+  # No Shared Key authorization. The account key reads, writes and lists
+  # every document, and Terraform records it in state whether or not anything
+  # uses it — and state sits outside the customer's account. Nothing needs it:
+  # the chatbot reads through its managed identity, the docs-signer signs
+  # user-delegation SAS tokens with its own, and Terraform manages the
+  # container through Entra ID (storage_use_azuread on the provider). With
+  # this off, the key in state cannot authorize anything; turning it back on
+  # takes control-plane rights on this account, which state alone does not
+  # give. SECURITY.md, Known Limitation #9.
+  shared_access_key_enabled = false
 
   # The container below is private, but this defaults to true, which leaves
   # anyone with control-plane rights able to flip a container to public. There
@@ -355,17 +411,26 @@ resource "azurerm_key_vault_secret" "docs_signer" {
 # and this account's name can never collide with the docs account's.
 resource "azurerm_storage_account" "function_runtime" {
   name                     = "${substr(replace("chatbot${var.tenant_slug}", "-", ""), 0, 22)}fn"
-  resource_group_name      = azurerm_resource_group.this.name
-  location                 = azurerm_resource_group.this.location
+  resource_group_name      = data.azurerm_resource_group.this.name
+  location                 = data.azurerm_resource_group.this.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
   tags                     = local.common_tags
+
+  # Unlike the docs account, this one keeps Shared Key on, deliberately: on a
+  # Linux Consumption plan the Functions host reaches its storage, and zip
+  # deployment stages the code package here, through the account key. The
+  # key therefore also sits in state, and whoever holds it could replace the
+  # staged package. It holds no documents. Removing it needs the Flex
+  # Consumption plan, which supports identity-based host storage —
+  # SECURITY.md, Known Limitation #9.
+  shared_access_key_enabled = true
 }
 
 resource "azurerm_service_plan" "docs_signer" {
   name                = "${local.name}-docs-signer-plan"
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = data.azurerm_resource_group.this.name
+  location            = data.azurerm_resource_group.this.location
   os_type             = "Linux"
   sku_name            = "Y1" # Consumption — pay-per-execution, matches the Lambda's pricing model
   tags                = local.common_tags
@@ -373,13 +438,23 @@ resource "azurerm_service_plan" "docs_signer" {
 
 resource "azurerm_linux_function_app" "docs_signer" {
   name                       = "${local.name}-docs-signer"
-  resource_group_name        = azurerm_resource_group.this.name
-  location                   = azurerm_resource_group.this.location
+  resource_group_name        = data.azurerm_resource_group.this.name
+  location                   = data.azurerm_resource_group.this.location
   service_plan_id            = azurerm_service_plan.docs_signer.id
   storage_account_name       = azurerm_storage_account.function_runtime.name
   storage_account_access_key = azurerm_storage_account.function_runtime.primary_access_key
   https_only                 = true
   tags                       = local.common_tags
+
+  # No username/password publishing. Every Function App carries publishing
+  # credentials that can deploy code — code that would run as this app's
+  # identity, with its write and delete rights on the documents — and
+  # Terraform records them in state as site_credential. The deploy workflow
+  # never uses them: Azure/functions-action deploys with the run's federated
+  # identity. With both of these off, the recorded credentials authorize
+  # nothing. SECURITY.md, Known Limitation #9.
+  ftp_publish_basic_authentication_enabled       = false
+  webdeploy_publish_basic_authentication_enabled = false
 
   identity {
     type = "SystemAssigned"
@@ -497,8 +572,8 @@ resource "azurerm_role_assignment" "chatbot_docs_reader" {
 
 resource "azurerm_log_analytics_workspace" "this" {
   name                = "${local.name}-logs"
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
+  location            = data.azurerm_resource_group.this.location
+  resource_group_name = data.azurerm_resource_group.this.name
   sku                 = "PerGB2018"
   retention_in_days   = 30
   tags                = local.common_tags
@@ -506,8 +581,8 @@ resource "azurerm_log_analytics_workspace" "this" {
 
 resource "azurerm_container_app_environment" "this" {
   name                       = "${local.name}-env"
-  location                   = azurerm_resource_group.this.location
-  resource_group_name        = azurerm_resource_group.this.name
+  location                   = data.azurerm_resource_group.this.location
+  resource_group_name        = data.azurerm_resource_group.this.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
   tags                       = local.common_tags
 }
@@ -519,7 +594,7 @@ resource "azurerm_container_app_environment" "this" {
 resource "azurerm_container_app" "this" {
   name                         = local.name
   container_app_environment_id = azurerm_container_app_environment.this.id
-  resource_group_name          = azurerm_resource_group.this.name
+  resource_group_name          = data.azurerm_resource_group.this.name
   revision_mode                = "Single"
   tags                         = local.common_tags
 
@@ -626,6 +701,14 @@ resource "azurerm_container_app" "this" {
       env {
         name  = "VECTOR_STORE"
         value = var.vector_store
+      }
+
+      dynamic "env" {
+        for_each = var.retrieval_min_score != "" ? [1] : []
+        content {
+          name  = "RETRIEVAL_MIN_SCORE"
+          value = var.retrieval_min_score
+        }
       }
 
       dynamic "env" {

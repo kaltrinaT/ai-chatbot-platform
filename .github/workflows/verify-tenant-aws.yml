@@ -1,0 +1,102 @@
+name: Verify tenant connection (AWS)
+# The check ID in the run name is how the platform finds this run: it polls
+# for a run whose display_title carries the ID it just dispatched. There is no
+# status callback here, unlike a deploy — the run's own conclusion is the
+# answer, and a check that cannot reach the platform is still a check.
+run-name: "Verify ${{ inputs.tenant_slug }} (AWS) [${{ inputs.check_id }}]"
+
+# Proves the customer's bootstrap worked, before a deploy is allowed to start.
+#
+# Everything here is read-only. It assumes the role and asks AWS who it is;
+# nothing is created, nothing is written, and a failure costs the customer
+# nothing to retry. That is the point: a misconfigured trust policy otherwise
+# surfaces thirty minutes into a Terraform apply, after images have been
+# replicated into their registry, and the failure looks like a deploy problem
+# rather than a setup one.
+on:
+  workflow_dispatch:
+    inputs:
+      check_id:
+        required: true
+        type: string
+        description: "Platform-generated ID for this check. Appears in the run name so the platform can find the run."
+      tenant_id:
+        required: true
+        type: string
+        description: "Platform tenant row UUID. Names the GitHub environment the job runs in, which is the subject the customer's trust policy federates on — see src/lib/githubOidc.ts"
+      tenant_slug:
+        required: true
+        type: string
+      aws_region:
+        required: true
+        type: string
+      deployment_role_arn:
+        required: true
+        type: string
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # The same environment a deploy runs in, which is the whole point: this
+    # check is only meaningful if the token it presents carries exactly the
+    # subject a real deploy would carry. See deploy-tenant.yml.
+    environment: tenant-${{ inputs.tenant_id }}
+    permissions:
+      id-token: write
+      contents: read
+    # A sign-in either works or is refused; there is nothing here that can be
+    # slow. A long timeout would only delay telling the customer.
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # The step whose name the platform reports when this fails, so keep it
+      # descriptive: for most failures — a missing OIDC provider, a subject
+      # that does not match, a role that was never created — this is where the
+      # run stops, and its name is the only thing the customer sees.
+      - name: Assume the tenant's deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.deployment_role_arn }}
+          role-session-name: verify-${{ inputs.tenant_slug }}-${{ github.run_id }}
+          role-duration-seconds: 900
+
+      # Confirms the credentials are real rather than merely issued, and
+      # prints the account they belong to — which is how a customer notices
+      # they bootstrapped the wrong AWS account.
+      - name: Confirm the role works and report the account
+        id: identity
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          arn="$(aws sts get-caller-identity --query Arn --output text)"
+          echo "Signed in to AWS account $account"
+          echo "Session: $arn"
+          echo "account=$account" >> "$GITHUB_OUTPUT"
+          {
+            echo "### AWS connection verified"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Account | \`$account\` |"
+            echo "| Role | \`${{ inputs.deployment_role_arn }}\` |"
+            echo "| Environment | \`tenant-${{ inputs.tenant_id }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Deploys keep this chatbot's deployment state in a bucket the bootstrap
+      # stack creates. A stack created before that bucket existed passes the
+      # sign-in above but stops the first deploy before anything is created,
+      # so check for it here, where the step name is the whole diagnosis.
+      # Read-only: it asks whether the bucket exists and who owns it, and
+      # nothing else.
+      - name: Find the chatbot's state bucket (update the bootstrap stack if this fails)
+        env:
+          ACCOUNT: ${{ steps.identity.outputs.account }}
+          BUCKET: tfstate-${{ inputs.tenant_slug }}-${{ steps.identity.outputs.account }}-${{ inputs.aws_region }}-an
+        run: |
+          aws s3api head-bucket --bucket "$BUCKET" --expected-bucket-owner "$ACCOUNT" \
+            --region "${{ inputs.aws_region }}" > /dev/null
+          echo "State bucket $BUCKET exists in account $ACCOUNT."
+          echo "| State bucket | \`$BUCKET\` |" >> "$GITHUB_STEP_SUMMARY"

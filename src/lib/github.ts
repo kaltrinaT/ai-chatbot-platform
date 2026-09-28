@@ -20,6 +20,15 @@ export function getChatbotRepo(): { owner: string; repo: string } {
   return { owner, repo };
 }
 
+/** getChatbotRepo, or null for a page that should still render without it. */
+export function findChatbotRepo(): { owner: string; repo: string } | null {
+  try {
+    return getChatbotRepo();
+  } catch {
+    return null;
+  }
+}
+
 export function getDeployWorkflowId(): string {
   return process.env.CHATBOT_DEPLOY_WORKFLOW ?? "deploy-tenant.yml";
 }
@@ -121,16 +130,20 @@ export async function fetchRunSteps(runId: number): Promise<RunStep[]> {
 }
 
 /**
- * Locate the workflow run for a deployment when the early "run started"
- * callback never arrived. Relies on the workflow's `run-name:` embedding the
- * deployment ID, which GitHub exposes as `display_title`.
+ * Locate a dispatched run by a platform-generated ID embedded in its
+ * `run-name:`, which GitHub exposes as `display_title`.
  *
- * `workflowId` must match whichever workflow file the deployment actually
- * dispatched to (deploy-tenant.yml, deploy-tenant-azure.yml, or
- * destroy-tenant.yml) — searching the wrong one silently never matches.
+ * workflow_dispatch returns nothing identifying the run it started, so this is
+ * the only way to tie a dispatch to its run without a callback from inside the
+ * workflow. Deploys use it as a fallback when the early "run started" callback
+ * was lost; connection checks use it as the only route, since they have no row
+ * to call back to.
+ *
+ * `workflowId` must match whichever workflow file was actually dispatched —
+ * searching the wrong one silently never matches.
  */
-export async function findRunForDeployment(
-  deploymentId: string,
+export async function findRunByMarker(
+  marker: string,
   startedAt: Date,
   workflowId: string,
 ): Promise<{ runId: number; htmlUrl: string } | null> {
@@ -149,10 +162,20 @@ export async function findRunForDeployment(
     per_page: 30,
   });
 
-  const match = data.workflow_runs.find((r) =>
-    r.display_title.includes(deploymentId),
-  );
+  const match = data.workflow_runs.find((r) => r.display_title.includes(marker));
   return match ? { runId: match.id, htmlUrl: match.html_url } : null;
+}
+
+/**
+ * The deployment-shaped call of findRunByMarker: a deploy or teardown embeds
+ * its deployment row's ID in the run name.
+ */
+export async function findRunForDeployment(
+  deploymentId: string,
+  startedAt: Date,
+  workflowId: string,
+): Promise<{ runId: number; htmlUrl: string } | null> {
+  return findRunByMarker(deploymentId, startedAt, workflowId);
 }
 
 const DeploymentOutputs = z.object({

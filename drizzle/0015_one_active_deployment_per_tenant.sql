@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "deployments_one_active_per_tenant" ON "deployments" USING btree ("tenant_id") WHERE "deployments"."status" IN ('pending', 'running');

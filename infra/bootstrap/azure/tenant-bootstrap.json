@@ -1,0 +1,372 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+
+  "metadata": {
+    "comments": [
+      "One chatbot's deployment identity, inside the customer's own Azure subscription, and the storage that keeps the chatbot's Terraform state there too.",
+      "",
+      "Applied by the CUSTOMER, once per chatbot, from a Deploy to Azure link the",
+      "onboarding wizard builds (see src/lib/bootstrapLinks.ts). Every parameter arrives",
+      "prefilled; the customer reviews what will be created and presses Create. Nothing",
+      "here is applied by the platform, and the platform never holds a credential for",
+      "this subscription. Running it again for an existing chatbot is safe: every",
+      "resource is declared by name, so a second run adds what is missing and leaves",
+      "the rest as it is.",
+      "",
+      "It replaces the two `az` commands the wizard used to ask a customer to paste into",
+      "a shell, which required the Azure CLI and an understanding of federated identity",
+      "credentials to get right.",
+      "",
+      "Subscription-scoped rather than resource-group-scoped, because it creates the",
+      "resource group itself. That is what lets the identity's permissions be confined",
+      "to that one group instead of the whole subscription: the group has to exist, and",
+      "be known, before anything can be scoped to it. Terraform then deploys *into* the",
+      "group rather than creating it (see infra/terraform/azure/main.tf, where the group",
+      "is a data source for exactly this reason).",
+      "",
+      "The nested deployment evaluates its expressions in its own scope ('inner'), with",
+      "every name passed in from here. In the default 'outer' scope, resourceGroup(),",
+      "resourceId() and reference() resolve against this subscription-level template",
+      "instead of the resource group, and reference() in a nested template's outputs is",
+      "not allowed at all.",
+      "",
+      "Deleting the resource group is the revocation and teardown handle: it removes the",
+      "identity, the federated credential, the Terraform state and the chatbot's",
+      "infrastructure together."
+    ]
+  },
+
+  "parameters": {
+    "tenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "This chatbot's ID in the platform. It names the GitHub environment that only this chatbot's deployments run in, which is the subject the federated credential below trusts. It is not a secret."
+      }
+    },
+    "tenantSlug": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 18,
+      "metadata": {
+        "description": "The chatbot's short name. Names the resource group, the deployment identity and the state storage account."
+      }
+    },
+    "gitHubOwner": {
+      "type": "string",
+      "metadata": {
+        "description": "The GitHub organisation the platform's deployment workflows run in."
+      }
+    },
+    "gitHubRepo": {
+      "type": "string",
+      "metadata": {
+        "description": "The repository those workflows live in."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "westeurope",
+      "metadata": {
+        "description": "The Azure region the chatbot's infrastructure will run in. Must match the region chosen in the platform's onboarding form."
+      }
+    }
+  },
+
+  "variables": {
+    "resourceGroupName": "[format('chatbot-{0}', parameters('tenantSlug'))]",
+    "identityName": "[format('chatbot-deploy-{0}', parameters('tenantSlug'))]",
+    "credentialName": "[format('ai-chatbot-platform-{0}', parameters('tenantId'))]",
+    "federatedSubject": "[format('repo:{0}/{1}:environment:tenant-{2}', parameters('gitHubOwner'), parameters('gitHubRepo'), parameters('tenantId'))]",
+    "stateAccountName": "[format('cbtf{0}', replace(parameters('tenantSlug'), '-', ''))]",
+    "stateContainerName": "tfstate",
+    "nestedDeploymentName": "chatbot-deployment-identity"
+  },
+
+  "resources": [
+    {
+      "comments": "The chatbot's own resource group. Everything the deployment identity may touch lives here, and nothing it may touch lives outside.",
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[variables('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": {
+        "Project": "ai-chatbot-platform",
+        "Tenant": "[parameters('tenantSlug')]"
+      }
+    },
+    {
+      "comments": "Nested so it can run at resource-group scope: the identity, its trust in GitHub, its permissions and the state storage all belong to the group above.",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "[variables('nestedDeploymentName')]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('resourceGroupName'))]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "parameters": {
+          "location": { "value": "[parameters('location')]" },
+          "tenantSlug": { "value": "[parameters('tenantSlug')]" },
+          "identityName": { "value": "[variables('identityName')]" },
+          "credentialName": { "value": "[variables('credentialName')]" },
+          "federatedSubject": { "value": "[variables('federatedSubject')]" },
+          "stateAccountName": { "value": "[variables('stateAccountName')]" },
+          "stateContainerName": { "value": "[variables('stateContainerName')]" }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "location": { "type": "string" },
+            "tenantSlug": { "type": "string" },
+            "identityName": { "type": "string" },
+            "credentialName": { "type": "string" },
+            "federatedSubject": { "type": "string" },
+            "stateAccountName": { "type": "string" },
+            "stateContainerName": { "type": "string" }
+          },
+          "variables": {
+            "contributorRoleId": "b24988ac-6180-42a0-ab88-20f7382dd24c",
+            "userAccessAdministratorRoleId": "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9",
+            "storageBlobDataContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+            "identityId": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]",
+            "stateAccountId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('stateAccountName'))]",
+            "stateBlobServiceId": "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('stateAccountName'), 'default')]",
+            "stateContainerId": "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('stateAccountName'), 'default', parameters('stateContainerName'))]"
+          },
+          "resources": [
+            {
+              "comments": "A user-assigned managed identity rather than an app registration: creating one needs no permission in Microsoft Entra ID, so a customer who can deploy resources can complete onboarding without a directory administrator.",
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('identityName')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "Project": "ai-chatbot-platform",
+                "Tenant": "[parameters('tenantSlug')]"
+              }
+            },
+            {
+              "comments": [
+                "The trust itself, in place of a client secret. It tells Entra ID to accept a token signed by GitHub Actions, for one exact subject, as this identity.",
+                "",
+                "The environment segment of that subject is what keeps one customer's trust from covering another's. A branch subject would be identical for every customer, so any chatbot's deploy could sign in to any subscription that trusts the platform. Entra compares the subject exactly and case-sensitively: every other chatbot's runs are refused here, by Azure, rather than by a check inside the platform's application."
+              ],
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
+              "apiVersion": "2023-01-31",
+              "name": "[format('{0}/{1}', parameters('identityName'), parameters('credentialName'))]",
+              "dependsOn": [
+                "[variables('identityId')]"
+              ],
+              "properties": {
+                "issuer": "https://token.actions.githubusercontent.com",
+                "subject": "[parameters('federatedSubject')]",
+                "audiences": ["api://AzureADTokenExchange"]
+              }
+            },
+            {
+              "comments": "Creates and manages the chatbot's infrastructure — container apps, registry, storage, key vault — within this resource group only.",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, parameters('identityName'), variables('contributorRoleId'))]",
+              "dependsOn": [
+                "[variables('identityId')]"
+              ],
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('contributorRoleId'))]",
+                "principalId": "[reference(variables('identityId'), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "comments": [
+                "Contributor cannot grant roles, and the chatbot's own runtime depends on granted roles: the container app pulls from the registry as itself, and the document-signing function reaches storage as itself. Terraform creates those assignments during a deploy, so the deployment identity has to be able to make them.",
+                "",
+                "This is the one permission here that can widen access, which is why its scope matters more than any other: confined to this resource group, it can grant roles over the chatbot's own resources and nothing else in the subscription."
+              ],
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, parameters('identityName'), variables('userAccessAdministratorRoleId'))]",
+              "dependsOn": [
+                "[variables('identityId')]"
+              ],
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('userAccessAdministratorRoleId'))]",
+                "principalId": "[reference(variables('identityId'), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "comments": [
+                "Where this chatbot's Terraform state lives: in the customer's subscription, beside the infrastructure it describes, rather than with the platform. State records every value Terraform manages — the LLM key, the Pinecone key, the docs-signer secret and the vector database password among them — so it belongs inside the same boundary as the secrets themselves.",
+                "",
+                "No account key works here. Shared Key authorization is off, so the only way in is an Entra ID identity with a data role; the deployment identity holds one on the state container below and nowhere else. Terraform's backend signs in with the same GitHub OIDC token the deploy already uses.",
+                "",
+                "A storage account's name is global. The workflows only ever use the account of this name found inside this resource group, and an account of the same name in any other tenant would refuse this subscription's tokens, so a name taken elsewhere can stop a deploy but never receive state."
+              ],
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('stateAccountName')]",
+              "location": "[parameters('location')]",
+              "sku": { "name": "Standard_LRS" },
+              "kind": "StorageV2",
+              "tags": {
+                "Project": "ai-chatbot-platform",
+                "Tenant": "[parameters('tenantSlug')]",
+                "Purpose": "terraform-state"
+              },
+              "properties": {
+                "allowSharedKeyAccess": false,
+                "defaultToOAuthAuthentication": true,
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "comments": "Every state write keeps the previous version, which is what makes a corrupted or mistaken state recoverable. Deleted blobs and containers are also recoverable for a week.",
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/default', parameters('stateAccountName'))]",
+              "dependsOn": [
+                "[variables('stateAccountId')]"
+              ],
+              "properties": {
+                "isVersioningEnabled": true,
+                "deleteRetentionPolicy": { "enabled": true, "days": 7 },
+                "containerDeleteRetentionPolicy": { "enabled": true, "days": 7 }
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/default/{1}', parameters('stateAccountName'), parameters('stateContainerName'))]",
+              "dependsOn": [
+                "[variables('stateBlobServiceId')]"
+              ],
+              "properties": {
+                "publicAccess": "None"
+              }
+            },
+            {
+              "comments": "Superseded state versions still hold old secrets, so they expire after 30 days.",
+              "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/default', parameters('stateAccountName'))]",
+              "dependsOn": [
+                "[variables('stateAccountId')]",
+                "[variables('stateBlobServiceId')]"
+              ],
+              "properties": {
+                "policy": {
+                  "rules": [
+                    {
+                      "enabled": true,
+                      "name": "expire-superseded-state",
+                      "type": "Lifecycle",
+                      "definition": {
+                        "actions": {
+                          "version": {
+                            "delete": { "daysAfterCreationGreaterThan": 30 }
+                          }
+                        },
+                        "filters": {
+                          "blobTypes": ["blockBlob"]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "comments": [
+                "Lets the deployment identity read, write and lease the state — Terraform's backend locks it with a blob lease for each run — in this one container and nowhere else.",
+                "",
+                "Scoped to the container rather than the account, and never granted on the chatbot's documents account: the deployment identity can manage that account, but reading documents needs a data role it does not hold."
+              ],
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}/blobServices/default/containers/{1}', parameters('stateAccountName'), parameters('stateContainerName'))]",
+              "name": "[guid(variables('stateContainerId'), parameters('identityName'), variables('storageBlobDataContributorRoleId'))]",
+              "dependsOn": [
+                "[variables('stateContainerId')]",
+                "[variables('identityId')]"
+              ],
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataContributorRoleId'))]",
+                "principalId": "[reference(variables('identityId'), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal"
+              }
+            }
+          ],
+          "outputs": {
+            "clientId": {
+              "type": "string",
+              "value": "[reference(variables('identityId'), '2023-01-31').clientId]"
+            },
+            "principalId": {
+              "type": "string",
+              "value": "[reference(variables('identityId'), '2023-01-31').principalId]"
+            },
+            "stateStorageAccount": {
+              "type": "string",
+              "value": "[parameters('stateAccountName')]"
+            }
+          }
+        }
+      }
+    }
+  ],
+
+  "outputs": {
+    "clientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Paste this into the platform's onboarding form as the Managed Identity Client ID. It identifies the identity but is not a credential — it grants nothing on its own."
+      },
+      "value": "[reference(resourceId(variables('resourceGroupName'), 'Microsoft.Resources/deployments', variables('nestedDeploymentName')), '2021-04-01').outputs.clientId.value]"
+    },
+    "azureTenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "The Microsoft Entra directory ID, which the onboarding form also asks for."
+      },
+      "value": "[subscription().tenantId]"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "metadata": {
+        "description": "This subscription's ID, which the onboarding form also asks for."
+      },
+      "value": "[subscription().subscriptionId]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "The resource group the chatbot will be deployed into, and the only scope the deployment identity has any permission over."
+      },
+      "value": "[variables('resourceGroupName')]"
+    },
+    "deployEnvironment": {
+      "type": "string",
+      "metadata": {
+        "description": "The only GitHub environment whose workflow runs this identity will accept."
+      },
+      "value": "[format('tenant-{0}', parameters('tenantId'))]"
+    },
+    "stateStorageAccount": {
+      "type": "string",
+      "metadata": {
+        "description": "Where this chatbot's Terraform state is kept. The platform derives the same name, so there is nothing to copy back."
+      },
+      "value": "[variables('stateAccountName')]"
+    }
+  }
+}

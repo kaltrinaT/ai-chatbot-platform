@@ -10,6 +10,7 @@ import { tenants, tenantDrafts } from "@/db/schema";
 import { triggerDeployment } from "@/lib/deploy";
 import { encryptSecret } from "@/lib/crypto";
 import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "@/lib/aws";
+import { awsExternalId } from "@/lib/awsTrust";
 import { generateDocsSignerSecret } from "@/lib/azure";
 
 
@@ -74,10 +75,14 @@ function describeProvisioningFailure(err: unknown): string {
     if (e.message?.includes("PLATFORM_")) {
       return e.message;
     }
-    // Postgres unique violation. The only unique value onboarding writes is
-    // the slug, and it cannot be changed afterwards, so name it rather than
+    // Postgres unique violation. Onboarding writes two unique values: the
+    // slug, and the tenant ID the wizard generated. Both are named rather than
     // sending the operator to the server log.
     if (e.code === "23505") {
+      const constraint = (err as { constraint?: string }).constraint ?? "";
+      if (constraint.includes("pkey") || e.message?.includes("tenants_pkey")) {
+        return "This form was already used to create a tenant. Reload the page to start a new one.";
+      }
       return "A tenant with that slug already exists. Slugs are permanent, so choose a different one.";
     }
   }
@@ -121,16 +126,20 @@ export async function createTenantAndDeploy(
 
   let llmSecretArn: string | null;
   let pineconeSecretArn: string | null = null;
-  let azureClientSecretEncrypted: string | undefined;
   let docsSignerSecretArn: string | null = null;
   let docsSignerSecretEncrypted: string | null = null;
 
   try {
     if (parsed.cloudProvider === "aws") {
+      // Sent from the first call onwards, so a customer whose trust policy
+      // already carries the condition is protected during onboarding itself —
+      // which is when the platform first writes into their account.
+      const externalId = awsExternalId(parsed.tenantId);
       const creds = await assumeTenantRole({
         roleArn: parsed.deploymentRoleArn,
         sessionName: `tenant-onboarding-${parsed.slug}`,
         region: parsed.awsRegion,
+        externalId,
       });
       llmSecretArn = await writeTenantSecret({
         credentials: creds,
@@ -155,11 +164,13 @@ export async function createTenantAndDeploy(
         region: parsed.awsRegion,
         slug: parsed.slug,
         sessionName: `tenant-onboarding-docs-${parsed.slug}`,
+        externalId,
       });
       docsSignerSecretArn = docsSigner.docsSignerSecretArn;
       docsSignerSecretEncrypted = docsSigner.docsSignerSecretEncrypted;
     } else {
-      azureClientSecretEncrypted = encryptSecret(parsed.azureClientSecret);
+      // Nothing to store for Azure access: the customer's federated credential
+      // trusts this tenant's deploy runs directly (see azureFederation.ts).
       // LLM key is passed directly to the workflow from the encrypted DB value;
       // Terraform creates the Key Vault and stores it there during deploy.
       llmSecretArn = null;
@@ -169,6 +180,10 @@ export async function createTenantAndDeploy(
     const insertValues =
       parsed.cloudProvider === "aws"
         ? {
+            // The ID the customer's trust policy names as its ExternalId, so
+            // the row has to carry the value the wizard showed them. Same
+            // reasoning as the Azure branch below.
+            id: parsed.tenantId,
             cloudProvider: "aws" as const,
             name: tenantFields.name,
             slug: tenantFields.slug,
@@ -191,6 +206,12 @@ export async function createTenantAndDeploy(
             docsSignerSecretEncrypted,
           }
         : {
+            // The ID the customer's federated credential already names. It
+            // comes from the browser, which is safe because it cannot be used
+            // to borrow another tenant's trust: the primary key rejects an ID
+            // that exists, including a deleted tenant's, and an ID that does
+            // not exist yet is a random UUID only its own wizard has seen.
+            id: parsed.tenantId,
             cloudProvider: "azure" as const,
             name: tenantFields.name,
             slug: tenantFields.slug,
@@ -206,7 +227,6 @@ export async function createTenantAndDeploy(
             azureSubscriptionId: parsed.azureSubscriptionId,
             azureTenantId: parsed.azureTenantId,
             azureClientId: parsed.azureClientId,
-            azureClientSecretEncrypted,
             azureRegion: parsed.azureRegion,
             docsSignerSecretEncrypted,
           };
@@ -251,6 +271,11 @@ export async function createTenantAndDeploy(
 // persisted: a draft is an unfinished form with no deployment behind it, and
 // storing plaintext keys in the control plane for it would undercut the whole
 // "secrets live in the customer's cloud" property. Re-entered on resume.
+//
+// azureClientSecret is no longer a wizard field — Azure deploys are federated —
+// but stays on this list. Drafts keep every field not named here, so a browser
+// tab still running the previous wizard would otherwise save a pasted client
+// secret into the database in plaintext.
 const DRAFT_SECRET_FIELDS = ["llmApiKey", "pineconeApiKey", "azureClientSecret"] as const;
 
 export type DraftState = { draftId: string; savedAt: string } | { error: string } | null;

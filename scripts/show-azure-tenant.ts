@@ -3,14 +3,17 @@ import { Pool, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { eq } from "drizzle-orm";
 import { tenants } from "../src/db/schema";
+import { findChatbotRepo } from "../src/lib/github";
+import { azureFederatedSubject } from "../src/lib/azureFederation";
 import ws from "ws";
 
 neonConfig.webSocketConstructor = ws;
 
 /**
- * Read-only lookup of an Azure tenant's stored (non-secret) identifiers,
- * to compare against `az ad app list` / `az account show` output when
- * diagnosing an AADSTS auth failure. Never prints azureClientSecretEncrypted.
+ * Read-only lookup of an Azure tenant's identifiers and the federated subject
+ * its identity must trust, to compare against
+ * `az ad app federated-credential list --id <client-id>` when diagnosing an
+ * AADSTS login failure (AADSTS70021/700213: no matching federated credential).
  *
  * Usage:
  *   npx tsx scripts/show-azure-tenant.ts <slug>
@@ -46,7 +49,10 @@ async function main() {
     azureClientId: t.azureClientId,
     azureRegion: t.azureRegion,
     chatbotVersion: t.chatbotVersion,
-    hasClientSecretStored: Boolean(t.azureClientSecretEncrypted),
+    federatedSubject: (() => {
+      const repo = findChatbotRepo();
+      return repo ? azureFederatedSubject(repo, t.id) : "(CHATBOT_REPO_OWNER / CHATBOT_REPO_NAME not set)";
+    })(),
   });
 
   await pool.end();

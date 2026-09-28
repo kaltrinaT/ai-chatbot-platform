@@ -65,6 +65,26 @@ describe("github", () => {
     });
   });
 
+  // The onboarding wizard and tenant page build the Azure federated subject
+  // from this. They must still render when the repo is not configured — and
+  // then show a warning, not a subject with "undefined" in it that the
+  // customer would copy into Entra ID.
+  describe("findChatbotRepo", () => {
+    it("returns owner/repo from env, like getChatbotRepo", async () => {
+      const { findChatbotRepo } = await import("./github");
+      expect(findChatbotRepo()).toEqual({ owner: "acme", repo: "chatbot" });
+    });
+
+    it.each(["CHATBOT_REPO_OWNER", "CHATBOT_REPO_NAME"])(
+      "returns null instead of throwing when %s is missing",
+      async (name) => {
+        delete process.env[name];
+        const { findChatbotRepo } = await import("./github");
+        expect(findChatbotRepo()).toBeNull();
+      },
+    );
+  });
+
   describe("getDeployWorkflowId", () => {
     it("defaults to deploy-tenant.yml", async () => {
       delete process.env.CHATBOT_DEPLOY_WORKFLOW;

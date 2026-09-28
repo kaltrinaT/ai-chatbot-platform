@@ -22,7 +22,10 @@ const authSecret = configuredAuthSecret || "dev-secret";
 // to let it past: redirecting the workflow's POST to the sign-in page would
 // answer it with HTTP 200 and an HTML body, which the workflow reads as a
 // delivered callback.
-const WEBHOOK_PATH = /^\/api\/deployments\/[^/]+\/status\/?$/;
+//
+// The secrets path is let past for the same reason: an Azure run calls it with
+// its GitHub OIDC token and no session, and the route verifies that token.
+const WEBHOOK_PATH = /^\/api\/deployments\/[^/]+\/(status|secrets)\/?$/;
 
 // Trimmed for the same reason as the secret above: a value pasted into a
 // hosting dashboard with a stray newline is not a credential OAuth can use.

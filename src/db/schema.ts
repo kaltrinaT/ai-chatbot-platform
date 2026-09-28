@@ -7,8 +7,10 @@ import {
   jsonb,
   integer,
   primaryKey,
+  check,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
 
 export const deploymentStatusEnum = pgEnum("deployment_status", [
@@ -84,10 +86,12 @@ export const tenants = pgTable("tenants", {
   docsSignerUrl: text("docs_signer_url"),
 
   // ── Azure ─────────────────────────────────────────────────────────────
+  // Identifiers only. There is no Azure credential column: the customer's
+  // identity trusts this tenant's deploy runs through a federated credential
+  // whose subject names tenants.id (see src/lib/azureFederation.ts).
   azureSubscriptionId: text("azure_subscription_id"),
   azureTenantId: text("azure_tenant_id"),
   azureClientId: text("azure_client_id"),
-  azureClientSecretEncrypted: text("azure_client_secret_encrypted"),
   azureResourceGroup: text("azure_resource_group"),
   azureRegion: text("azure_region"),
   azureStorageAccount: text("azure_storage_account"),
@@ -96,7 +100,9 @@ export const tenants = pgTable("tenants", {
 
   // ── Shared ────────────────────────────────────────────────────────────
   llmProvider: llmProviderEnum("llm_provider").notNull(),
-  llmApiKeyEncrypted: text("llm_api_key_encrypted").notNull(),
+  // Required for every live tenant (see the check below), erased once the
+  // tenant's teardown succeeds (src/lib/tenantErasure.ts).
+  llmApiKeyEncrypted: text("llm_api_key_encrypted"),
   llmSecretArn: text("llm_secret_arn"),
   llmModel: text("llm_model"),
   llmBaseUrl: text("llm_base_url"),
@@ -124,7 +130,14 @@ export const tenants = pgTable("tenants", {
   // deployment/document history) stays for audit purposes but drops off the
   // active dashboard and can no longer be redeployed or managed.
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-});
+}, (t) => [
+  // What NOT NULL used to guarantee, minus deleted tenants, whose secrets are
+  // erased: a live tenant always has an LLM key.
+  check(
+    "tenants_llm_key_while_live",
+    sql`${t.deletedAt} IS NOT NULL OR ${t.llmApiKeyEncrypted} IS NOT NULL`,
+  ),
+]);
 
 export const deployments = pgTable("deployments", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -139,6 +152,11 @@ export const deployments = pgTable("deployments", {
   githubRunId: text("github_run_id"),
   githubRunUrl: text("github_run_url"),
 
+  // When a run fetched this deployment's application secrets from the
+  // platform (Azure only — see api/deployments/[id]/secrets). Set once, so a
+  // deployment's secrets are released to exactly one workflow run.
+  secretsClaimedAt: timestamp("secrets_claimed_at", { withTimezone: true }),
+
   triggeredByUserId: text("triggered_by_user_id")
     .notNull()
     .references(() => users.id),
@@ -147,7 +165,16 @@ export const deployments = pgTable("deployments", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 
   errorMessage: text("error_message"),
-});
+}, (t) => [
+  // At most one deployment in flight per tenant. Two would run Terraform
+  // against the same state at once — a redeploy racing a teardown, or a
+  // double-clicked button — and corrupt it. Enforced here rather than by a
+  // read-then-insert in the app, which two requests could both pass. The
+  // workflows' `concurrency:` group is the same rule on GitHub's side.
+  uniqueIndex("deployments_one_active_per_tenant")
+    .on(t.tenantId)
+    .where(sql`${t.status} IN ('pending', 'running')`),
+]);
 
 /**
  * Status of a document as tracked by the platform's own record — the
@@ -188,9 +215,10 @@ export const tenantDocuments = pgTable("tenant_documents", {
  * cloud resources, must never be deployable, and would otherwise have to
  * relax the notNull constraints that keep a real tenant well-formed.
  *
- * `data` holds only NON-SECRET wizard fields. The LLM key, Pinecone key and
- * Azure client secret are stripped before saving (see DRAFT_SECRET_FIELDS in
- * the wizard's actions) and must be re-entered when the draft is resumed.
+ * `data` holds only NON-SECRET wizard fields. The LLM and Pinecone keys are
+ * stripped before saving (see DRAFT_SECRET_FIELDS in the wizard's actions) and
+ * must be re-entered when the draft is resumed. The generated tenantId is kept,
+ * since a customer may already have created a federated credential naming it.
  * Persisting them would put plaintext customer credentials in the control
  * plane's own database for an object with no deployment behind it yet —
  * exactly the thing the "secrets live in the customer's cloud" design avoids.

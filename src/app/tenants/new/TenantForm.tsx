@@ -21,6 +21,7 @@ import {
   earliestStepForFields,
 } from "./wizard/steps";
 import { validateTenantValues } from "@/lib/tenantInput";
+import type { GithubRepo } from "@/lib/azureFederation";
 
 const DEFAULTS: Values = {
   cloudProvider: "aws",
@@ -29,12 +30,30 @@ const DEFAULTS: Values = {
   llmProvider: "openai",
 };
 
-export default function TenantForm({ initialDraft }: { initialDraft?: { id: string; step: number; data: Values } }) {
+export default function TenantForm({
+  initialDraft,
+  tenantId,
+  githubRepo,
+  platformAccountId,
+  templateBaseUrl,
+}: {
+  initialDraft?: { id: string; step: number; data: Values };
+  /** Freshly generated; a draft's own saved tenantId takes precedence. */
+  tenantId: string;
+  githubRepo: GithubRepo | null;
+  platformAccountId: string | null;
+  /** Where the customer bootstrap templates are published; null disables the one-click links. */
+  templateBaseUrl: string | null;
+}) {
   const [state, formAction, isPending] = useActionState<FormState, FormData>(
     createTenantAndDeploy,
     null,
   );
-  const [values, setValues] = useState<Values>({ ...DEFAULTS, ...(initialDraft?.data ?? {}) });
+  const [values, setValues] = useState<Values>({
+    ...DEFAULTS,
+    tenantId,
+    ...(initialDraft?.data ?? {}),
+  });
   const [step, setStep] = useState(initialDraft?.step ?? 1);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [draftId, setDraftId] = useState(initialDraft?.id ?? "");
@@ -214,10 +233,24 @@ export default function TenantForm({ initialDraft }: { initialDraft?: { id: stri
 
       <div className="mt-8">
         {activeStep === 1 && <StepPrerequisites values={values} set={set} errors={errors} />}
-        {activeStep === 2 && <StepCloudConfig values={values} set={set} errors={errors} />}
+        {activeStep === 2 && (
+          <StepCloudConfig
+            values={values}
+            set={set}
+            errors={errors}
+            githubRepo={githubRepo}
+            platformAccountId={platformAccountId}
+            templateBaseUrl={templateBaseUrl}
+          />
+        )}
         {activeStep === 3 && <StepAiConfig values={values} set={set} errors={errors} />}
         {activeStep === 4 && (
-          <StepReview values={values} goToStep={goToStep} formError={errors._form} />
+          <StepReview
+            values={values}
+            goToStep={goToStep}
+            formError={errors._form ?? errors.tenantId}
+            githubRepo={githubRepo}
+          />
         )}
         {activeStep === 5 && deployed && (
           <DeployStep

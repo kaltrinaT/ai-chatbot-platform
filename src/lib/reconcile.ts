@@ -2,6 +2,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { deployments, tenants } from "@/db/schema";
 import { fetchDeploymentOutputsArtifact, type RunProgress } from "@/lib/github";
+import { deletedTenantUpdate } from "@/lib/tenantErasure";
+import { acceptDocsSignerUrl } from "@/lib/docsSigner";
 
 /**
  * Statuses a deployment can still move away from. A write guarded on these
@@ -25,7 +27,7 @@ export const ACTIVE_STATUSES = ["pending", "running"] as const;
  * tenants.deletedAt is the destroy equivalent — unlike a URL, it needs no
  * output value from the run, just "now()", so a lost success webhook for a
  * destroy doesn't leave the tenant stuck looking un-deleted after its infra
- * is gone.
+ * is gone, nor its secrets stored (see tenantErasure.ts).
  *
  * Lives here rather than in the progress route because it is not really a
  * property of that endpoint: the same repair has to be runnable from
@@ -61,18 +63,32 @@ export async function reconcileCompletedRun(
   if (updated && status === "succeeded" && updated.kind === "destroy") {
     await db
       .update(tenants)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .set(deletedTenantUpdate())
       .where(eq(tenants.id, updated.tenantId));
   } else if (updated && status === "succeeded" && updated.kind === "deploy") {
     try {
       const outputs = await fetchDeploymentOutputsArtifact(runId);
-      if (outputs?.chatbotUrl || outputs?.albDnsName || outputs?.docsSignerUrl) {
+
+      // The artifact is written by the same workflow as the webhook, so its
+      // docs-signer URL gets the same check before the platform will ever
+      // send a secret to it (see acceptDocsSignerUrl).
+      let docsSignerUrl = outputs?.docsSignerUrl;
+      if (docsSignerUrl) {
+        const [tenant] = await db.select().from(tenants).where(eq(tenants.id, updated.tenantId));
+        const problem = tenant ? acceptDocsSignerUrl(tenant, docsSignerUrl) : "tenant not found";
+        if (problem) {
+          console.warn(`[reconcile] ignoring docsSignerUrl from run ${runId}: ${problem}`);
+          docsSignerUrl = undefined;
+        }
+      }
+
+      if (outputs && (outputs.chatbotUrl || outputs.albDnsName || docsSignerUrl)) {
         await db
           .update(tenants)
           .set({
             ...(outputs.chatbotUrl ? { chatbotUrl: outputs.chatbotUrl } : {}),
             ...(outputs.albDnsName ? { albDnsName: outputs.albDnsName } : {}),
-            ...(outputs.docsSignerUrl ? { docsSignerUrl: outputs.docsSignerUrl } : {}),
+            ...(docsSignerUrl ? { docsSignerUrl } : {}),
             updatedAt: new Date(),
           })
           .where(eq(tenants.id, updated.tenantId));

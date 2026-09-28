@@ -156,8 +156,9 @@ export default function GettingStartedPage() {
                 deployed until you submit it.
               </li>
               <li>
-                The platform assumes a role you create in your own account (AWS) or a service principal you grant
-                access to (Azure) — see the Cloud Prerequisites guide for exactly what to set up.
+                The platform assumes a role you create in your own account (AWS) or signs in to an identity you
+                trust through a federated credential (Azure) — no credential is stored either way. See the Cloud
+                Prerequisites guide for exactly what to set up.
               </li>
               <li>Terraform provisions the chatbot&apos;s infrastructure directly inside your cloud account.</li>
               <li>

@@ -1,0 +1,365 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# ──────────────────────────────────────────────────────────────────────
+# One chatbot's deployment identity, inside the customer's own AWS account.
+#
+# Applied by the CUSTOMER, once per chatbot, from a Quick Create link the
+# onboarding wizard builds (see src/lib/bootstrapLinks.ts). Every parameter
+# arrives prefilled; the customer reviews what will be created and presses
+# Create stack. Nothing here is applied by the platform, and the platform
+# never holds a credential for this account.
+#
+# It replaces the hand-built IAM role in CLIENT-DEPLOYMENT-GUIDE.md, which
+# asked a customer to compose a trust policy in the console — the step that
+# produced the most onboarding failures, because a trust policy that is merely
+# *close* fails with an AccessDenied that says nothing about which part was
+# wrong.
+#
+# The stack is also the revocation and teardown handle: deleting it removes
+# the role, after which every deploy for this chatbot fails to authenticate.
+# The chatbot's Terraform state bucket outlives the stack on purpose (see
+# TerraformStateBucket) and is yours to delete once the chatbot is gone.
+#
+# Hosted as a public object so CloudFormation can fetch it — see
+# infra/platform/bootstrap-templates. Public means readable, not writable, and
+# the template contains no customer data: every value is a parameter.
+# ──────────────────────────────────────────────────────────────────────
+
+Description: >-
+  Deployment identity for one AI chatbot tenant. Creates an IAM role that
+  GitHub Actions assumes through OIDC to run Terraform in this account, and
+  the bucket that keeps that Terraform's state here rather than with the
+  platform. No access key is created, and no credential leaves this account.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Chatbot (prefilled by the platform — do not change)
+        Parameters:
+          - TenantId
+          - TenantSlug
+      - Label:
+          default: Who may deploy this chatbot (prefilled by the platform — do not change)
+        Parameters:
+          - GitHubOwner
+          - GitHubRepo
+          - PlatformAccountId
+      - Label:
+          default: Account setup
+        Parameters:
+          - CreateGitHubOidcProvider
+    ParameterLabels:
+      TenantId:
+        default: Chatbot ID
+      TenantSlug:
+        default: Chatbot short name
+      GitHubOwner:
+        default: GitHub organisation
+      GitHubRepo:
+        default: GitHub repository
+      PlatformAccountId:
+        default: Platform AWS account ID
+      CreateGitHubOidcProvider:
+        default: Register GitHub as an identity provider?
+
+Parameters:
+  TenantId:
+    Type: String
+    Description: >-
+      This chatbot's ID in the platform. It appears twice below: as the GitHub
+      environment only this chatbot's deployments run in, and as the ExternalId
+      the platform must send when it stores this chatbot's API keys in your
+      Secrets Manager. It is not a secret.
+    AllowedPattern: "^[0-9a-fA-F-]{36}$"
+    ConstraintDescription: must be the chatbot UUID shown in the platform's onboarding form.
+
+  # The same rule the platform's onboarding form applies to an AWS tenant's
+  # slug (src/lib/tenantInput.ts). It used to stop at 18 characters and allow
+  # a trailing hyphen, so a slug the form accepted could fail here.
+  TenantSlug:
+    Type: String
+    Description: The chatbot's short name, used to name the role and the state bucket.
+    AllowedPattern: "^[a-z0-9][a-z0-9-]{1,19}[a-z0-9]$"
+    ConstraintDescription: 3-21 characters, lowercase letters, digits and hyphens, not starting or ending with a hyphen.
+
+  GitHubOwner:
+    Type: String
+    Description: The GitHub organisation the platform's deployment workflows run in.
+    AllowedPattern: "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$"
+
+  GitHubRepo:
+    Type: String
+    Description: The repository those workflows live in.
+    AllowedPattern: "^[A-Za-z0-9._-]{1,100}$"
+
+  PlatformAccountId:
+    Type: String
+    Description: >-
+      The platform's own AWS account. It is trusted for one thing only: writing
+      this chatbot's API keys into your Secrets Manager during onboarding, and
+      only when it sends this chatbot's ExternalId.
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: must be a 12-digit AWS account ID.
+
+  CreateGitHubOidcProvider:
+    Type: String
+    Description: >-
+      An AWS account can register GitHub as an identity provider only once. Choose
+      No if you already have one (for example because you set up another chatbot,
+      or use GitHub Actions elsewhere in this account) — the stack will reuse it.
+    AllowedValues: ["Yes", "No"]
+    Default: "Yes"
+
+Conditions:
+  RegisterProvider: !Equals [!Ref CreateGitHubOidcProvider, "Yes"]
+
+Resources:
+  # Account-wide, not per chatbot: one provider serves every chatbot you host
+  # here. Creating a second one for the same issuer fails, which is what the
+  # CreateGitHubOidcProvider parameter is for.
+  #
+  # No ThumbprintList: AWS validates GitHub's OIDC endpoint against its own
+  # trusted certificate authorities, so the hard-coded fingerprints older
+  # guides carry — and the outages when GitHub rotated them — are unnecessary.
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: RegisterProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  DeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      # The platform's own IAM policy permits assuming only roles matching
+      # chatbot-client-deploy-*, so this prefix is load-bearing rather than
+      # cosmetic. See SECURITY.md.
+      RoleName: !Sub "chatbot-client-deploy-${TenantSlug}"
+      Description: !Sub >-
+        Deploys the '${TenantSlug}' AI chatbot into this account. Assumed by
+        GitHub Actions through OIDC; holds no credentials of its own.
+      # Caps every session this role can issue. The deploy and teardown
+      # workflows request exactly this, and both are bounded by job timeouts
+      # that expire first.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ── Deploys, teardowns and connection checks ──
+          # GitHub signs a token describing the workflow run. AWS validates it
+          # against the provider above and compares the subject below. The
+          # environment segment is what makes the subject specific to THIS
+          # chatbot: a run for any other chatbot carries a different
+          # environment and is refused here, by AWS, rather than by a check
+          # inside the platform's application.
+          #
+          # StringEquals, never StringLike: a wildcard anywhere in this subject
+          # would let any other chatbot's deployment assume this role.
+          - Sid: GitHubActionsDeploy
+            Effect: Allow
+            Principal:
+              Federated: !If
+                - RegisterProvider
+                - !Ref GitHubOidcProvider
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:environment:tenant-${TenantId}"
+
+          # ── Onboarding only ──
+          # The platform writes this chatbot's LLM key, vector-database key and
+          # document-signing secret straight into your Secrets Manager, before
+          # any workflow exists. That is what keeps those values out of GitHub
+          # Actions entirely — only the resulting ARNs are ever sent to a
+          # workflow. The platform makes that call itself, so it needs to be
+          # trusted for it.
+          #
+          # The ExternalId is what stops that trust covering anything else.
+          # Without it this statement would trust every request the platform
+          # makes, for any customer: someone who knew this role's ARN — which
+          # is not secret — could have the platform write into your account on
+          # their behalf. The condition binds it to this one chatbot.
+          - Sid: PlatformOnboarding
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${PlatformAccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref TenantId
+
+      Policies:
+        - PolicyName: chatbot-terraform-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Terraform reconciles state by reading back many attributes of
+              # every resource it manages — tags, policy, ACL, versioning — and
+              # each read needs its own IAM action. A hand-picked list fails
+              # one missing permission at a time, across deploys, as different
+              # attributes come to be read. These grants are per service and
+              # scoped to this account; the narrowing that matters is IAM
+              # below, which is the only one that could escalate.
+              - Sid: Networking
+                Effect: Allow
+                Action: "ec2:*"
+                Resource: "*"
+              - Sid: LoadBalancer
+                Effect: Allow
+                Action: "elasticloadbalancing:*"
+                Resource: "*"
+              - Sid: Compute
+                Effect: Allow
+                Action: "ecs:*"
+                Resource: "*"
+              - Sid: Images
+                Effect: Allow
+                Action: "ecr:*"
+                Resource: "*"
+              - Sid: Storage
+                Effect: Allow
+                Action: "s3:*"
+                Resource: "*"
+              - Sid: Functions
+                Effect: Allow
+                Action: "lambda:*"
+                Resource: "*"
+              - Sid: Secrets
+                Effect: Allow
+                Action: "secretsmanager:*"
+                Resource: "*"
+              - Sid: Logs
+                Effect: Allow
+                Action: "logs:*"
+                Resource: "*"
+              - Sid: Database
+                Effect: Allow
+                Action: "rds:*"
+                Resource: "*"
+              - Sid: Cdn
+                Effect: Allow
+                Action: "cloudfront:*"
+                Resource: "*"
+              # The task and Lambda execution roles Terraform creates for the
+              # chatbot's own runtime. Narrower than the services above on
+              # purpose: this is the only grant that could be used to widen
+              # the role's own reach, so it lists actions rather than iam:*,
+              # and it cannot touch users, groups or policies.
+              - Sid: IamForTaskRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListInstanceProfilesForRole
+                  - iam:TagRole
+                  - iam:PassRole
+                  - iam:CreateServiceLinkedRole
+                Resource: "*"
+
+  # Where this chatbot's Terraform state lives: in your account, next to the
+  # infrastructure it describes, rather than in the platform's. State records
+  # every value Terraform manages, including the vector database password, so
+  # it belongs inside the same boundary as the secrets themselves.
+  #
+  # The name sits in your account-regional namespace (the "-an" suffix): only
+  # this AWS account can ever create a bucket with this name. A predictable
+  # name in the shared global namespace could be registered first by someone
+  # else — account IDs are not secret — and the deploy workflow would then
+  # write this chatbot's state into their bucket. That is the published
+  # "Bucket Monopoly" attack on names derived from an account ID and region.
+  #
+  # Retained when the stack is deleted, for two reasons. Deleting the stack is
+  # how access is revoked, and CloudFormation cannot delete a bucket that still
+  # holds objects, so a deletable bucket would make revocation fail halfway.
+  # And the state is what lets the chatbot's infrastructure be torn down
+  # cleanly later, if access is granted again. Delete the bucket yourself once
+  # the chatbot's infrastructure is gone.
+  TerraformStateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "tfstate-${TenantSlug}-${AWS::AccountId}-${AWS::Region}-an"
+      BucketNamespace: account-regional
+      # Every state write keeps the previous version, which is what makes a
+      # corrupted or mistaken state recoverable. Superseded versions still
+      # hold old secrets, so they expire after 30 days, together with the
+      # delete markers each state lock leaves behind.
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-superseded-state
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+            ExpiredObjectDeleteMarker: true
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: chatbot:tenant
+          Value: !Ref TenantSlug
+
+  TerraformStateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TerraformStateBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt TerraformStateBucket.Arn
+              - !Sub "${TerraformStateBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  DeploymentRoleArn:
+    Description: >-
+      Paste this back into the platform's onboarding form. It identifies the
+      role but is not a credential — it grants nothing on its own.
+    Value: !GetAtt DeploymentRole.Arn
+
+  AccountId:
+    Description: This AWS account's ID, which the onboarding form also asks for.
+    Value: !Ref AWS::AccountId
+
+  DeployEnvironment:
+    Description: >-
+      The only GitHub environment whose workflow runs this role will accept.
+    Value: !Sub "tenant-${TenantId}"
+
+  TerraformStateBucket:
+    Description: >-
+      Where this chatbot's Terraform state is kept. The platform derives the
+      same name, so there is nothing to copy back.
+    Value: !Ref TerraformStateBucket

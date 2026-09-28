@@ -21,7 +21,11 @@ describe("stepForField", () => {
   });
 
   it("finds the step that owns an Azure-only step-2 field", () => {
-    expect(stepForField("azureClientSecret")).toBe(2);
+    expect(stepForField("azureClientId")).toBe(2);
+  });
+
+  it("reports a lost tenant ID on Review, where the only remedy (reload) is offered", () => {
+    expect(stepForField("tenantId")).toBe(4);
   });
 
   it("finds the step that owns a step-3 field", () => {

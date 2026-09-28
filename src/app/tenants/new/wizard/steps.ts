@@ -35,7 +35,6 @@ export const FIELDS_BY_STEP: Record<number, readonly string[]> = {
     "azureSubscriptionId",
     "azureTenantId",
     "azureClientId",
-    "azureClientSecret",
     "azureRegion",
   ],
   3: [
@@ -50,7 +49,11 @@ export const FIELDS_BY_STEP: Record<number, readonly string[]> = {
   // the customer's cloud, or dispatching the deploy. Owned by the review step
   // so earliestStepForFields leaves the user on Review, where they pressed the
   // button, instead of bouncing them to step 1 with nothing to correct.
-  4: ["_form"],
+  //
+  // "tenantId" is not typed either: the platform generates it when the wizard
+  // opens. If it is ever missing the only remedy is a reload, so it too is
+  // reported on Review rather than on a step with no field to correct.
+  4: ["_form", "tenantId"],
 };
 
 /** Fields that must be non-empty before Continue will advance past a step. */
@@ -68,7 +71,6 @@ export const REQUIRED_BY_CLOUD: Record<"aws" | "azure", readonly string[]> = {
     "azureSubscriptionId",
     "azureTenantId",
     "azureClientId",
-    "azureClientSecret",
     "azureRegion",
   ],
 };

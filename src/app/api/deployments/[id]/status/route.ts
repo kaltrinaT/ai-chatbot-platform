@@ -3,10 +3,15 @@ import { z } from "zod";
 import { timingSafeEqual } from "crypto";
 import { db } from "@/db";
 import { deployments, tenants } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { deletedTenantUpdate } from "@/lib/tenantErasure";
+import { acceptDocsSignerUrl } from "@/lib/docsSigner";
+import { ACTIVE_STATUSES } from "@/lib/reconcile";
 
 const StatusUpdate = z.object({
-  status: z.enum(["pending", "running", "succeeded", "failed", "cancelled"]),
+  // No "pending": that is the state the platform creates a deployment in, and
+  // nothing a run reports should ever move one back to it.
+  status: z.enum(["running", "succeeded", "failed", "cancelled"]),
   githubRunId: z.string().optional(),
   githubRunUrl: z.string().url().optional(),
   errorMessage: z.string().optional(),
@@ -32,6 +37,25 @@ function authorized(req: Request): boolean {
   return timingSafeEqual(a, b);
 }
 
+function isActive(status: string): boolean {
+  return (ACTIVE_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * One shared secret authenticates every run's callbacks, so what a callback
+ * may change is limited here rather than trusted:
+ *
+ * - A deployment only moves forward. Once it has finished, no callback can
+ *   reopen or rewrite it — the same guard reconcile.ts applies, so a late or
+ *   retried callback and a reconcile cannot overwrite each other either.
+ * - A docs-signer URL must be this tenant's (see acceptDocsSignerUrl). The
+ *   platform sends the tenant's docs-signer secret to that URL, so accepting
+ *   any value would let whoever holds the webhook secret collect every
+ *   tenant's docs-signer secret.
+ *
+ * Both are checked before anything is written, and a refusal says why, which
+ * the workflow prints in its run log.
+ */
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -47,6 +71,30 @@ export async function POST(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  const [row] = await db
+    .select({ deployment: deployments, tenant: tenants })
+    .from(deployments)
+    .innerJoin(tenants, eq(deployments.tenantId, tenants.id))
+    .where(eq(deployments.id, id));
+  if (!row) {
+    return NextResponse.json({ error: "deployment not found" }, { status: 404 });
+  }
+  const { deployment, tenant } = row;
+
+  if (!isActive(deployment.status)) {
+    return NextResponse.json(
+      { error: `deployment already ${deployment.status}; a finished deployment cannot be changed` },
+      { status: 409 },
+    );
+  }
+
+  if (parsed.data.docsSignerUrl) {
+    const problem = acceptDocsSignerUrl(tenant, parsed.data.docsSignerUrl);
+    if (problem) {
+      return NextResponse.json({ error: `docsSignerUrl refused: ${problem}` }, { status: 400 });
+    }
+  }
+
   const isTerminal = ["succeeded", "failed", "cancelled"].includes(parsed.data.status);
 
   const [updated] = await db
@@ -58,17 +106,22 @@ export async function POST(
       errorMessage: parsed.data.errorMessage,
       ...(isTerminal ? { finishedAt: new Date() } : {}),
     })
-    .where(eq(deployments.id, id))
+    .where(and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES])))
     .returning();
 
+  // Finished between the read above and this write — by a reconcile, or a
+  // concurrent callback. Whichever landed first stands.
   if (!updated) {
-    return NextResponse.json({ error: "deployment not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "deployment finished concurrently; this update was not applied" },
+      { status: 409 },
+    );
   }
 
   if (parsed.data.status === "succeeded" && updated.kind === "destroy") {
     await db
       .update(tenants)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .set(deletedTenantUpdate())
       .where(eq(tenants.id, updated.tenantId));
   } else if (
     parsed.data.status === "succeeded" &&

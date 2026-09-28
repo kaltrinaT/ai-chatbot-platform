@@ -223,9 +223,16 @@ describe("GET /api/deployments/[id]/progress", () => {
 
       // Two db.update() calls: the deployments row, then the tenants row.
       expect(dbUpdate).toHaveBeenCalledTimes(2);
+      // A lost destroy webhook must not leave the secrets behind either.
       expect(dbUpdateSet).toHaveBeenNthCalledWith(
         2,
-        expect.objectContaining({ deletedAt: expect.any(Date) }),
+        expect.objectContaining({
+          deletedAt: expect.any(Date),
+          llmApiKeyEncrypted: null,
+          pineconeApiKeyEncrypted: null,
+          docsSignerSecretEncrypted: null,
+          docsSignerUrl: null,
+        }),
       );
       // Outputs recovery is a "deploy"-only concern — a destroy has nothing
       // to recover.
@@ -289,6 +296,61 @@ describe("GET /api/deployments/[id]/progress", () => {
           albDnsName: "alb.example.com",
         }),
       );
+    });
+
+    // The artifact comes from the same workflow as the webhook, so its
+    // docs-signer URL is held to the same check: the platform sends a secret
+    // to whatever ends up stored there.
+    describe("docsSignerUrl recovered from the artifact", () => {
+      const tenantRow = {
+        id: "tenant-1",
+        slug: "acme",
+        cloudProvider: "aws",
+        awsRegion: "us-east-1",
+        docsSignerUrl: null,
+      };
+
+      function reconcilingADeploy() {
+        dbOwnershipWhere.mockResolvedValue([
+          { deployment: deploymentRow({ kind: "deploy", status: "running", githubRunId: "123" }) },
+        ]);
+        fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "completed", runConclusion: "success" }));
+        dbUpdateReturning.mockResolvedValue([
+          deploymentRow({ kind: "deploy", tenantId: "tenant-1", status: "succeeded" }),
+        ]);
+        // First the tenant lookup inside reconcile, then the route's reload.
+        dbReloadWhere
+          .mockResolvedValueOnce([tenantRow])
+          .mockResolvedValueOnce([deploymentRow({ kind: "deploy", status: "succeeded" })]);
+      }
+
+      it("stores the tenant's own signer", async () => {
+        reconcilingADeploy();
+        fetchDeploymentOutputsArtifact.mockResolvedValue({
+          docsSignerUrl: "https://abc123.lambda-url.us-east-1.on.aws/",
+        });
+
+        await callRoute();
+
+        expect(dbUpdateSet).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({ docsSignerUrl: "https://abc123.lambda-url.us-east-1.on.aws/" }),
+        );
+      });
+
+      it("drops a foreign one but still recovers the rest", async () => {
+        reconcilingADeploy();
+        fetchDeploymentOutputsArtifact.mockResolvedValue({
+          chatbotUrl: "https://chat.example.com",
+          docsSignerUrl: "https://attacker.example/collect",
+        });
+
+        await callRoute();
+
+        const tenantUpdate = dbUpdateSet.mock.calls[1][0];
+        expect(tenantUpdate).toMatchObject({ chatbotUrl: "https://chat.example.com" });
+        expect(tenantUpdate).not.toHaveProperty("docsSignerUrl");
+      });
     });
 
     it("still reports the deployment succeeded when the outputs artifact fetch throws", async () => {

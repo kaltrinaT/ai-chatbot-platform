@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Check, Info } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Check, Copy, Info } from "lucide-react";
 
 /**
  * Presentational primitives for the onboarding wizard.
@@ -16,6 +16,45 @@ import { Check, Info } from "lucide-react";
  * cannot focus a control that isn't currently rendered, so gating is done by
  * the wizard's own per-step check and, authoritatively, by zod on the server.
  */
+
+/**
+ * A value the operator has to get into their cloud console verbatim — a trust
+ * policy, a federated subject, a template parameter. Selectable as well as
+ * copyable, because clipboard access can be refused and a value that can only
+ * be copied by a button would then be unreachable.
+ */
+export function CopyableValue({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div>
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</dt>
+      <dd className="mt-0.5 flex items-start gap-2">
+        <code className="min-w-0 flex-1 select-all whitespace-pre-wrap break-all rounded bg-white px-2 py-1 font-mono text-[11px] text-gray-900">
+          {value}
+        </code>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard
+              .writeText(value)
+              .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              })
+              .catch(() => {
+                // Clipboard access can be refused; the value stays selectable.
+              });
+          }}
+          aria-label={`Copy ${label.toLowerCase()}`}
+          className="shrink-0 rounded border bg-white p-1 text-gray-500 hover:text-gray-900"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+      </dd>
+    </div>
+  );
+}
 
 export function InfoTip({ text }: { text: string }) {
   return (
@@ -163,10 +202,9 @@ export function Field({
         maxLength={maxLength}
         // "off" is ignored by Chrome on password inputs — it deliberately
         // overrides it for password managers. "new-password" is the value
-        // that actually suppresses autofill, which matters here because the
-        // first password field in the wizard is the Azure client secret: a
-        // saved LLM key would otherwise be filled in silently and only fail
-        // at `azure/login`, minutes into a deploy.
+        // that actually suppresses autofill, which matters here because a
+        // saved key filled into the wrong box silently would only fail
+        // minutes into a deploy.
         autoComplete={type === "password" ? "new-password" : undefined}
         className={`${inputBase} ${error ? "border-red-400" : ""}`}
       />

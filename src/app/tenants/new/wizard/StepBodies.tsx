@@ -13,6 +13,14 @@ import {
 } from "lucide-react";
 import { CloudLogo, LlmLogo, VectorStoreLogo, llmProviderLabel } from "@/app/(dashboard)/_components/ProviderLogo";
 import { estimateMonthlyCost } from "@/lib/pricing";
+import { azureFederatedSubject, type GithubRepo } from "@/lib/azureFederation";
+import { awsExternalId, awsFederatedSubject } from "@/lib/awsTrust";
+import {
+  AwsBootstrapPanel,
+  AzureBootstrapPanel,
+  ConnectionCheckPanel,
+  type BootstrapContext,
+} from "./BootstrapPanel";
 import {
   Card,
   CheckItem,
@@ -48,7 +56,7 @@ const PREREQS = {
     ["Role ARN", "The Amazon Resource Name (ARN) of that deployment role."],
     [
       "Required trust relationship",
-      "The role's trust policy must allow this platform's AWS account to assume it. Do not add an sts:ExternalId condition — the platform's AssumeRole call does not send one.",
+      "The role's trust policy must allow this platform's AWS account to assume it, with an sts:ExternalId condition naming this chatbot. The next step shows the exact policy, with the value filled in.",
     ],
     ["LLM API key", "API key for the chosen LLM provider (OpenAI, Anthropic or OpenRouter)."],
     ["Pinecone API key (if selected)", "Only needed when Pinecone is the vector store."],
@@ -57,10 +65,17 @@ const PREREQS = {
     ["Azure subscription ID", "The subscription where resources will be deployed."],
     ["Tenant ID", "Your Microsoft Entra ID (Azure AD) tenant identifier."],
     ["Deployment region", "The Azure region where the chatbot will be deployed (e.g. westeurope)."],
-    ["Service principal / client credentials", "An Entra ID application with client ID and client secret."],
+    [
+      "Deployment identity",
+      "An Entra ID app registration or a user-assigned managed identity. Only its client ID is needed — no client secret is created or shared.",
+    ],
     [
       "Required permissions",
-      "The service principal needs Contributor at subscription scope — Terraform creates the resource group itself.",
+      "Contributor and User Access Administrator at subscription scope — Terraform creates the resource group and the chatbot's narrow role assignments itself.",
+    ],
+    [
+      "Federated credential",
+      "Added to that identity during the next step, from values the wizard shows. It lets this chatbot's deployments sign in, and nothing else.",
     ],
     ["LLM API key", "API key for the chosen LLM provider (OpenAI, Anthropic or OpenRouter)."],
     ["Pinecone API key (if selected)", "Only needed when Pinecone is the vector store."],
@@ -175,9 +190,17 @@ export function StepPrerequisites({ values, set }: StepProps) {
 
 // ── Step 2 ────────────────────────────────────────────────────────────────
 
-export function StepCloudConfig({ values, set, errors }: StepProps) {
+export function StepCloudConfig({
+  values,
+  set,
+  errors,
+  githubRepo,
+  platformAccountId,
+  templateBaseUrl,
+}: StepProps & BootstrapContext) {
   const cloud = (values.cloudProvider ?? "aws") as "aws" | "azure";
   const azure = cloud === "azure";
+  const bootstrap = { githubRepo, platformAccountId, templateBaseUrl };
 
   return (
     <div className="space-y-6">
@@ -243,7 +266,7 @@ export function StepCloudConfig({ values, set, errors }: StepProps) {
                   ? [
                       "Deploy into your client's Azure subscription",
                       "Container Apps, Blob Storage and Key Vault",
-                      "Service-principal access scoped to one subscription",
+                      "Federated identity — no stored credential",
                     ]
                   : [
                       "Deploy into your client's AWS account",
@@ -319,27 +342,25 @@ export function StepCloudConfig({ values, set, errors }: StepProps) {
               tooltip="List them with: az account list-locations -o table"
             />
             <Field
-              label="Service Principal Client ID"
+              label="Deployment Identity Client ID"
               required
               value={values.azureClientId ?? ""}
               onChange={(v) => set("azureClientId", v)}
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              hint="Application (client) ID with Contributor access."
+              hint="App registration or managed identity with Contributor access."
               error={errors.azureClientId}
-              tooltip="Azure Portal → App registrations → the deploy app → Application (client) ID."
-            />
-            <Field
-              label="Service Principal Client Secret"
-              required
-              type="password"
-              value={values.azureClientSecret ?? ""}
-              onChange={(v) => set("azureClientSecret", v)}
-              placeholder="your-client-secret"
-              hint="Encrypted at rest in the platform database."
-              error={errors.azureClientSecret}
-              tooltip="App registrations → Certificates & secrets → New client secret. Copy the Value column immediately — Azure shows it once."
+              tooltip="App registration: Azure Portal → App registrations → the deploy app → Application (client) ID. Managed identity: Managed Identities → the identity → Client ID."
             />
           </div>
+          <AzureBootstrapPanel
+            {...bootstrap}
+            tenantId={values.tenantId ?? ""}
+            tenantSlug={values.slug ?? ""}
+            clientId={values.azureClientId ?? ""}
+            azureRegion={values.azureRegion ?? ""}
+            subscriptionId={values.azureSubscriptionId ?? ""}
+          />
+          <ConnectionCheckPanel getValues={() => values} />
           <DocsNote />
         </Card>
       ) : (
@@ -405,6 +426,14 @@ export function StepCloudConfig({ values, set, errors }: StepProps) {
               tooltip="Request a certificate in AWS Certificate Manager for the custom domain, in this same region, and validate it via DNS. Paste the ARN here to serve the chatbot over HTTPS; port 80 then redirects."
             />
           </div>
+          <AwsBootstrapPanel
+            {...bootstrap}
+            tenantId={values.tenantId ?? ""}
+            tenantSlug={values.slug ?? ""}
+            awsAccountId={values.awsAccountId ?? ""}
+            awsRegion={values.awsRegion ?? ""}
+          />
+          <ConnectionCheckPanel getValues={() => values} />
           <DocsNote />
         </Card>
       )}
@@ -566,9 +595,11 @@ export function StepReview({
   values,
   goToStep,
   formError,
+  githubRepo,
 }: {
   values: Values;
   goToStep: (n: number) => void;
+  githubRepo: GithubRepo | null;
   /**
    * A failure that belongs to the whole submission rather than one field:
    * provisioning into the customer's cloud, or dispatching the deploy.
@@ -683,8 +714,17 @@ export function StepReview({
                   </SummaryRow>
                   <SummaryRow label="Tenant ID">{values.azureTenantId || <Missing />}</SummaryRow>
                   <SummaryRow label="Region">{values.azureRegion || <Missing />}</SummaryRow>
-                  <SummaryRow label="Service Principal">
+                  <SummaryRow label="Deployment Identity">
                     {values.azureClientId || <Missing />}
+                  </SummaryRow>
+                  <SummaryRow label="Federated Subject">
+                    <span className="break-all font-mono text-xs">
+                      {githubRepo ? azureFederatedSubject(githubRepo, values.tenantId ?? "") : <Missing />}
+                    </span>
+                    <span className="mt-1 block text-xs text-gray-500">
+                      The deployment signs in only if the identity already has a federated credential
+                      with this subject. Without one it stops before creating anything.
+                    </span>
                   </SummaryRow>
                 </>
               ) : (
@@ -694,6 +734,25 @@ export function StepReview({
                   <SummaryRow label="IAM Role ARN">
                     <span className="break-all font-mono text-xs">
                       {values.deploymentRoleArn || <Missing />}
+                    </span>
+                  </SummaryRow>
+                  <SummaryRow label="Federated Subject">
+                    <span className="break-all font-mono text-xs">
+                      {githubRepo ? awsFederatedSubject(githubRepo, values.tenantId ?? "") : <Missing />}
+                    </span>
+                    <span className="mt-1 block text-xs text-gray-500">
+                      The deployment assumes the role only if its trust policy admits this subject.
+                      Without it the deployment stops before creating anything.
+                    </span>
+                  </SummaryRow>
+                  <SummaryRow label="External ID">
+                    <span className="break-all font-mono text-xs">
+                      {awsExternalId(values.tenantId ?? "") || <Missing />}
+                    </span>
+                    <span className="mt-1 block text-xs text-gray-500">
+                      Used once, by the platform itself, to store this chatbot&apos;s API keys in
+                      the customer&apos;s Secrets Manager. Without the matching condition on the
+                      role, onboarding cannot write them.
                     </span>
                   </SummaryRow>
                   {values.s3DocsPrefix && (
@@ -732,6 +791,11 @@ export function StepReview({
               <CheckItem title="Only deployment metadata is stored">
                 Configuration and deployment status live in the control plane; document contents never
                 do.
+              </CheckItem>
+              <CheckItem title="No stored cloud credentials">
+                {azure
+                  ? "The platform holds no Azure secret. Each deployment signs in with a short-lived token that the customer's federated credential accepts for this chatbot only."
+                  : "The platform holds no AWS key. Each deployment assumes the customer's role for at most an hour, and every call is recorded in their CloudTrail."}
               </CheckItem>
               <CheckItem title="Runtime secrets injected via the client secret store">
                 API keys are written into the customer&apos;s own{" "}

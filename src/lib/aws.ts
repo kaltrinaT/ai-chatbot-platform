@@ -117,10 +117,21 @@ function platformCredentials(region: string): PlatformCredentialProvider | undef
   };
 }
 
+/**
+ * Assume a customer's deployment role.
+ *
+ * `externalId` is what makes the role's trust specific to one tenant rather
+ * than to the platform as a whole — see awsTrust.ts for why that matters. It is
+ * always sent. A customer whose trust policy has no `sts:ExternalId` condition
+ * is unaffected, since IAM ignores a condition key the policy does not test,
+ * which is what lets tenants onboarded before this was added keep deploying
+ * until they add the condition.
+ */
 export async function assumeTenantRole(opts: {
   roleArn: string;
   sessionName: string;
   region: string;
+  externalId?: string;
 }): Promise<AssumedCredentials> {
   const sts = new STSClient({
     region: opts.region,
@@ -138,6 +149,7 @@ export async function assumeTenantRole(opts: {
       RoleArn: opts.roleArn,
       RoleSessionName: opts.sessionName,
       DurationSeconds: 900,
+      ...(opts.externalId ? { ExternalId: opts.externalId } : {}),
     }),
   );
 
@@ -211,12 +223,14 @@ export async function ensureDocsSignerSecret(opts: {
   region: string;
   slug: string;
   sessionName: string;
+  externalId?: string;
 }): Promise<{ docsSignerSecretArn: string; docsSignerSecretEncrypted: string }> {
   const secretValue = randomBytes(32).toString("hex");
   const creds = await assumeTenantRole({
     roleArn: opts.roleArn,
     sessionName: opts.sessionName,
     region: opts.region,
+    externalId: opts.externalId,
   });
   const docsSignerSecretArn = await writeTenantSecret({
     credentials: creds,

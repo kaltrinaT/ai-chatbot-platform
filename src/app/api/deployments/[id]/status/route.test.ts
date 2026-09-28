@@ -1,21 +1,41 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { updateSetWhereChain, thenableWithReturning } from "@/test/db-chains";
+import { selectJoinChain, updateSetWhereChain, thenableWithReturning } from "@/test/db-chains";
 
-// Only the leaf `returning` mock needs to be shared with the test bodies, so
-// only it goes through vi.hoisted. `db.update` itself is built fresh inside
-// the vi.mock factory (mirroring deploy.test.ts) — that's the only point
-// guaranteed to run after this file's own `@/test/db-chains` import has
-// resolved, since vi.hoisted() callbacks run before any of this file's
-// imports do.
-const { dbUpdateReturning } = vi.hoisted(() => ({ dbUpdateReturning: vi.fn() }));
+// Only the leaf mocks need to be shared with the test bodies, so only they go
+// through vi.hoisted. `db.update` itself is built fresh inside the vi.mock
+// factory (mirroring deploy.test.ts) — that's the only point guaranteed to run
+// after this file's own `@/test/db-chains` import has resolved, since
+// vi.hoisted() callbacks run before any of this file's imports do.
+const { dbUpdateReturning, dbSelectWhere } = vi.hoisted(() => ({
+  dbUpdateReturning: vi.fn(),
+  dbSelectWhere: vi.fn(),
+}));
 
 vi.mock("@/db", () => ({
   db: {
+    select: vi.fn(() => selectJoinChain(dbSelectWhere)),
     update: vi.fn(() =>
       updateSetWhereChain(vi.fn(() => thenableWithReturning(dbUpdateReturning))),
     ),
   },
 }));
+
+const awsTenant = {
+  id: "tenant-1",
+  slug: "acme",
+  cloudProvider: "aws",
+  awsRegion: "us-east-1",
+  docsSignerUrl: null as string | null,
+};
+const azureTenant = { ...awsTenant, cloudProvider: "azure", awsRegion: null };
+const runningDeployment = { id: "dep-1", tenantId: "tenant-1", kind: "deploy", status: "running" };
+
+function lookupReturns(
+  deployment: Record<string, unknown> = runningDeployment,
+  tenant: Record<string, unknown> = awsTenant,
+) {
+  dbSelectWhere.mockResolvedValue([{ deployment, tenant }]);
+}
 
 import { db } from "@/db";
 import { deployments, tenants } from "@/db/schema";
@@ -47,6 +67,7 @@ describe("POST /api/deployments/[id]/status", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.DEPLOY_WEBHOOK_SECRET = SECRET;
+    lookupReturns();
     dbUpdateReturning.mockResolvedValue([{ id: "dep-1", tenantId: "tenant-1" }]);
   });
 
@@ -104,11 +125,12 @@ describe("POST /api/deployments/[id]/status", () => {
 
   describe("deployment update", () => {
     it("returns 404 when the deployment row does not exist", async () => {
-      dbUpdateReturning.mockResolvedValue([]);
+      dbSelectWhere.mockResolvedValue([]);
 
       const res = await callRoute({ body: { status: "running" } });
 
       expect(res.status).toBe(404);
+      expect(db.update).not.toHaveBeenCalled();
     });
 
     it("does not set finishedAt for a non-terminal status", async () => {
@@ -133,6 +155,120 @@ describe("POST /api/deployments/[id]/status", () => {
     it("targets the deployments table for the first update", async () => {
       await callRoute({ body: { status: "running" } });
       expect(db.update.mock.calls[0][0]).toBe(deployments);
+    });
+  });
+
+  // A deployment only moves forward. A late or retried callback must not
+  // reopen or rewrite one that has finished.
+  describe("status transitions", () => {
+    it.each(["succeeded", "failed", "cancelled"])(
+      "refuses any update to a deployment that is already %s",
+      async (finished) => {
+        lookupReturns({ ...runningDeployment, status: finished });
+
+        const res = await callRoute({ body: { status: "running" } });
+
+        expect(res.status).toBe(409);
+        expect(db.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it("never lets a run move a deployment back to pending", async () => {
+      const res = await callRoute({ body: { status: "pending" } });
+
+      expect(res.status).toBe(400);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("accepts running → succeeded", async () => {
+      const res = await callRoute({ body: { status: "succeeded" } });
+      expect(res.status).toBe(200);
+    });
+
+    it("accepts a pending deployment's first callback", async () => {
+      lookupReturns({ ...runningDeployment, status: "pending" });
+      const res = await callRoute({ body: { status: "running" } });
+      expect(res.status).toBe(200);
+    });
+
+    // The guarded write matched nothing: a reconcile or another callback
+    // finished the deployment after it was read.
+    it("reports a concurrent finish instead of overwriting it", async () => {
+      dbUpdateReturning.mockResolvedValue([]);
+
+      const res = await callRoute({ body: { status: "failed" } });
+
+      expect(res.status).toBe(409);
+      expect(db.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // The platform sends the tenant's docs-signer secret to this URL, so an
+  // unchecked value would hand the secret to whoever chose it.
+  describe("docsSignerUrl", () => {
+    it.each([
+      ["another host", "https://attacker.example/collect"],
+      ["another region", "https://abc123.lambda-url.eu-west-1.on.aws/"],
+      ["plain http", "http://abc123.lambda-url.us-east-1.on.aws/"],
+      ["a lookalike suffix", "https://abc123.lambda-url.us-east-1.on.aws.attacker.example/"],
+      ["a query string", "https://abc123.lambda-url.us-east-1.on.aws/?x=1"],
+    ])("refuses %s for an AWS tenant, before writing anything", async (_label, url) => {
+      const res = await callRoute({ body: { status: "succeeded", docsSignerUrl: url } });
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/docsSignerUrl refused/);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("accepts exactly the Azure Function this tenant's Terraform names", async () => {
+      lookupReturns(runningDeployment, azureTenant);
+
+      const res = await callRoute({
+        body: {
+          status: "succeeded",
+          docsSignerUrl: "https://chatbot-acme-docs-signer.azurewebsites.net/api/docs-signer",
+        },
+      });
+
+      expect(res.status).toBe(200);
+    });
+
+    it("refuses another tenant's Azure Function", async () => {
+      lookupReturns(runningDeployment, azureTenant);
+
+      const res = await callRoute({
+        body: {
+          status: "succeeded",
+          docsSignerUrl: "https://chatbot-other-docs-signer.azurewebsites.net/api/docs-signer",
+        },
+      });
+
+      expect(res.status).toBe(400);
+    });
+
+    // On AWS the shape cannot tell the tenant's Lambda from anyone else's in
+    // the same region, so the first URL recorded is pinned.
+    it("refuses to replace a docs-signer URL already on record", async () => {
+      lookupReturns(runningDeployment, {
+        ...awsTenant,
+        docsSignerUrl: "https://original.lambda-url.us-east-1.on.aws/",
+      });
+
+      const res = await callRoute({
+        body: { status: "succeeded", docsSignerUrl: "https://attackers.lambda-url.us-east-1.on.aws/" },
+      });
+
+      expect(res.status).toBe(400);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("accepts the same URL again on a redeploy", async () => {
+      const url = "https://original.lambda-url.us-east-1.on.aws/";
+      lookupReturns(runningDeployment, { ...awsTenant, docsSignerUrl: url });
+
+      const res = await callRoute({ body: { status: "succeeded", docsSignerUrl: url } });
+
+      expect(res.status).toBe(200);
     });
   });
 
@@ -201,6 +337,32 @@ describe("POST /api/deployments/[id]/status", () => {
       expect(setArgsForUpdateCall(1)).not.toHaveProperty("chatbotUrl");
     });
 
+    // Nothing can use them once the infrastructure is gone, so keeping them
+    // would only be risk (see tenantErasure.ts).
+    it("erases the tenant's stored secrets when a destroy succeeds", async () => {
+      dbUpdateReturning.mockResolvedValue([{ id: "dep-1", tenantId: "tenant-1", kind: "destroy" }]);
+
+      await callRoute({ body: { status: "succeeded" } });
+
+      expect(setArgsForUpdateCall(1)).toMatchObject({
+        llmApiKeyEncrypted: null,
+        pineconeApiKeyEncrypted: null,
+        docsSignerSecretEncrypted: null,
+        docsSignerUrl: null,
+      });
+    });
+
+    it("never erases secrets on a successful deploy", async () => {
+      dbUpdateReturning.mockResolvedValue([{ id: "dep-1", tenantId: "tenant-1", kind: "deploy" }]);
+
+      await callRoute({ body: { status: "succeeded", chatbotUrl: "https://chat.acme.com" } });
+
+      expect(setArgsForUpdateCall(1)).not.toHaveProperty("llmApiKeyEncrypted");
+      expect(setArgsForUpdateCall(1)).not.toHaveProperty("deletedAt");
+    });
+
+    // Also the retry guarantee: the Azure teardown needs the Pinecone key to
+    // delete the index, so a failed one must leave every secret in place.
     it("does not touch tenants for a destroy deployment that failed", async () => {
       dbUpdateReturning.mockResolvedValue([{ id: "dep-1", tenantId: "tenant-1", kind: "destroy" }]);
 

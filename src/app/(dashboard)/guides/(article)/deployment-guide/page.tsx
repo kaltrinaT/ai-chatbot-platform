@@ -67,7 +67,7 @@ const STATUS_TONES: Record<string, string> = {
 
 const DURING_DEPLOYMENT_LEFT = [
   { title: "Validate configuration", detail: "Validate provided settings and dependencies." },
-  { title: "Prepare provider credentials", detail: "Assume roles / service principals and validate access." },
+  { title: "Prepare provider credentials", detail: "Assume roles (AWS) or federate to deployment identities (Azure) and validate access." },
   { title: "Dispatch workflow", detail: "Trigger the GitHub Actions workflow with deployment inputs." },
   { title: "Provision AWS or Azure resources", detail: "Create or update infrastructure using Terraform." },
 ];

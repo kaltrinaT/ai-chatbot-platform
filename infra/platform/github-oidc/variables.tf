@@ -16,17 +16,6 @@ variable "github_repo" {
   default     = "ai-chatbot-platform"
 }
 
-variable "deploy_ref" {
-  description = "Branch the platform dispatches workflows on. Must match CHATBOT_DEPLOY_REF, or the trust policy refuses every run."
-  type        = string
-  default     = "main"
-
-  validation {
-    condition     = length(var.deploy_ref) > 0 && !can(regex("[*?]", var.deploy_ref))
-    error_message = "deploy_ref must be one concrete branch name. A wildcard would let any matching branch assume a role that can reach every customer's account."
-  }
-}
-
 variable "role_name" {
   description = "Name of the IAM role GitHub Actions assumes."
   type        = string

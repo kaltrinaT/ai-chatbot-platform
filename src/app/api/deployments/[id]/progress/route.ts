@@ -11,6 +11,7 @@ import {
   type RunProgress,
 } from "@/lib/github";
 import { ACTIVE_STATUSES, reconcileCompletedRun } from "@/lib/reconcile";
+import { AZURE_DEPLOY_WORKFLOW, AZURE_DESTROY_WORKFLOW } from "@/lib/deploy";
 
 /**
  * Session-authed live view of a deployment. While the deployment is active it
@@ -120,11 +121,16 @@ export async function GET(
   if (!deployment.githubRunId) {
     if (ageMs > RUN_LOOKUP_GRACE_MS) {
       try {
+        // Searching the wrong workflow silently never matches, so all four
+        // combinations have to be spelled out.
+        const isAzure = found.cloudProvider === "azure";
         const workflowId =
           deployment.kind === "destroy"
-            ? getDestroyWorkflowId()
-            : found.cloudProvider === "azure"
-              ? "deploy-tenant-azure.yml"
+            ? isAzure
+              ? AZURE_DESTROY_WORKFLOW
+              : getDestroyWorkflowId()
+            : isAzure
+              ? AZURE_DEPLOY_WORKFLOW
               : getDeployWorkflowId();
         const run = await findRunForDeployment(deployment.id, deployment.startedAt, workflowId);
         if (run) {

@@ -1,41 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { ClientSecretCredential } from "@azure/identity";
-import { SecretClient } from "@azure/keyvault-secrets";
 import { encryptSecret } from "@/lib/crypto";
 
-export type AzureCredentials = {
-  tenantId: string;
-  clientId: string;
-  clientSecret: string;
-  subscriptionId: string;
-};
-
-export async function writeAzureKeyVaultSecret(opts: {
-  credentials: AzureCredentials;
-  keyVaultName: string;
-  secretName: string;
-  secretValue: string;
-}): Promise<string> {
-  const credential = new ClientSecretCredential(
-    opts.credentials.tenantId,
-    opts.credentials.clientId,
-    opts.credentials.clientSecret
-  );
-
-  const vaultUrl = `https://${opts.keyVaultName}.vault.azure.net`;
-  const client = new SecretClient(vaultUrl, credential);
-
-  const result = await client.setSecret(opts.secretName, opts.secretValue, {
-    contentType: "text/plain",
-  });
-
-  if (!result.properties.id) {
-    throw new Error("Key Vault setSecret returned no secret ID");
-  }
-
-  // Return vault URI (without version) so the workflow can always fetch latest
-  return `${vaultUrl}/secrets/${opts.secretName}`;
-}
+/**
+ * The platform application makes no Azure API calls of any kind. It holds no
+ * Azure credential to make them with: deploys reach the customer's
+ * subscription from GitHub Actions through a federated credential (see
+ * azureFederation.ts), and nothing else needs to.
+ */
 
 /**
  * Generates the docs-signer Function's shared auth secret at onboarding.

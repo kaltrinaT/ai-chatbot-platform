@@ -29,19 +29,13 @@ variable "azure_tenant_id" {
 }
 
 variable "azure_client_id" {
-  description = "Service principal application/client ID with Contributor access on the subscription."
+  description = "Client ID of the customer's deployment identity (an app registration or a user-assigned managed identity), with Contributor on the subscription and a federated credential trusting this tenant's GitHub environment. There is no secret."
   type        = string
 
   validation {
     condition     = can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.azure_client_id))
     error_message = "azure_client_id must be a valid UUID."
   }
-}
-
-variable "azure_client_secret" {
-  description = "Service principal client secret."
-  type        = string
-  sensitive   = true
 }
 
 variable "azure_region" {
@@ -186,6 +180,24 @@ variable "docs_prefix" {
   description = "Optional prefix inside the documents container. Empty string disables the prefix scope."
   type        = string
   default     = ""
+}
+
+# See the AWS module's copy of this variable for why it exists: a gate set too
+# high makes the chatbot answer "I don't have enough information" to every
+# question, and until now the only way to change it was a new container image.
+variable "retrieval_min_score" {
+  description = "Minimum cosine similarity for a retrieved chunk to be used as context. Empty string uses the container default."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = var.retrieval_min_score == "" || (
+      can(tonumber(var.retrieval_min_score)) &&
+      tonumber(var.retrieval_min_score) >= 0 &&
+      tonumber(var.retrieval_min_score) <= 1
+    )
+    error_message = "retrieval_min_score must be empty or a number between 0 and 1."
+  }
 }
 
 variable "max_docs_upload_mb" {

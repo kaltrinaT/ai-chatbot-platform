@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   selectWhereChain,
   updateSetWhereChain,
@@ -72,7 +74,23 @@ vi.mock("@/lib/github", () => ({
 vi.mock("@/lib/docsSigner", () => ({ deleteViaSigner }));
 
 import { db } from "@/db";
-import { triggerDeployment, triggerTenantDestroy } from "./deploy";
+import {
+  DeploymentInProgressError,
+  triggerDeployment,
+  triggerTenantDestroy,
+  retrievalMinScore,
+} from "./deploy";
+
+/**
+ * The input names a workflow accepts. A dispatch carrying anything else is
+ * rejected by GitHub, so the platform's inputs and the workflow file have to
+ * agree exactly.
+ */
+function declaredInputs(workflowFile: string): string[] {
+  const workflow = readFileSync(join(process.cwd(), ".github/workflows", workflowFile), "utf8");
+  const inputsBlock = workflow.split(/^    inputs:$/m)[1].split(/^\S/m)[0];
+  return [...inputsBlock.matchAll(/^      ([a-z0-9_]+):$/gm)].map((m) => m[1]).sort();
+}
 
 const baseAwsTenant = {
   id: "tenant-1",
@@ -102,7 +120,6 @@ const baseAzureTenant = {
   azureSubscriptionId: "sub-1",
   azureTenantId: "az-tenant-1",
   azureClientId: "az-client-1",
-  azureClientSecretEncrypted: "iv:tag:secretct",
   azureRegion: "eastus",
   domain: "chat.beta.com",
   vectorStore: "pgvector",
@@ -325,10 +342,15 @@ describe("triggerDeployment", () => {
 
     const call = createWorkflowDispatch.mock.calls[0][0];
     expect(call.workflow_id).toBe("deploy-tenant-azure.yml");
-    expect(call.inputs.azure_client_secret).toBe(`decrypted:${baseAzureTenant.azureClientSecretEncrypted}`);
-    expect(call.inputs.llm_api_key).toBe(`decrypted:${baseAzureTenant.llmApiKeyEncrypted}`);
-    expect(call.inputs.pinecone_api_key).toBe("");
-    expect(call.inputs.docs_signer_secret).toBe(`decrypted:${baseAzureTenant.docsSignerSecretEncrypted}`);
+    // The job's GitHub environment, and so the subject the customer's
+    // federated credential trusts, is derived from this.
+    expect(call.inputs.tenant_id).toBe(baseAzureTenant.id);
+    // The run fetches these itself with its OIDC token; as inputs they would
+    // sit in the run's event payload (see deploymentSecrets.ts).
+    expect(call.inputs).not.toHaveProperty("llm_api_key");
+    expect(call.inputs).not.toHaveProperty("pinecone_api_key");
+    expect(call.inputs).not.toHaveProperty("docs_signer_secret");
+    expect(decryptSecret).not.toHaveBeenCalled();
     expect(call.inputs.your_ecr_image).toBe(
       "111111111111.dkr.ecr.us-east-1.amazonaws.com/chatbot:v2",
     );
@@ -345,6 +367,40 @@ describe("triggerDeployment", () => {
     });
     expect(config).not.toHaveProperty("your_ecr_image");
     expect(config).not.toHaveProperty("your_frontend_ecr_image");
+  });
+
+  // Same parity check as the Azure one below. It also pins the tenant ID:
+  // that is what names the GitHub environment the job runs in, so dropping it
+  // from the dispatch would leave the run with no per-tenant subject and the
+  // customer's role would refuse it.
+  it("sends exactly the inputs deploy-tenant.yml declares, including the tenant ID", async () => {
+    dbSelectWhere.mockResolvedValue([baseAwsTenant]);
+    dbInsertReturning.mockResolvedValue([{ id: "deploy-1", status: "pending" }]);
+    dbUpdateWhere.mockResolvedValue(undefined);
+    createWorkflowDispatch.mockResolvedValue({});
+
+    await triggerDeployment({ tenantId: baseAwsTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" });
+
+    const inputs = createWorkflowDispatch.mock.calls[0][0].inputs;
+    expect(Object.keys(inputs).sort()).toEqual(declaredInputs("deploy-tenant.yml"));
+    expect(inputs.tenant_id).toBe(baseAwsTenant.id);
+  });
+
+  // GitHub rejects a dispatch carrying an input the workflow does not declare,
+  // so a key left behind here fails every Azure deploy at dispatch time. This
+  // is also what proves no Azure credential travels: the workflow no longer
+  // declares one to receive.
+  it("sends exactly the inputs deploy-tenant-azure.yml declares, none of them an Azure credential", async () => {
+    dbSelectWhere.mockResolvedValue([baseAzureTenant]);
+    dbInsertReturning.mockResolvedValue([{ id: "deploy-2", status: "pending" }]);
+    dbUpdateWhere.mockResolvedValue(undefined);
+    createWorkflowDispatch.mockResolvedValue({});
+
+    await triggerDeployment({ tenantId: baseAzureTenant.id, chatbotVersion: "v2", triggeredByUserId: "u2" });
+
+    const sent = Object.keys(createWorkflowDispatch.mock.calls[0][0].inputs).sort();
+    expect(sent).toEqual(declaredInputs("deploy-tenant-azure.yml"));
+    expect(sent.some((name) => /client_secret|password|credential/.test(name))).toBe(false);
   });
 
   it("refuses to deploy an Azure tenant with no encrypted docs-signer secret", async () => {
@@ -370,6 +426,38 @@ describe("triggerDeployment", () => {
 
     expect(db.update).toHaveBeenCalled();
     expect(dbUpdateWhere).toHaveBeenCalled();
+  });
+
+  // Two requests racing past the UI (a double click, or a redeploy during a
+  // teardown) would otherwise run Terraform on one state at once.
+  it.each([
+    ["the driver's error", { code: "23505", constraint: "deployments_one_active_per_tenant" }],
+    [
+      "an ORM-wrapped error",
+      {
+        cause: Object.assign(new Error('duplicate key value violates unique constraint "deployments_one_active_per_tenant"'), {
+          code: "23505",
+        }),
+      },
+    ],
+  ])("refuses a second active deployment for the tenant (%s)", async (_label, shape) => {
+    dbSelectWhere.mockResolvedValue([baseAwsTenant]);
+    dbInsertReturning.mockRejectedValue(Object.assign(new Error("insert failed"), shape));
+
+    await expect(
+      triggerDeployment({ tenantId: baseAwsTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" }),
+    ).rejects.toThrow(/already in progress/);
+
+    expect(createWorkflowDispatch).not.toHaveBeenCalled();
+  });
+
+  it("does not mistake an unrelated database error for a conflict", async () => {
+    dbSelectWhere.mockResolvedValue([baseAwsTenant]);
+    dbInsertReturning.mockRejectedValue(Object.assign(new Error("connection reset"), { code: "08006" }));
+
+    await expect(
+      triggerDeployment({ tenantId: baseAwsTenant.id, chatbotVersion: "v1", triggeredByUserId: "u1" }),
+    ).rejects.toThrow("connection reset");
   });
 
   it("honors CHATBOT_DEPLOY_REF when set", async () => {
@@ -404,15 +492,48 @@ describe("triggerTenantDestroy", () => {
     createWorkflowDispatch.mockResolvedValue({});
   });
 
-  it("throws for a non-AWS tenant without touching docs or dispatching anything", async () => {
-    dbSelectWhere.mockResolvedValue([{ ...destroyTenant, cloudProvider: "azure" }]);
+  // Teardown used to refuse anything but AWS, which left an Azure tenant
+  // removable only by hand in the portal.
+  it("sends an Azure tenant to the Azure teardown workflow", async () => {
+    const azureTenant = {
+      ...destroyTenant,
+      cloudProvider: "azure",
+      azureSubscriptionId: "11111111-1111-1111-1111-111111111111",
+      azureTenantId: "22222222-2222-2222-2222-222222222222",
+      azureClientId: "33333333-3333-3333-3333-333333333333",
+      azureRegion: "westeurope",
+    };
+    dbSelectWhere.mockResolvedValueOnce([azureTenant]).mockResolvedValueOnce([]);
 
-    await expect(
-      triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" }),
-    ).rejects.toThrow(/only available for AWS tenants/);
+    await triggerTenantDestroy({ tenantId: azureTenant.id, triggeredByUserId: "u1" });
 
-    expect(deleteViaSigner).not.toHaveBeenCalled();
-    expect(createWorkflowDispatch).not.toHaveBeenCalled();
+    const call = createWorkflowDispatch.mock.calls[0][0];
+    expect(call.workflow_id).toBe("destroy-tenant-azure.yml");
+    expect(Object.keys(call.inputs).sort()).toEqual(declaredInputs("destroy-tenant-azure.yml"));
+    // Names the GitHub environment the teardown runs in, and so the subject
+    // the customer's federated credential has to accept.
+    expect(call.inputs.tenant_id).toBe(azureTenant.id);
+    expect(JSON.parse(call.inputs.config)).toMatchObject({
+      azure_subscription_id: azureTenant.azureSubscriptionId,
+      azure_client_id: azureTenant.azureClientId,
+      azure_region: "westeurope",
+    });
+  });
+
+  // Even the Pinecone key a teardown needs is fetched by the run itself.
+  it("sends no secret at all when tearing Azure down", async () => {
+    dbSelectWhere
+      .mockResolvedValueOnce([
+        { ...destroyTenant, cloudProvider: "azure", pineconeApiKeyEncrypted: "iv:tag:pc" },
+      ])
+      .mockResolvedValueOnce([]);
+
+    await triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" });
+
+    const inputs = createWorkflowDispatch.mock.calls[0][0].inputs;
+    expect(inputs).not.toHaveProperty("llm_api_key");
+    expect(inputs).not.toHaveProperty("docs_signer_secret");
+    expect(inputs).not.toHaveProperty("pinecone_api_key");
   });
 
   it("throws for a tenant that's already been deleted", async () => {
@@ -427,7 +548,7 @@ describe("triggerTenantDestroy", () => {
     expect(createWorkflowDispatch).not.toHaveBeenCalled();
   });
 
-  it("empties every tenant_documents row via the docs-signer before dispatching, best-effort", async () => {
+  it("empties tenant_documents via the docs-signer before dispatching, best-effort", async () => {
     dbSelectWhere
       .mockResolvedValueOnce([destroyTenant]) // tenant lookup
       .mockResolvedValueOnce([
@@ -443,8 +564,30 @@ describe("triggerTenantDestroy", () => {
     expect(deleteViaSigner).toHaveBeenCalledTimes(2);
     expect(deleteViaSigner).toHaveBeenNthCalledWith(1, destroyTenant, "docs/a.pdf");
     expect(deleteViaSigner).toHaveBeenNthCalledWith(2, destroyTenant, "docs/b.pdf");
-    expect(dbDeleteWhere).toHaveBeenCalled();
+    // Only doc-1's object was really deleted, so only its row goes; doc-2's
+    // row keeps showing what storage still holds.
+    expect(dbDeleteWhere).toHaveBeenCalledTimes(1);
     expect(createWorkflowDispatch).toHaveBeenCalled();
+  });
+
+  // A tenant has one slot for work in flight. A teardown that loses it must
+  // not have deleted anything first.
+  it("refuses while another deployment is in progress, before touching any document", async () => {
+    dbSelectWhere.mockResolvedValue([destroyTenant]);
+    dbInsertReturning.mockRejectedValue(
+      Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint: "deployments_one_active_per_tenant",
+      }),
+    );
+
+    await expect(
+      triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" }),
+    ).rejects.toBeInstanceOf(DeploymentInProgressError);
+
+    expect(deleteViaSigner).not.toHaveBeenCalled();
+    expect(dbDeleteWhere).not.toHaveBeenCalled();
+    expect(createWorkflowDispatch).not.toHaveBeenCalled();
   });
 
   it("skips the docs cleanup entirely when the tenant has no docsSignerUrl", async () => {
@@ -480,6 +623,12 @@ describe("triggerTenantDestroy", () => {
     const inputs = createWorkflowDispatch.mock.calls[0][0].inputs;
     expect(inputs).not.toHaveProperty("your_ecr_image");
     expect(inputs).not.toHaveProperty("your_frontend_ecr_image");
+    // Teardown federates exactly as a deploy does, so it has to carry the same
+    // per-tenant binding — otherwise the run has no environment, its token
+    // carries no matching subject, and a customer could never have their
+    // infrastructure removed.
+    expect(inputs.tenant_id).toBe(destroyTenant.id);
+    expect(Object.keys(inputs).sort()).toEqual(declaredInputs("destroy-tenant.yml"));
   });
 
   it("marks the deployment failed and rethrows when workflow dispatch fails", async () => {
@@ -491,5 +640,32 @@ describe("triggerTenantDestroy", () => {
     ).rejects.toThrow("GitHub API unavailable");
 
     expect(dbUpdateWhere).toHaveBeenCalled();
+  });
+});
+
+describe("retrievalMinScore", () => {
+  it("returns an empty string when the tenant has no override", () => {
+    expect(retrievalMinScore(null)).toBe("");
+    expect(retrievalMinScore({})).toBe("");
+    expect(retrievalMinScore({ retrieval_min_score: "" })).toBe("");
+  });
+
+  it("passes through a valid override, as a string", () => {
+    expect(retrievalMinScore({ retrieval_min_score: 0.25 })).toBe("0.25");
+    expect(retrievalMinScore({ retrieval_min_score: "0.4" })).toBe("0.4");
+  });
+
+  it("keeps 0, which is a real setting and not an absent one", () => {
+    // Distinct from "" — it disables the gate rather than falling back to the
+    // container default, and a truthiness check would silently swallow it.
+    expect(retrievalMinScore({ retrieval_min_score: 0 })).toBe("0");
+  });
+
+  it("ignores values outside 0..1 rather than blocking the deploy", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(retrievalMinScore({ retrieval_min_score: 1.5 })).toBe("");
+    expect(retrievalMinScore({ retrieval_min_score: -0.2 })).toBe("");
+    expect(retrievalMinScore({ retrieval_min_score: "not a number" })).toBe("");
+    warn.mockRestore();
   });
 });
