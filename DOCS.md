@@ -128,7 +128,7 @@ Managed by Drizzle ORM, running on Neon Postgres.
 
 **AWS-only columns:** `awsAccountId`, `awsRegion`, `deploymentRoleArn`, `s3DocsBucket`, `s3DocsPrefix`, `llmSecretArn`
 
-**Azure-only columns:** `azureSubscriptionId`, `azureTenantId`, `azureClientId`, `azureClientSecretEncrypted`, `azureResourceGroup`, `azureRegion`, `azureStorageAccount`, `azureStorageContainer`, `azureKeyVaultName`
+**Azure-only columns:** `azureSubscriptionId`, `azureTenantId`, `azureClientId`, `azureResourceGroup`, `azureRegion`, `azureStorageAccount`, `azureStorageContainer`, `azureKeyVaultName`
 
 > Note: `llmSecretArn` lives in the shared column group in `schema.ts` but is only populated for AWS tenants (null for Azure).
 
@@ -160,7 +160,9 @@ Managed by Drizzle ORM, running on Neon Postgres.
      vector store (Pinecone | customer-cloud pgvector)
    → Pinecone only: the customer's own Pinecone API key
    → AWS extra: AWS account ID, region, deployment role ARN, optional S3 prefix
-   → Azure extra: subscription ID, tenant ID, client ID, client secret, region
+   → Azure extra: subscription ID, tenant ID, deployment identity client ID, region
+     (no secret; the wizard shows the federated credential the customer adds to
+     that identity, naming the tenant ID generated when the page opened)
 
 2. Server action (actions.ts) validates with Zod
    (the Pinecone key is required iff vectorStore = "pinecone")
@@ -168,13 +170,16 @@ Managed by Drizzle ORM, running on Neon Postgres.
 3. Encrypt LLM API key — and the Pinecone key, if any — for DB storage
 
 4a. AWS path:
-    → AssumeRole into customer account (15-min session)
+    → AssumeRole into customer account (15-min session), sending the tenant's
+      sts:ExternalId — their trust policy conditions on it, so the role can only
+      be assumed for this tenant (see src/lib/awsTrust.ts)
     → Write LLM secret to customer's Secrets Manager: {slug}/llm-api-key
     → If Pinecone: also write {slug}/pinecone-api-key
     → Store returned ARNs in tenant record
 
 4b. Azure path:
-    → Encrypt Azure client secret for DB storage
+    → No Azure call and no Azure credential: the tenant row is created under the
+      wizard's tenant ID, which the customer's federated credential names
     → LLM and Pinecone keys are NOT written now — Terraform does it during deploy
 
 5. Insert tenant record
@@ -200,15 +205,15 @@ Managed by Drizzle ORM, running on Neon Postgres.
 - `AWS_PLATFORM_DEPLOY_ROLE_ARN` — the platform role GitHub Actions assumes through OIDC. No AWS access key is stored in GitHub; see [`infra/platform/github-oidc`](infra/platform/github-oidc) for the one-time setup and cutover
 
 **Required GitHub repo secrets:**
-- `TF_STATE_BUCKET`, `TF_STATE_REGION` (S3 backend for Terraform state)
+- `TF_STATE_BUCKET`, `TF_STATE_REGION` (the platform's old shared state bucket, read only to move a tenant's state out; see step 4)
 - `PLATFORM_BASE_URL` (e.g. `https://platform.example.com`)
 - `PLATFORM_WEBHOOK_SECRET`
 
 **Workflow steps:**
 1. Exchange GitHub's OIDC token for one-hour credentials on the platform role; pull **backend** and **frontend (chat UI)** images from platform ECR
-2. Chain from the platform role into the customer account's deployment role (`role-chaining: true`, one-hour cap, `role-skip-session-tagging: true`)
+2. Drop those credentials and federate straight into the customer account's deployment role with a fresh GitHub OIDC token (`unset-current-credentials: true`, one-hour cap). The role trusts only this tenant's environment subject; the platform account is not a principal here
 3. Create ECR repos in customer account if absent (`{slug}/chatbot`, `{slug}/chatbot-frontend`); tag and push both images
-4. `terraform init` with S3 backend (`tenants/{slug}.tfstate`)
+4. `terraform init` through [`.github/scripts/terraform-init-aws.sh`](.github/scripts/terraform-init-aws.sh): state in the customer's own bucket `tfstate-{slug}-{account}-{region}-an`, locked with an S3 lock file. A tenant whose state is still in the platform's bucket has it moved and verified first
 5. For Pinecone tenants: read the customer's Pinecone key back from **their** Secrets Manager under the assumed role and `::add-mask::` it, so Terraform can create the index without the key ever being a workflow input
 6. `terraform apply -auto-approve` — provisions all infra
 7. Read outputs: `alb_dns_name`, `chatbot_url`
@@ -221,9 +226,9 @@ Managed by Drizzle ORM, running on Neon Postgres.
 | Input | Contents |
 |---|---|
 | `deployment_id` | Platform deployment row UUID (status callbacks post to it) |
+| `tenant_id` | Platform tenant row UUID. The job runs in GitHub environment `tenant-{tenant_id}`, which is the subject the customer's federated credential trusts |
 | `tenant_slug` | Tenant identifier |
 | `config` | JSON: `azure_subscription_id`, `azure_tenant_id`, `azure_client_id`, `azure_region`, `llm_provider`, `llm_model`, `chatbot_version`, `domain`, `vector_store` — parsed by the workflow's "Parse tenant config" step (keep key names in sync with `buildAzureInputs`) |
-| `azure_client_secret` | Customer service-principal secret (decrypted from the tenant record) |
 | `llm_api_key` | Tenant LLM key (decrypted; Terraform writes it to the customer's Key Vault) |
 | `pinecone_api_key` | Customer's own Pinecone key (decrypted); empty when `vector_store` is `pgvector` |
 | `docs_signer_secret` | Shared auth secret for the docs-signer Function (decrypted; generated by the platform at onboarding) |
@@ -235,11 +240,13 @@ Managed by Drizzle ORM, running on Neon Postgres.
 Secret-valued inputs are `::add-mask::`ed as the first step so they cannot appear in step logs. (Dispatch inputs are still visible to anyone with read access to the private repo's runs — same trust boundary as the repo secrets they replaced.)
 
 **Required GitHub repo secrets:**
-- `TF_STATE_BUCKET`, `TF_STATE_REGION` (S3 backend)
-- Repo variable `AWS_PLATFORM_DEPLOY_ROLE_ARN` — the same OIDC-assumed platform role as the AWS workflow, used here both to pull the golden images and to reach the S3 state backend (`azure/tenants/*` only). No AWS access key is stored in GitHub
+- `TF_STATE_BUCKET`, `TF_STATE_REGION` (the platform's old shared state bucket, read only to move a tenant's state out; see step 7)
+- Repo variable `AWS_PLATFORM_DEPLOY_ROLE_ARN` — the same OIDC-assumed platform role as the AWS workflow, used here to pull the golden images and, once per tenant, to read its old state (`azure/tenants/*` only). No AWS access key is stored in GitHub
 - `PLATFORM_BASE_URL`, `PLATFORM_WEBHOOK_SECRET` (status callbacks)
 
-The `AZURE_*`, `LLM_API_KEY`, and `PINECONE_API_KEY` repo secrets are no longer used — Azure login, Key Vault contents, and vector storage are all per-tenant now.
+No Azure credential exists anywhere in this pipeline: not as a repo secret, not as an input, not in the platform database. The `AZURE_*`, `LLM_API_KEY`, and `PINECONE_API_KEY` repo secrets are no longer used — Azure login, Key Vault contents, and vector storage are all per-tenant now.
+
+**Azure access (federation):** the job declares `environment: tenant-${{ inputs.tenant_id }}`, so GitHub's OIDC token carries `sub = repo:{owner}/{repo}:environment:tenant-{tenant_id}`. The customer's identity holds a federated credential for exactly that subject (issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`). `azure/login` and the `azurerm` provider (`use_oidc = true`, `use_cli = false`) exchange the token for Entra access tokens. Environments on a private repository need GitHub Pro, Team or Enterprise; without them the login is refused and the run stops before creating anything. See "Azure Security Model" in [`SECURITY.md`](SECURITY.md).
 
 **Workflow steps:**
 1. Mask secret inputs; POST `status: running` + run ID/URL to `/api/deployments/{id}/status` (best-effort — powers the live-progress panel)
@@ -247,8 +254,8 @@ The `AZURE_*`, `LLM_API_KEY`, and `PINECONE_API_KEY` repo secrets are no longer 
 3. Check out the platform repo
 4. Compute resource names (ACR name, destination image URIs tagged with `chatbot_version`) and derive the source ECR registry/region from `your_ecr_image`
 5. Pull the platform's golden **backend** and **frontend (chat UI)** images from the platform's ECR (platform AWS credentials — same images AWS deploys replicate)
-6. Azure login into the **customer's subscription** with the per-tenant service principal
-7. `terraform init` with S3 backend (`azure/tenants/{slug}/terraform.tfstate`)
+6. Azure login into the **customer's subscription** through the tenant's federated credential (no secret); a refusal reports the exact subject the credential must trust
+7. `terraform init` through [`.github/scripts/terraform-init-azure.sh`](.github/scripts/terraform-init-azure.sh): state in the customer's own storage account `cbtf{slug}` (container `tfstate`), found in the chatbot's resource group, reached through Entra ID with the run's OIDC token, locked with a blob lease. A tenant whose state is still in the platform's bucket has it copied across and verified first
 8. `terraform apply` (bootstrap, `-target` RG + ACR) with placeholder image URIs
 9. `az acr login`, then retag and push both pulled images into the customer's ACR
 10. `terraform apply` (full) — provisions infra and writes the LLM key plus either the customer's Pinecone key or the generated pgvector connection URL to Key Vault (secrets passed via `TF_VAR_*` env, not argv)
@@ -276,7 +283,7 @@ Defined in `infra/terraform/main.tf`. Everything is created in the **customer's*
 ### Compute
 Two ECS Fargate services in one cluster (each desired count: 1):
 - **Backend** (`chatbot-{slug}`) — container `chatbot`, image `{slug}/chatbot:{version}`; defaults 1024 CPU units / 2048 MB
-  - Environment: `S3_DOCS_BUCKET`, `S3_DOCS_PREFIX`, `LLM_PROVIDER`, `AWS_REGION`, `PORT`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, `VECTOR_STORE`, plus either `PINECONE_INDEX` (`chatbot-{slug}`) or `PGVECTOR_TABLE` / `PGVECTOR_DIMENSION`
+  - Environment: `S3_DOCS_BUCKET`, `S3_DOCS_PREFIX`, `LLM_PROVIDER`, `AWS_REGION`, `PORT`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `LLM_MODEL`, `VECTOR_STORE`, plus either `PINECONE_INDEX` (`chatbot-{slug}`) or `PGVECTOR_TABLE` / `PGVECTOR_DIMENSION`, plus `RETRIEVAL_MIN_SCORE` when the tenant overrides it
   - Secrets injected from Secrets Manager: `LLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (all → LLM secret), plus either `PINECONE_API_KEY` (→ the customer's Pinecone secret) or `DATABASE_URL` / `PGVECTOR_URL` (→ the vector-db-url secret)
 - **Frontend** (`chatbot-{slug}-frontend`) — container `frontend` (nginx :80), image `{slug}/chatbot-frontend:{version}`; defaults 256 CPU units / 512 MB
 
@@ -326,6 +333,7 @@ Selected per tenant by `vector_store`; exactly one of the following is created.
 | `vector_db_instance_class` | no | RDS class for pgvector; default `db.t4g.micro` |
 | `vector_db_storage_gb` | no | RDS storage for pgvector; default `32` |
 | `s3_docs_prefix` | no | Optional prefix scope within docs bucket |
+| `retrieval_min_score` | no | Cosine-similarity floor for retrieved chunks. Empty (the default) leaves the container's own 0.15. Set too high, the chatbot answers everything with "I don't have enough information" — see CHATBOT-LOGIC.md |
 | `domain` | no | Custom hostname |
 | `container_port` | no | Backend port, default: 8000 |
 | `frontend_port` | no | Frontend port, default: 80 |
@@ -344,7 +352,7 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 |---|---|---|
 | Resource Group | `chatbot-{slug}` | Container for all resources |
 | Container Registry | `chatbot{slug}acr` | Basic SKU, admin user disabled — images are pulled by the chatbot's user-assigned identity holding `AcrPull` (name: hyphens stripped, 50-char max) |
-| Key Vault | `cb-{slug}-kv` | Standard SKU; stores `llm-api-key`, `docs-signer-secret`, and either `pinecone-api-key` or `vector-db-url` (all written by Terraform). The storage account key is deliberately not stored: both containers reach Blob Storage through managed identities instead |
+| Key Vault | `cb-{slug}-kv` | Standard SKU; stores `llm-api-key`, `docs-signer-secret`, and either `pinecone-api-key` or `vector-db-url` (all written by Terraform). The storage account key is deliberately not stored, and the docs account refuses Shared Key authorization: both containers reach Blob Storage through managed identities instead |
 | PostgreSQL Flexible Server | `chatbot-{slug}-pg` | Only when `vector_store = pgvector`; B1ms / 32 GB / PG 16, `azure.extensions = VECTOR`, database `vectors` |
 | Storage Account | `chatbot{slug}` | Hyphens removed; 24-char max enforced |
 | Blob container | `documents` | Private access |
@@ -366,7 +374,7 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 | Variable | Required | Notes |
 |---|---|---|
 | `tenant_slug` | yes | Max 18 chars (Key Vault naming limit) |
-| `azure_subscription_id`, `azure_tenant_id`, `azure_client_id`, `azure_client_secret` | yes | Customer service principal (all validated as UUIDs except the secret) |
+| `azure_subscription_id`, `azure_tenant_id`, `azure_client_id` | yes | Customer deployment identity, all validated as UUIDs. No secret: the provider authenticates with OIDC |
 | `azure_region` | yes | e.g. `eastus` (default `eastus`) |
 | `image_uri` | yes | Full backend ACR image URI with tag |
 | `frontend_image_uri` | yes | Full frontend (chat UI) ACR image URI with tag |
@@ -390,7 +398,7 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 
 **AWS:**
 1. Received from form
-2. Platform calls `assumeTenantRole` → assumes customer's IAM role
+2. Platform calls `assumeTenantRole` → assumes customer's IAM role, sending the tenant's `sts:ExternalId`
 3. `writeTenantSecret` stores key in customer's Secrets Manager as `{slug}/llm-api-key` (and `{slug}/pinecone-api-key` for Pinecone tenants)
 4. ARN stored in `tenants.llmSecretArn`
 5. ECS execution role reads it at task startup — key never touches platform disk after onboarding
@@ -398,13 +406,14 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 **Azure:**
 1. Received from form
 2. Encrypted with AES-256-GCM, stored in `tenants.llmApiKeyEncrypted`
-3. Decrypted only when building workflow inputs for `triggerDeployment`
+3. Decrypted only when the deploy run fetches it from `/api/deployments/{id}/secrets` with an OIDC token for this tenant's environment (once per deployment; see `src/lib/deploymentSecrets.ts`)
 4. Passed to Terraform as a variable; Terraform writes it to Key Vault
 5. Container App mounts from Key Vault at runtime
 
-### Azure client secret
-- Encrypted with AES-256-GCM at rest in `tenants.azureClientSecretEncrypted`
-- Decrypted only in `triggerDeployment` when building workflow inputs
+### Azure subscription access
+- No credential is received, stored or transmitted. The customer adds a federated credential to their deployment identity, trusting GitHub's OIDC token for subject `repo:{owner}/{repo}:environment:tenant-{tenant id}`
+- Built in [`src/lib/azureFederation.ts`](src/lib/azureFederation.ts), shown in the wizard and on the tenant page
+- The customer revokes the platform by deleting that credential
 
 ### Encryption scheme (`src/lib/crypto.ts`)
 - Algorithm: AES-256-GCM
@@ -467,10 +476,10 @@ PLATFORM_FRONTEND_IMAGE_URI=    # frontend (chat UI) ECR URI without tag, e.g.:
 | LLM secret store | Secrets Manager (pre-created during onboarding) | Key Vault (created by Terraform during deploy) |
 | LLM key flow | Written by platform → ARN stored → injected by ECS execution role | Encrypted in DB → passed to Terraform → written to Key Vault |
 | Docs storage | S3 bucket `chatbot-{slug}-docs` | Blob container `documents` in Storage Account |
-| Auth model | STS AssumeRole (3600s) | Long-lived service principal credentials |
+| Auth model | Deploys: GitHub OIDC federation into the customer's role, per-tenant environment subject. Onboarding only: STS AssumeRole with a per-tenant `sts:ExternalId`. Nothing stored | Workload identity federation, per-tenant GitHub environment subject; nothing stored |
 | Network | Public subnets, ALB, public IPs | Container Apps managed networking |
-| Terraform state key | `tenants/{slug}.tfstate` | `azure/tenants/{slug}/terraform.tfstate` |
-| Slug max length | 32 chars | 18 chars (Key Vault name constraint) |
+| Terraform state | Customer's own bucket `tfstate-{slug}-{account}-{region}-an`, key `terraform.tfstate`, S3 lock file | Customer's own storage account `cbtf{slug}`, container `tfstate`, Entra ID only, blob lease |
+| Slug max length | 21 chars (the frontend target group name, `chatbot-{slug}-ui`, is capped at 32) | 18 chars (Key Vault name constraint) |
 | Autoscaling | Fixed 1 replica (ECS desired_count) | 1–3 replicas (Container Apps) |
 
 ---
@@ -501,7 +510,9 @@ src/
     schema.ts                           # All table definitions and relations
   lib/
     aws.ts                              # AssumeRole, writeTenantSecret
-    azure.ts                            # writeAzureKeyVaultSecret (currently unused — Terraform writes Key Vault secrets directly during deploy)
+    awsTrust.ts                         # the per-tenant sts:ExternalId and the trust policy the wizard shows
+    azure.ts                            # generateDocsSignerSecret (no Azure API calls — the platform holds no Azure credential)
+    azureFederation.ts                  # the federated credential (issuer, audience, per-tenant subject) Azure customers add
     crypto.ts                           # AES-256-GCM encrypt/decrypt
     deploy.ts                           # triggerDeployment, buildAwsInputs, buildAzureInputs
 

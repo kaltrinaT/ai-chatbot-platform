@@ -41,20 +41,51 @@ Client
              the metadata filter is defence in depth on top of it
         │
         ▼
-  3. Build prompt
+  3. Drop weak matches            (RETRIEVAL_MIN_SCORE, default 0.15)
+     └── k-NN always returns exactly k rows, so a sparse corpus fills the
+         count with off-topic filler; anything below the floor is dropped
+         └── if NOTHING clears it, the backend returns
+             "I don't have enough information." with sources: []
+             WITHOUT calling the LLM — see the note below
+        │
+        ▼
+  4. Build prompt
      └── context = matched chunk texts joined by "---"
          prompt = "Use ONLY the context below to answer..."
         │
         ▼
-  4. Call LLM
+  5. Call LLM
      └── OpenAI-compatible client
          model = LLM_MODEL env var (default per provider)
          → POST {OPENAI_BASE_URL}/chat/completions
         │
         ▼
-  5. Return { answer, sources }
+  6. Return { answer, sources }
      └── sources = list of S3 keys from chunk metadata
 ```
+
+### The relevance floor is the first thing to check on "I don't have enough information."
+
+That sentence has two entirely different causes, and they are told apart by
+`sources`:
+
+| Response | Meaning |
+|---|---|
+| `sources` is **empty** | Step 3 dropped everything. The LLM was never called. Either nothing is indexed, or the floor is above what the embedding model can score. |
+| `sources` is **populated** | Retrieval worked; the LLM read the context and still declined. A prompt/model problem, not a retrieval one. |
+
+The floor is an absolute cosine similarity, and `all-MiniLM-L6-v2` scores a
+short question against a 200-word passage asymmetrically: a genuinely relevant
+pair lands around **0.2–0.35**, and unrelated content sits near **0.05–0.11**.
+A floor of 0.15 sits in that gap. Anything at or above ~0.4 is unreachable for
+real prose and silently disables the chatbot — the default was 0.5 for a
+while, and every tenant answered every question with the empty-`sources`
+refusal above.
+
+Note this makes the floor a coarse noise filter, not the refusal mechanism.
+Deciding whether weak context actually answers the question is the prompt's
+job. Calibrate with `evals/sweep_min_score.py` in the backend repo rather than
+picking a number by hand.
 
 ---
 
@@ -87,7 +118,9 @@ If none are set → **mock client** returns `[Mock Response] No API key configur
 ## `/index` Request Flow
 
 ```
-POST /api/index  { tenant_id, bucket, prefix }
+POST /api/index  (body ignored — tenant, bucket and prefix come from the
+  │               container's own TENANT_ID / S3_DOCS_BUCKET / S3_DOCS_PREFIX;
+  │               one resync at a time, at most one queued, extras get 202)
   │
   ├── Load documents from the tenant's object storage
   │   ├── AWS:   S3, via s3_loader.load_text_from_s3(bucket, prefix)
@@ -176,6 +209,7 @@ either way.
 | `LLM_API_KEY` | both | secret | LLM authentication (fallback) |
 | `ANTHROPIC_API_KEY` | both | secret | LLM authentication (fallback) |
 | `VECTOR_STORE` | both | Terraform env | `pinecone` or `pgvector` — selects the retrieval backend |
+| `RETRIEVAL_MIN_SCORE` | both | Terraform env | Cosine-similarity floor a chunk must clear to be used as context. Only emitted when the tenant sets `retrieval_min_score` in its `config`; otherwise the container's own default (0.15) applies |
 | `PINECONE_API_KEY` | both | secret | Pinecone authentication (customer's own key) |
 | `PINECONE_INDEX` | both | Terraform env | Pinecone index name (per-tenant: `chatbot-{slug}`) |
 | `PINECONE_ENVIRONMENT` | **Azure only** | Terraform env | Pinecone serverless region. The AWS task definition does not set it |

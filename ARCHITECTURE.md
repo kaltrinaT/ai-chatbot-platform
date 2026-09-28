@@ -34,7 +34,7 @@ The only information that crosses from data plane to control plane is deployment
 | Where its shared secret lives | The tenant's Secrets Manager, read at runtime (`secretsmanager:GetSecretValue` on that one ARN) | An application setting, set by Terraform. The identity has **no Key Vault access at all** |
 | Upload protocol | S3 presigned POST — a URL plus form fields the browser submits as multipart | Blob user-delegation SAS — a single URL the browser sends one `PUT` to |
 
-The platform reaches either one only over plain authenticated HTTPS (a shared secret, no SigV4 and no Entra token), the same shape as the existing deployment-status webhook. File bytes go from the operator's browser straight to the tenant's storage and never pass through the platform's server. The platform's own Postgres (`tenant_documents`), not a listing call, is what the document list in the UI is drawn from — so the platform knows filenames and sizes (it needs to, to render a list), but at no point holds a credential capable of reading a document's content. Deleting a document does not purge its already-embedded vectors — that's a limitation of the chatbot backend's `/api/index`, not something the platform can address.
+The platform reaches either one only over plain authenticated HTTPS (a shared secret, no SigV4 and no Entra token), the same shape as the existing deployment-status webhook. File bytes go from the operator's browser straight to the tenant's storage and never pass through the platform's server. The platform's own Postgres (`tenant_documents`), not a listing call, is what the document list in the UI is drawn from — so the platform knows filenames and sizes (it needs to, to render a list), but at no point holds a credential capable of reading a document's content. One qualification: each tenant's Terraform state is kept in the platform's bucket and records the Azure docs storage account's access key. That account refuses Shared Key authorization, so the recorded key authorizes nothing, and state written before that change still holds a working key until the keys are rotated (Known Limitation #9 in `SECURITY.md`). Deleting a document does purge its vectors. The reindex that follows every delete is a full resync, and it removes vectors for any document no longer in storage. That is also why the backend takes the storage prefix only from its own environment, never from the request: a caller-chosen empty prefix would make the resync purge everything (see "The chatbot's public `/api/index`" in `SECURITY.md`).
 
 ### Configurable vector store
 
@@ -62,9 +62,10 @@ from, so nothing crosses the data-plane boundary; the trade-off is roughly
 $16–17/month for the smallest instance, plus a database to operate.
 
 Neither option gives the platform access to embeddings. The residual risk is
-the one already documented for every tenant secret: the platform operator holds
-`PLATFORM_ENCRYPTION_KEY` and the database, so an encrypted credential *could*
-be recovered — see Known Limitation #2 in `SECURITY.md`.
+the one already documented for every stored application secret: the platform
+operator holds `PLATFORM_ENCRYPTION_KEY` and the database, so an encrypted
+Pinecone key *could* be recovered — see Known Limitation #2 in `SECURITY.md`.
+No cloud credential is recoverable that way, since none is stored.
 
 > **Residency caveat.** Only `pgvector` currently gives regional control. The
 > platform never sets `pinecone_environment`, so every Pinecone index is created
@@ -149,10 +150,10 @@ Operator                Platform (Next.js)           Customer Cloud      GitHub 
    │                   ┌──────┴───────┐                    │                    │
    │              AWS  │              │ Azure               │                    │
    │                   │              │                     │                    │
-   │              STS AssumeRole      │ encrypt             │                    │
-   │              write LLM +         │ azure_client_secret │                    │
-   │              Pinecone secrets    │ + LLM + Pinecone    │                    │
-   │              to Secrets Manager  │ keys, store in DB   │                    │
+   │              STS AssumeRole      │ encrypt LLM +       │                    │
+   │              write LLM +         │ Pinecone keys,      │                    │
+   │              Pinecone secrets    │ store in DB; no     │                    │
+   │              to Secrets Manager  │ Azure credential    │                    │
    │              generate + write    │ generate docs-      │                    │
    │              docs-signer secret  │ signer secret; no   │                    │
    │              store ARNs in DB    │ Azure call possible │                    │
@@ -325,7 +326,17 @@ CUSTOMER'S OWN PINECONE PROJECT                  [vector_store = pinecone]
         customer's key from THEIR Secrets Manager under the assumed role,
         masks it, and passes it to the pinecone provider via TF_VAR.
 
-Terraform state: s3://{TF_STATE_BUCKET}/tenants/{slug}.tfstate
+S3 Bucket: tfstate-{slug}-{account}-{region}-an   (created by the bootstrap stack)
+├── this chatbot's Terraform state (terraform.tfstate), in the customer's
+│   own account rather than the platform's
+├── account-regional namespace: no other AWS account can create this name
+├── versioned (superseded versions expire after 30 days), private, TLS-only
+├── S3 lock file per run (use_lockfile, Terraform 1.15.3)
+└── retained when the stack is deleted — the customer deletes it last
+
+Tenants deployed before this bucket existed kept their state at
+s3://{TF_STATE_BUCKET}/tenants/{slug}.tfstate; the next deploy or teardown
+moves it (.github/scripts/terraform-init-aws.sh).
 ```
 
 ---
@@ -348,10 +359,11 @@ Resource Group: chatbot-{slug}
 │   ├── secret: llm-api-key        ← written by Terraform during apply
 │   ├── secret: pinecone-api-key   ← customer's own key  [vector_store = pinecone]
 │   ├── secret: vector-db-url      ← Postgres URL        [vector_store = pgvector]
-│   │   (no storage-key — the account key is deliberately stored nowhere;
-│   │    both containers reach Blob Storage through managed identities)
+│   │   (no storage-key — nothing uses the docs account key, and the account
+│   │    refuses it: both containers reach Blob Storage through managed
+│   │    identities. Terraform state still records the key; see below)
 │   ├── secret: docs-signer-secret ← shared auth secret for the Function below
-│   └── Access policy: the deploying service principal ONLY. The Container App
+│   └── Access policy: the deploying identity ONLY. The Container App
 │       does not read from this vault — Terraform sets its app secrets directly
 │       (see below), so the vault is a durable record, not the injection path.
 │
@@ -364,16 +376,23 @@ Resource Group: chatbot-{slug}
 │
 ├── Storage Account: chatbot{slug}  (hyphens stripped, max 24 chars)
 │   ├── Blob container: documents  (private)
+│   ├── Shared Key authorization: DISABLED. Only Entra ID identities and
+│   │     user-delegation SAS tokens work, so the access key Terraform
+│   │     records in state authorizes nothing. Terraform itself manages the
+│   │     container through Entra ID (provider storage_use_azuread).
 │   └── CORS: PUT from the platform's own origin (browser → Blob uploads)
 │
 ├── Storage Account: chatbot{slug}fn  (truncated to 22 chars, then "fn")
 │   └── the Azure Functions runtime's own bookkeeping store. Deliberately
 │       separate from the docs account so the docs-signer identity's role
-│       never has to cover anything but the tenant's documents.
+│       never has to cover anything but the tenant's documents. Keeps Shared
+│       Key on: a Linux Consumption host needs it (Known Limitation #9).
 │
 ├── Service Plan: chatbot-{slug}-docs-signer-plan  (Y1 Consumption)
 │
 ├── Function App: chatbot-{slug}-docs-signer  (Linux, Node 20, https_only)
+│   ├── Publishing: FTP and WebDeploy basic auth DISABLED — code is deployed
+│   │     only with the workflow's federated identity
 │   ├── Route: POST /api/docs-signer   authLevel: "anonymous"
 │   │     auth is the shared-secret header, mirroring the Lambda Function
 │   │     URL's authorization_type = NONE on the AWS side
@@ -425,10 +444,22 @@ CUSTOMER'S OWN PINECONE PROJECT                  [vector_store = pinecone]
 ─────────────────────────────────────────────────────────────
 └── Serverless index: chatbot-{slug}   (dim 384, cosine, us-east-1)
     └── same index resource as the AWS path. Azure has no pre-created secret
-        store at dispatch time, so the customer's key travels as a masked
-        workflow input rather than being read from their cloud.
+        store at dispatch time, so the run fetches the customer's key from
+        the platform with its OIDC token (see "Azure — LLM API Key" below)
+        rather than reading it from their cloud.
 
-Terraform state: s3://{TF_STATE_BUCKET}/azure/tenants/{slug}/terraform.tfstate
+Storage Account: cbtf{slug}   (hyphens stripped; created by the bootstrap)
+├── container tfstate: this chatbot's Terraform state (terraform.tfstate),
+│   in the customer's own subscription rather than the platform's
+├── Shared Key disabled: Entra ID only. The deployment identity holds
+│   Storage Blob Data Contributor on this container and nothing else
+├── Terraform's backend signs in with the run's GitHub OIDC token
+│   (use_oidc, use_azuread_auth) and takes a blob lease per run
+└── versioned; superseded versions expire after 30 days
+
+Tenants deployed before this account existed kept their state at
+s3://{TF_STATE_BUCKET}/azure/tenants/{slug}/terraform.tfstate; the next
+deploy or teardown moves it (.github/scripts/terraform-init-azure.sh).
 ```
 
 ---
@@ -444,7 +475,8 @@ Form input (plaintext)
   AES-256-GCM encrypt ──────────────────────────► tenants.llmApiKeyEncrypted (DB)
        │
        ▼
-  STS AssumeRole (customer's deploymentRoleArn)
+  STS AssumeRole (customer's deploymentRoleArn, ExternalId = tenant id —
+  their trust policy conditions on it, so the role serves one tenant only)
        │
        ▼
   Secrets Manager PutSecretValue
@@ -464,11 +496,20 @@ Form input (plaintext)
        │
        ├── AES-256-GCM encrypt ──────────────────► tenants.llmApiKeyEncrypted (DB)
        │
-       ▼ (at deploy time)
-  Decrypt from DB
+       ▼ (at deploy time — never a dispatch input)
+  Run requests a GitHub OIDC token, audience ai-chatbot-platform:tenant-secrets
        │
        ▼
-  Passed as Terraform variable (masked in GitHub Actions logs)
+  POST /api/deployments/{id}/secrets   Authorization: Bearer <token>
+    platform checks: GitHub signature · repository · sub = …:environment:tenant-{id}
+                     · workflow_ref = deploy-tenant-azure.yml@deploy ref
+                     · deployment active, unclaimed, same run  (one UPDATE)
+       │ all hold → decrypt and release, once per deployment
+       ▼
+  Masked, written to a runner-temp file, sourced by the Terraform steps only
+       │
+       ▼
+  Passed as Terraform variable
        │
        ▼
   Key Vault secret: llm-api-key (written by Terraform apply)
@@ -477,21 +518,30 @@ Form input (plaintext)
   Container App mounts secret reference at runtime
 ```
 
-### Azure — Client Secret
+### Azure — Subscription Access (no credential)
 
 ```
-Form input (plaintext)
+Onboarding                                   Customer (once, in their own tenant)
+  wizard generates tenant id (UUID)            federated credential on their identity:
+  shows subject ─────────────────────────────►   issuer   token.actions.githubusercontent.com
+                                                 audience api://AzureADTokenExchange
+                                                 subject  repo:{owner}/{repo}:environment:tenant-{id}
+
+Deploy (deploy-tenant-azure.yml, job environment: tenant-{id})
+  GitHub signs OIDC token, sub = …:environment:tenant-{id}
        │
        ▼
-  AES-256-GCM encrypt ──────────────────────────► tenants.azureClientSecretEncrypted (DB)
-       │
-       ▼ (at deploy time)
-  Decrypt from DB
-       │
+  azure/login + azurerm (use_oidc) ──► Entra ID: subject matches this identity's credential?
+                                          │ yes → short-lived access token (never stored)
+                                          │ no  → login refused, nothing created
        ▼
-  Passed as Terraform variable (masked in GitHub Actions logs)
-  Used by Terraform provider to authenticate to Azure
+  terraform apply in the customer's subscription
+
+Stored by the platform: subscription id, Entra tenant id, client id. No secret.
 ```
+
+The subject names the tenant, not the branch, so one customer's credential
+never accepts another tenant's run. See "Azure Security Model" in `SECURITY.md`.
 
 ### Both clouds — docs-signer shared secret
 
@@ -515,9 +565,10 @@ randomBytes(32).toString("hex")
        │
        └── Azure No vault exists at onboarding — Terraform creates it during
                  the deploy — so nothing is written and docsSignerSecretArn
-                 stays null. On every deploy the plaintext is decrypted and
-                 sent as a masked workflow input, written to Key Vault, and
-                 set directly as the Function App's DOCS_SIGNER_SECRET.
+                 stays null. On every deploy the run fetches the plaintext
+                 from the platform with its OIDC token, exactly as the LLM
+                 key above; it is written to Key Vault and set directly as
+                 the Function App's DOCS_SIGNER_SECRET.
 
 At call time (both clouds):
   POST tenants.docsSignerUrl
@@ -551,13 +602,13 @@ tenants
   │   ─────────────────────          ──────────────────────
   │   awsAccountId                   azureSubscriptionId
   │   awsRegion                      azureTenantId
-  │   deploymentRoleArn              azureClientId
-  │   s3DocsBucket  (see note)       azureClientSecretEncrypted
-  │   s3DocsPrefix                   azureResourceGroup
-  │   acmCertificateArn              azureRegion
-  │   llmSecretArn                   azureStorageAccount
-  │   pineconeSecretArn              azureStorageContainer
-  │   docsSignerSecretArn            azureKeyVaultName
+  │   deploymentRoleArn              azureClientId  (no secret column)
+  │   s3DocsBucket  (see note)       azureResourceGroup
+  │   s3DocsPrefix                   azureRegion
+  │   acmCertificateArn              azureStorageAccount
+  │   llmSecretArn                   azureStorageContainer
+  │   pineconeSecretArn              azureKeyVaultName
+  │   docsSignerSecretArn
   │
   │   shared: llmProvider (openai|anthropic|openrouter),
   │           llmApiKeyEncrypted, llmModel, llmBaseUrl,
@@ -569,7 +620,9 @@ tenants
   ├── deployments                                    tenantId
   │     kind: deploy | destroy
   │     status: pending → running → succeeded | failed | cancelled
+  │       (forward only; at most one pending/running per tenant — unique index)
   │     chatbotVersion, githubRunId, githubRunUrl
+  │     secretsClaimedAt — Azure: when the run fetched its secrets (set once)
   │     errorMessage, startedAt, finishedAt
   │     triggeredByUserId ─────────────────────────────► users
   │
@@ -581,9 +634,9 @@ tenants
 
 tenant_drafts — owned by users, NOT attached to a tenant
   name, step, data (jsonb)
-  Non-secret wizard state only: llmApiKey, pineconeApiKey and
-  azureClientSecret are stripped before saving and must be re-entered on
-  resume. Deliberately not a tenants row with nullable columns, so a draft
+  Non-secret wizard state only: llmApiKey and pineconeApiKey are stripped
+  before saving and must be re-entered on resume. The generated tenantId is
+  kept, since a federated credential may already name it. Deliberately not a tenants row with nullable columns, so a draft
   can never be deployed. Deleted once the tenant it describes exists.
 
 Note: s3DocsBucket exists in the schema but nothing ever writes it, so it is

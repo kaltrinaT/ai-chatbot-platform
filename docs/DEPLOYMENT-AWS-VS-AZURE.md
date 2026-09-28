@@ -16,7 +16,7 @@ It describes the system as the code implements it. The sources are:
 
 The customer-facing preparation steps (creating the IAM role or service principal) are covered in more detail in [`CLIENT-DEPLOYMENT-GUIDE.md`](../CLIENT-DEPLOYMENT-GUIDE.md). This document focuses on the deployment itself.
 
-Related figures: [AWS pipeline](figures/fig-11-aws-deployment-pipeline.svg), [Azure pipeline](figures/fig-12-azure-deployment-pipeline.svg), [pipeline comparison](figures/fig-17-pipeline-comparison.svg), [AWS tenant infrastructure](figures/fig-04-aws-tenant-infrastructure.svg), [Azure tenant infrastructure](figures/fig-05-azure-tenant-infrastructure.svg), [secret flow](figures/fig-06-secret-flow.svg), [estimated cost](figures/fig-13-estimated-cost-by-cell.svg).
+Related figures: [AWS credential model before](figures/fig-20-aws-credential-model-before.svg) and [after](figures/fig-21-aws-credential-model-after.svg), [Azure credential model before](figures/fig-22-azure-credential-model-before.svg) and [after](figures/fig-23-azure-credential-model-after.svg), [AWS pipeline](figures/fig-11-aws-deployment-pipeline.svg), [Azure pipeline](figures/fig-12-azure-deployment-pipeline.svg), [pipeline comparison](figures/fig-17-pipeline-comparison.svg), [AWS tenant infrastructure](figures/fig-04-aws-tenant-infrastructure.svg), [Azure tenant infrastructure](figures/fig-05-azure-tenant-infrastructure.svg), [secret flow](figures/fig-06-secret-flow.svg), [estimated cost](figures/fig-13-estimated-cost-by-cell.svg).
 
 ---
 
@@ -27,7 +27,7 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 1. **The platform is a control plane.** It stores tenant configuration and triggers deployments. The chatbot, its documents and its vector store run in the **customer's own** AWS account or Azure subscription.
 2. **One golden image, replicated per tenant.** The platform's ECR holds one backend image and one frontend (chat UI) image. Every deploy copies both into the tenant's own registry: ECR on AWS, ACR on Azure. Nothing is built from source per tenant.
 3. **GitHub Actions runs the deploy.** The platform calls `workflow_dispatch` with the tenant's inputs. The workflow pushes the images and runs `terraform apply`.
-4. **Terraform state lives in the platform's S3 bucket**, one state file per tenant, **for both clouds**.
+4. **Terraform state, one file per tenant, in the customer's own cloud**, created by their bootstrap and locked per run. On AWS it is a bucket in the account's regional namespace (`tfstate-<slug>-<account>-<region>-an`). On Azure it is a storage account in the chatbot's resource group (`cbtf<slug>`), reached through Entra ID.
 5. **Status comes back by webhook.** The workflow POSTs `running`, then `succeeded` or `failed`, to `PLATFORM_BASE_URL/api/deployments/<id>/status`, authenticated with `x-webhook-secret`. The Terraform outputs are also uploaded as a `deployment-outputs-<id>` artifact that is kept for 90 days, so the platform can recover them if the final callback is lost.
 6. **The same runtime components on both clouds:** a backend container (port 8000, health check `/api/health`), a frontend nginx container (port 80), a private documents store, a docs-signer function that can write and delete documents but never read them, and a vector store. The vector store is either the customer's own Pinecone index (384-dim, cosine, AWS `us-east-1`) or managed Postgres with pgvector.
 7. **The same LLM wiring.** `openai`, `anthropic` or `openrouter` sets `OPENAI_BASE_URL`, and `LLM_MODEL` is used when no model is given.
@@ -39,8 +39,8 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 | Platform env | `PLATFORM_CHATBOT_IMAGE_URI`, `PLATFORM_FRONTEND_IMAGE_URI` (no tag) | `triggerDeployment` — without them, dispatch is refused |
 | Platform env | `CHATBOT_DEPLOY_REF` (default `main`) | git ref the workflow runs from |
 | Platform env | `AWS_PROFILE` (`platform-control-plane`) | onboarding's `sts:AssumeRole`, assumed from the operator's `aws login` session. **No AWS access key is stored for the application either**; see [`infra/platform/control-plane`](../infra/platform/control-plane/) |
-| GitHub variable | `AWS_PLATFORM_DEPLOY_ROLE_ARN` | the platform role GitHub Actions assumes through OIDC: pulling from platform ECR, chaining into the tenant role (AWS), S3 state (Azure). **No AWS access key is stored in GitHub**; see [`infra/platform/github-oidc`](../infra/platform/github-oidc/) |
-| GitHub secret | `TF_STATE_BUCKET`, `TF_STATE_REGION` | Terraform backend (both) |
+| GitHub variable | `AWS_PLATFORM_DEPLOY_ROLE_ARN` | the platform role GitHub Actions assumes through OIDC: pulling from platform ECR, and reading an Azure tenant's old state the one time it is moved. AWS deploys federate into the tenant role directly and do not chain through it. **No AWS access key is stored in GitHub**; see [`infra/platform/github-oidc`](../infra/platform/github-oidc/) |
+| GitHub secret | `TF_STATE_BUCKET`, `TF_STATE_REGION` | the platform's old shared state bucket, read only for the one-time move of a tenant's state into its own cloud (both) |
 | GitHub secret | `PLATFORM_BASE_URL`, `PLATFORM_WEBHOOK_SECRET` | status callbacks, CORS origin for document uploads |
 | GitHub variable | `EXTRA_CORS_ORIGIN` (optional) | an extra upload origin, e.g. `http://localhost:3000` |
 
@@ -51,7 +51,7 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 ### Phase A — Customer preparation (in their AWS account)
 
 1. **Get the account ID and choose a region.**
-2. **Create an IAM role** whose trust policy allows the platform account to call `sts:AssumeRole`, with **no** `ExternalId` condition.
+2. **Create an IAM role** whose trust policy allows the platform account to call `sts:AssumeRole`, conditioned on the `sts:ExternalId` the onboarding form shows for this tenant (its tenant ID). The condition is what stops the role from being assumable for any other tenant.
 3. **Name it `chatbot-client-deploy-*`.** The platform's own IAM policy can only assume roles that match this pattern.
 4. **Attach the permissions policy:** `ec2`, `elasticloadbalancing`, `ecs`, `ecr`, `s3`, `lambda`, `secretsmanager`, `logs`, `rds`, `cloudfront`, plus a limited set of IAM actions for creating task and Lambda roles.
 5. **Get the LLM API key, and the Pinecone key if using Pinecone.**
@@ -80,7 +80,7 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 | 15 | Configure AWS credentials (client) | **Chains from the platform role into `deployment_role_arn`** (`role-chaining: true`). AWS caps a chained session at 1 hour. |
 | 16 | Replicate images to client ECR | Creates `<slug>/chatbot` and `<slug>/chatbot-frontend` if missing (scan on push), then tags and pushes `:<chatbot_version>` |
 | 17 | Ensure ECS service-linked role | Idempotent `iam create-service-linked-role` |
-| 18 | Terraform init | Terraform 1.9.5, S3 backend, key `tenants/<slug>.tfstate` |
+| 18 | Terraform init | Terraform 1.15.3 through `.github/scripts/terraform-init-aws.sh`: the customer's own bucket `tfstate-<slug>-<account>-<region>-an`, key `terraform.tfstate`, S3 lock file. A tenant whose state is still in the platform's bucket has it moved and verified first; anything short of a definite answer about where the state is stops the run |
 | 19 | Read customer Pinecone key | Pinecone only: reads the value from **the customer's** Secrets Manager under the assumed role and masks it |
 | 20 | Install docs-signer Lambda deps | `npm install --production`, because `archive_file` zips whatever is on disk |
 | 21 | **Terraform apply** | Single apply; resources are listed below |
@@ -129,8 +129,8 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 ### Phase A — Customer preparation (in their Azure subscription)
 
 1. **Get the subscription ID and the Entra tenant ID.**
-2. **Create an App Registration** (service principal) and record its client ID.
-3. **Create a client secret** and copy its value.
+2. **Create a deployment identity** (an App Registration or a user-assigned managed identity) and record its client ID. **No client secret is created.**
+3. **Add a federated credential** to that identity, with the values the onboarding form shows: issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, subject `repo:<owner>/<repo>:environment:tenant-<tenant id>`. The tenant ID is generated when the form opens, so the credential exists before the first deploy.
 4. **Assign `Contributor` and `User Access Administrator` at subscription scope.** Subscription scope is required because the resource group does not exist yet. The second role is needed because Terraform creates custom role definitions and assigns them.
 5. **Choose a region** (default `eastus`).
 6. **Get the LLM API key, and the Pinecone key if using Pinecone.**
@@ -139,25 +139,27 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 
 7. **The form is validated.** The slug must be **3–18 characters**, because Key Vault names are limited to 24 characters and the vault is named `cb-<slug>-kv`.
 8. **No call is made to the customer's cloud.** The customer's Key Vault does not exist yet: Terraform creates it during the deploy. Instead the platform:
-   - encrypts the client secret, the LLM key and the Pinecone key (AES-256-GCM in the platform database)
+   - encrypts the LLM key and the Pinecone key (AES-256-GCM in the platform database). There is no Azure credential to store.
    - generates the docs-signer secret locally (`generateDocsSignerSecret`) and stores it encrypted
-9. **The tenant row is inserted** and `triggerDeployment` dispatches `deploy-tenant-azure.yml` with `buildAzureInputs`:
+9. **The tenant row is inserted under the form's tenant ID** and `triggerDeployment` dispatches `deploy-tenant-azure.yml` with `buildAzureInputs`:
    - Non-secret settings are packed into a single JSON `config` input. This workaround dates from when `workflow_dispatch` allowed only 10 inputs.
-   - **The decrypted client secret, LLM key, Pinecone key and docs-signer secret are sent as workflow inputs.**
+   - `tenant_id` names the job's GitHub environment, and so the OIDC subject.
+   - **No secret is an input.** The run fetches the LLM key, Pinecone key and docs-signer secret from the platform itself, proving with its GitHub OIDC token that it is this tenant's deploy workflow (see "Credentials in Transit" in `SECURITY.md`).
 
 ### Phase C — Pipeline (`deploy-tenant-azure.yml`, 45-minute timeout)
 
 | # | Step | What happens |
 |---|---|---|
-| 10 | Mask secret inputs | `::add-mask::` for all four secret inputs |
+| — | Job environment | `tenant-<tenant_id>`: puts the tenant into the OIDC token's `sub` claim |
+| 10 | Mask secret inputs | `::add-mask::` for the three secret inputs |
 | 11 | Notify platform — run started | Same as AWS |
 | 12 | Parse tenant config | `jq` checks the IDs are present and applies defaults: region `eastus`, version `latest`, vector store `pinecone` |
 | 13 | Checkout | |
 | 14 | Compute resource names | ACR name `chatbot<slug-without-hyphens>`. The source ECR region is **read from the image URI**, not taken from the tenant's region. |
-| 15 | Configure AWS credentials (platform role via OIDC) | Same OIDC platform role as AWS. Its credentials serve the rest of the job: the source ECR here, and the S3 state backend in every Terraform step. |
+| 15 | Configure AWS credentials (platform role via OIDC) | Same OIDC platform role as AWS. Its credentials pull from the source ECR here, and read a tenant's old state in step 18 the one time it is moved. |
 | 16 | Pull source images | Same golden images as AWS |
-| 17 | Azure login | `azure/login@v2` with the customer's service principal |
-| 18 | Terraform init | Terraform `~1.6`, **S3** backend, key `azure/tenants/<slug>/terraform.tfstate`. AWS credentials come from the job environment set by step 15. No step sets its own, because step-level keys would override the OIDC credentials. |
+| 17 | Azure login | `azure/login@v2` with **no secret**: the job's GitHub OIDC token is exchanged through the customer's federated credential. Refused here, before anything is created, if the credential is missing or names another subject; the failure callback reports the expected subject. Terraform later authenticates the same way (`use_oidc = true`). |
+| 18 | Terraform init | Terraform 1.15.3 through `.github/scripts/terraform-init-azure.sh`: **azurerm** backend on the customer's storage account `cbtf<slug>` (container `tfstate`), looked up in the chatbot's resource group first, reached through Entra ID with the run's OIDC token, locked with a blob lease. A tenant whose state is still in the platform's bucket has it copied across and verified first; anything short of a definite answer about where the state is stops the run |
 | 19 | **Terraform apply — bootstrap** | `-target` the resource group, the ACR, the chatbot's **user-assigned identity** and its **`AcrPull`** grant, with placeholder image URIs. The registry must exist before images are pushed, and the identity must hold `AcrPull` before the app's first revision pulls. A 90-second pause follows for the grant to propagate. |
 | 20 | Log in to ACR | `az acr login` |
 | 21 | Retag and push images to ACR | `chatbot-backend:<version>`, `chatbot-frontend:<version>` |
@@ -171,8 +173,8 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 **What step 22 creates:**
 
 - **Resource group** `chatbot-<slug>`, holding every other resource.
-- **ACR** (Basic) with the **admin user disabled**. The Container App pulls images as its user-assigned identity, which holds `AcrPull`. Pushes use `az acr login` with the deploying service principal and never needed the admin user.
-- **Key Vault** (Standard) with a single inline access policy for the deploying service principal. It holds `llm-api-key`, `pinecone-api-key`, `docs-signer-secret` and `vector-db-url`.
+- **ACR** (Basic) with the **admin user disabled**. The Container App pulls images as its user-assigned identity, which holds `AcrPull`. Pushes use `az acr login` with the deploying identity's federated login and never needed the admin user.
+- **Key Vault** (Standard) with a single inline access policy for the deploying identity. It holds `llm-api-key`, `pinecone-api-key`, `docs-signer-secret` and `vector-db-url`.
 - **Storage account for documents** (Standard LRS, TLS 1.2 minimum, nested public access off), with blob soft-delete for 30 days and CORS allowing `PUT` from the platform origin. It contains a private `documents` container.
 - **Docs-signer Function App** on Linux, Consumption plan `Y1`, Node 20, with its **own runtime storage account** and a system-assigned identity. Its secret arrives as a plain app setting (see §5).
 - **Two custom roles scoped to the docs storage account:**
@@ -204,9 +206,9 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 | | AWS | Azure |
 |---|---|---|
 | Workflow | `deploy-tenant.yml` | `deploy-tenant-azure.yml` |
-| Dispatch inputs | 17 inputs, **all non-secret** (ARNs only) | 9 inputs, **4 of them secret values**, settings in one JSON `config` |
-| Credentials to the customer's cloud | GitHub OIDC → platform role → chained `sts:AssumeRole` into the tenant role (1 h cap) | Customer's long-lived service principal secret, passed as an input |
-| Terraform version | pinned `1.9.5` | `~1.6` |
+| Dispatch inputs | 17 inputs, **all non-secret** (ARNs only) | 9 inputs, **3 of them secret values** (none a cloud credential), settings in one JSON `config` |
+| Credentials to the customer's cloud | GitHub OIDC → platform role → chained `sts:AssumeRole` into the tenant role with that tenant's `ExternalId` (1 h cap) | GitHub OIDC (per-tenant environment subject) → customer's federated credential → Entra access token. Nothing stored |
+| Terraform version | pinned `1.15.3` | pinned `1.15.3` |
 | Terraform applies | **1** | **2** (bootstrap `-target` RG+ACR, then full) |
 | Registry created by | the workflow's CLI (`aws ecr create-repository`), outside Terraform | Terraform (bootstrap apply) |
 | Steps outside Terraform | ECR repo creation, ECS service-linked role, Lambda `InvokeFunction` permission | Function code deployment (`functions-action`) |
@@ -214,7 +216,7 @@ Both clouds follow the same model. The differences in section 4 are all variatio
 | Rollout gate | ECS circuit breaker + rollback + `wait_for_steady_state` → bad image **fails** the run | Probes on the revision; no circuit breaker or steady-state wait is configured |
 | Force-new-rollout on mutable tag | `force_new_deployment = true` | `revision_suffix = r<run_id>-<attempt>` |
 | Job timeout | 45 min | 45 min |
-| State key | `tenants/<slug>.tfstate` | `azure/tenants/<slug>/terraform.tfstate` (same S3 bucket) |
+| State location | Customer's own bucket `tfstate-<slug>-<account>-<region>-an`, key `terraform.tfstate` | Customer's own storage account `cbtf<slug>`, container `tfstate`, key `terraform.tfstate` |
 | Teardown workflow | `destroy-tenant.yml` | none |
 
 ### 4.2 Resource mapping
@@ -247,13 +249,13 @@ This is the largest difference between the two paths.
 
 | Secret | AWS path | Azure path |
 |---|---|---|
-| LLM API key | Form → platform → **customer Secrets Manager** (once). Workflow and Terraform see only the ARN. | Form → platform DB (encrypted) → **decrypted and sent as a workflow input on every deploy** → TF variable → Key Vault **and** a Container App secret |
+| LLM API key | Form → platform → **customer Secrets Manager** (once). Workflow and Terraform see only the ARN. | Form → platform DB (encrypted) → **released once per deploy to the run that proves, by OIDC token, it is this tenant's deploy workflow** → TF variable → Key Vault **and** a Container App secret |
 | Pinecone key | Stored in Secrets Manager; the workflow reads the value under the assumed role only to create the index | Same as the LLM key |
-| Docs-signer secret | Generated, written to Secrets Manager, plus an encrypted platform copy; the Lambda reads it by ARN | Generated locally, stored encrypted, sent as an input on every deploy → Key Vault **and** a Function app setting |
-| Cloud credential | None stored; the platform assumes a role for each operation | Service principal secret stored encrypted, sent as an input on every deploy |
-| Present in Terraform state | ARNs; the pgvector password (generated) | LLM key, Pinecone key, signer secret, SP secret (as variables), pgvector password |
+| Docs-signer secret | Generated, written to Secrets Manager, plus an encrypted platform copy; the Lambda reads it by ARN | Generated locally, stored encrypted, released to the deploy run the same way → Key Vault **and** a Function app setting |
+| Cloud credential | None stored; the platform assumes a role for each operation | None stored; each run federates through the customer's credential, which trusts that tenant only |
+| Present in Terraform state | ARNs; the pgvector password (generated). Kept in the customer's own account | LLM key, Pinecone key, signer secret (as Key Vault secret values), pgvector password. Kept in the customer's own subscription |
 
-On AWS, secret values stay in the customer's account after onboarding. On Azure, they pass through GitHub Actions (masked) and Terraform state on every deploy. The reason is ordering: the Key Vault is created by the same deploy that needs it.
+On AWS, secret values stay in the customer's account after onboarding. On Azure, the deploy run fetches them from the platform, which releases them once, to that tenant's own run, on proof of its OIDC subject. Terraform then writes them, so they also sit in Terraform state, which is kept in the customer's own subscription. The reason for the difference is ordering: on Azure the Key Vault is created by the same deploy that needs it.
 
 ### 4.4 Cost (from `src/lib/pricing.ts`, us-east-1 / East US list prices, light traffic)
 
@@ -285,7 +287,7 @@ Notes:
 | Custom domain | Works when an ACM certificate ARN is also supplied | Accepted and reported as the URL, but **not bound** |
 | Long reindex request | ALB idle timeout raised to 180 s | Container Apps ingress default applies |
 | Callback to platform lost | Outputs recovered from the artifact; row reconciled from the run's conclusion | Same |
-| Customer secret rotated | Update the Secrets Manager secret, then redeploy (new tasks read it) | Update in the platform (see `scripts/update-azure-tenant-secret.ts`), then redeploy |
+| Customer identity replaced | Update the role ARN, then redeploy | Add the federated credential to the new identity, point the tenant at it (`scripts/update-azure-tenant-identity.ts`), then redeploy. No secret to rotate |
 | Offboarding | One click → `destroy-tenant.yml` | Manual |
 
 ---
@@ -303,7 +305,7 @@ These come straight from the code and its comments. They are useful as limitatio
 7. **Azure `chatbot_url` with a domain.** `outputs.tf` reports `https://<domain>`, but no custom domain or certificate is configured. The AWS output had the same bug and was fixed to report only a scheme the endpoint actually answers on.
 8. **No rollout gate on Azure.** AWS turns a failed rollout into a failed deployment. Azure relies on revision probes and has no equivalent of the circuit breaker plus steady-state wait.
 9. **No Azure teardown.** `triggerTenantDestroy` handles AWS only, and a misconfigured Azure tenant can only be fixed with the scripts in `scripts/`.
-10. **Cross-cloud dependency.** Azure deploys still need AWS, for the S3 state bucket and the ECR source images. They no longer need a stored AWS key, since GitHub Actions reaches the platform role through OIDC, but an AWS outage or a broken OIDC trust still blocks Azure deployments too.
+10. **Cross-cloud dependency.** Azure deploys still need AWS for the ECR source images, and, until a tenant's state has moved, to read its old state once. They no longer need a stored AWS key, since GitHub Actions reaches the platform role through OIDC, but an AWS outage or a broken OIDC trust still blocks Azure deployments too. Azure state itself no longer depends on AWS.
 11. **AWS tasks run in public subnets** with public IPs to avoid NAT gateway costs, a trade-off the Terraform comments accept for the MVP. Azure Container Apps without VNet integration make a similar trade-off.
 
 ---
@@ -313,7 +315,7 @@ These come straight from the code and its comments. They are useful as limitatio
 | Dimension | Simpler / stronger on | Why |
 |---|---|---|
 | Secret hygiene | **AWS** | Values written once into the customer account; only ARNs travel afterwards |
-| Customer credential model | **AWS** | Short-lived assumed role vs a stored service principal secret |
+| Customer credential model | **Tie** | Both clouds hold no customer credential: a short-lived assumed role on AWS, a per-tenant federated login on Azure |
 | Deployment safety | **AWS** | Circuit breaker + steady-state wait fail the run on a bad rollout |
 | Private data plane (pgvector) | **AWS** | Database reachable only from tasks |
 | Lifecycle completeness | **AWS** | Automated teardown exists |

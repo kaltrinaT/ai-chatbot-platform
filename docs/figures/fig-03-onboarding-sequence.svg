@@ -60,7 +60,7 @@
 
     <polyline points="340,226 412,226 412,254 344,254" fill="none" stroke="#a13b12" stroke-width="1.3" marker-end="url(#ar)"/>
     <text x="422" y="236" font-size="10.5" fill="#a13b12">Zod validation, then AES-256-GCM encryption of the LLM key,</text>
-    <text x="422" y="252" font-size="10.5" fill="#a13b12">the Pinecone key and the Azure client secret</text>
+    <text x="422" y="252" font-size="10.5" fill="#a13b12">and the Pinecone key — no Azure credential is collected</text>
 
     <line x1="340" y1="290" x2="986" y2="290" stroke="#2f343d" stroke-width="1.3" marker-end="url(#a)"/>
     <text x="350" y="284" font-size="10.5">[AWS] STS AssumeRole on the customer's deployment role — 15-minute session</text>

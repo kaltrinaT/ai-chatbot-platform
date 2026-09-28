@@ -312,13 +312,23 @@ a weak metric; coverage of the code that handles secrets is not.
 
 ### Residual risk register
 
-The six Known Limitations in `SECURITY.md` are re-presented as a risk table
+The Known Limitations in `SECURITY.md` are re-presented as a risk table
 with likelihood, impact, and disposition (mitigated / accepted / deferred).
 Accepted-with-rationale is a legitimate outcome and reads better to an examiner
-than a claimed clean bill of health. Limitation #2 in particular — the operator
-holds `PLATFORM_ENCRYPTION_KEY` and the database, so encrypted tenant
-credentials are recoverable by the operator — is a *structural* bound on what
-this architecture can promise, and should be stated as such rather than buried.
+than a claimed clean bill of health.
+
+Limitation #2 is the worked example of *mitigated*: the operator could once
+recover every Azure customer's subscription credential from the database and
+`PLATFORM_ENCRYPTION_KEY`. Workload identity federation removed the credential
+rather than protecting it better, so the platform now stores no credential to
+any customer cloud. Two bounds remain and should be stated rather than buried:
+application secrets (LLM, Pinecone, docs-signer) are still recoverable by the
+operator, and the trust that the stored secret used to carry now sits with the
+deploy repository and GitHub as token issuer (Limitation #8).
+
+A before/after credential inventory makes the change measurable: count, per
+cloud, the values the platform holds that grant access to a customer account
+(before: AWS 0, Azure 1 per tenant; after: 0 and 0).
 
 ---
 

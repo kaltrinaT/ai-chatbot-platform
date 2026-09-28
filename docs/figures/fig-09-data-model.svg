@@ -87,7 +87,7 @@
       <text x="600" y="216">azure_subscription_id</text>
       <text x="600" y="231">azure_tenant_id</text>
       <text x="600" y="246">azure_client_id</text>
-      <text x="600" y="261">azure_client_secret_encrypted ◆</text>
+      <text x="600" y="261" fill="#5b6270" font-style="italic">(no credential column: federated)</text>
       <text x="600" y="276">azure_resource_group</text>
       <text x="600" y="291">azure_region</text>
       <text x="600" y="306">azure_storage_account</text>
