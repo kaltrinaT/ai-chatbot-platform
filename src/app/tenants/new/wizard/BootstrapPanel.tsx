@@ -36,7 +36,7 @@ import {
   azureStateStorageCommands,
 } from "@/lib/bootstrapLinks";
 import { pollCheck, startCheck, type StartedCheck } from "@/app/tenants/connectionActions";
-import { CONNECTION_CHECK_FIELDS, type ConnectionCheck } from "@/lib/verifyConnection";
+import { CONNECTION_CHECK_FIELDS, type ConnectionCheck } from "@/lib/connectionCheck";
 import { CopyableValue } from "./fields";
 
 /** How often to ask GitHub whether the check has finished. */

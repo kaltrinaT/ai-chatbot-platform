@@ -24,6 +24,7 @@
  */
 
 import { getChatbotRepo, getOctokit, fetchRunProgress, fetchRunSteps, findRunByMarker } from "@/lib/github";
+import type { ConnectionCheck } from "@/lib/connectionCheck";
 
 export const AWS_VERIFY_WORKFLOW = "verify-tenant-aws.yml";
 export const AZURE_VERIFY_WORKFLOW = "verify-tenant-azure.yml";
@@ -51,39 +52,9 @@ export type AzureVerifyTarget = {
 
 export type VerifyTarget = AwsVerifyTarget | AzureVerifyTarget;
 
-/**
- * Exactly the wizard fields a check needs, and the only ones that may be sent
- * to start one.
- *
- * The wizard holds all its answers in one object, the LLM and Pinecone keys
- * among them. Handing that object to the check wholesale would put customer
- * API keys into a request that has no use for them — through request logs,
- * and through an action whose entire purpose is to prove that credentials do
- * not need to travel. The caller filters to this list; the server reads
- * nothing outside it either, so neither side alone is load-bearing.
- */
-export const CONNECTION_CHECK_FIELDS = [
-  "cloudProvider",
-  "tenantId",
-  "slug",
-  "awsRegion",
-  "deploymentRoleArn",
-  "azureClientId",
-  "azureTenantId",
-  "azureSubscriptionId",
-] as const;
-
-/**
- * Status of a check in flight or finished. `pending` covers both "dispatched
- * but GitHub has not created the run yet" and "the run is going" — from the
- * caller's side they are the same state, and distinguishing them would only
- * invite a poller to treat one as an error.
- */
-export type ConnectionCheck =
-  | { status: "pending"; runUrl: string | null }
-  | { status: "connected"; runUrl: string }
-  | { status: "failed"; runUrl: string | null; reason: string }
-  | { status: "unknown"; runUrl: string | null; reason: string };
+// Shared with the onboarding wizard, which runs in the browser and so must not
+// import this module (see connectionCheck.ts).
+export { CONNECTION_CHECK_FIELDS, type ConnectionCheck } from "@/lib/connectionCheck";
 
 /**
  * A run still not found this long after dispatch is treated as lost rather
