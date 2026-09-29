@@ -78,8 +78,11 @@ export default function TenantForm({
   // Settled on step 2, before the customer runs any setup in their cloud: the
   // setup names resources after the slug, and a slug refused only at Deploy
   // meant running it all again under another.
+  // The cloud decides which names the slug has to be free in, so it is asked
+  // with the slug, and switching clouds asks again.
   const slug = (values.slug ?? "").trim();
-  const slugCheck = useAvailability(slug, Boolean(validateTenantValues(values, ["slug"]).slug), checkSlugAvailable);
+  const askSlug = useCallback((value: string) => checkSlugAvailable(value, cloud), [cloud]);
+  const slugCheck = useAvailability(slug, Boolean(validateTenantValues(values, ["slug"]).slug), askSlug, cloud);
 
   // Each chatbot's setup creates its own deployment identity, so one another
   // chatbot already used is always a leftover — usually offered by the

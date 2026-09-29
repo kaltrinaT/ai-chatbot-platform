@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { TenantInput, rawTenantInput, type TenantValues } from "@/lib/tenantInput";
 import { auth } from "@/auth";
 import { db } from "@/db";
@@ -12,6 +12,8 @@ import { encryptSecret } from "@/lib/crypto";
 import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "@/lib/aws";
 import { awsExternalId } from "@/lib/awsTrust";
 import { generateDocsSignerSecret } from "@/lib/azure";
+import { sharedAzureName } from "@/lib/resourceNames";
+import { firstTakenGlobalName } from "@/lib/nameAvailability";
 
 
 /**
@@ -99,6 +101,42 @@ async function slugTaken(slug: string): Promise<boolean> {
 }
 
 /**
+ * Why this slug cannot be used on this cloud, or null if it can.
+ *
+ * A slug unique on the platform can still collide, because the names built
+ * from it are unique across the whole cloud: with another customer's chatbot
+ * whose Azure names come out the same once hyphens are dropped and names
+ * shortened, or with a resource someone outside the platform already holds.
+ * Either way the deploy failed half way through `terraform apply`.
+ */
+async function slugProblem(slug: string, cloud: "aws" | "azure"): Promise<string | null> {
+  if (await slugTaken(slug)) return SLUG_TAKEN;
+
+  if (cloud === "azure") {
+    // Live tenants only: a deleted chatbot's storage and registry names are
+    // free again, and its Key Vault name is its own slug, which slugTaken
+    // already refuses.
+    const others = await db
+      .select({ slug: tenants.slug })
+      .from(tenants)
+      .where(and(eq(tenants.cloudProvider, "azure"), isNull(tenants.deletedAt)))
+      .limit(1000);
+    for (const other of others) {
+      const shared = sharedAzureName(slug, other.slug);
+      if (shared) {
+        return `Chatbot "${other.slug}" already needs the Azure ${shared.resource} name ${shared.name} — Azure drops hyphens from it and shortens it, so the two slugs come out the same. Choose a slug that differs earlier.`;
+      }
+    }
+  }
+
+  const taken = await firstTakenGlobalName(cloud, slug);
+  if (taken) {
+    return `This chatbot's ${taken.resource} would be named ${taken.name}, which someone outside this platform already holds. ${cloud === "azure" ? "Azure" : "S3"} names are unique worldwide, so choose another slug.`;
+  }
+  return null;
+}
+
+/**
  * Asked by the wizard while the slug is typed, before the customer runs any
  * setup in their cloud. The bootstrap names the role, resource group and state
  * storage after the slug, so a slug refused only at Deploy meant running that
@@ -106,12 +144,16 @@ async function slugTaken(slug: string): Promise<boolean> {
  */
 export async function checkSlugAvailable(
   slug: string,
+  cloud: "aws" | "azure",
 ): Promise<{ available: true } | { available: false; reason: string }> {
   const session = await auth();
   if (!session?.user?.id) return { available: false, reason: "Sign in again to check this slug." };
+  // Named by the browser, so held to the two clouds there are.
+  if (cloud !== "aws" && cloud !== "azure") return { available: false, reason: "Choose a cloud first." };
   const value = slug.trim();
   if (!value) return { available: false, reason: "Enter a slug." };
-  return (await slugTaken(value)) ? { available: false, reason: SLUG_TAKEN } : { available: true };
+  const problem = await slugProblem(value, cloud);
+  return problem ? { available: false, reason: problem } : { available: true };
 }
 
 /** The field that names a chatbot's deployment identity, per cloud. */
@@ -194,7 +236,8 @@ export async function createTenantAndDeploy(
   // caught only by the insert below would already have written them. The
   // insert's unique constraint stays as the guard against two submissions
   // racing each other.
-  if (await slugTaken(parsed.slug)) return { errors: { slug: SLUG_TAKEN } };
+  const slugIssue = await slugProblem(parsed.slug, parsed.cloudProvider);
+  if (slugIssue) return { errors: { slug: slugIssue } };
 
   // Likewise before any cloud call: onboarding an AWS tenant assumes this
   // role to write its secrets, and another chatbot's role is not one this

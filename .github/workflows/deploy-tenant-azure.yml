@@ -297,12 +297,24 @@ jobs:
       - name: Log in to ACR
         run: az acr login --name ${{ steps.names.outputs.acr_name }}
 
+      # Retried, because a registry's network blips on its own: one deploy
+      # pushed the backend, then had the frontend's manifest refused with
+      # "connect: connection refused", and failed a run that was otherwise
+      # fine. A push is idempotent, so trying again is safe.
       - name: Retag and push images to tenant ACR
         run: |
+          push() {
+            for attempt in 1 2 3; do
+              docker push "$1" && return 0
+              echo "::warning::Pushing $1 failed (attempt $attempt of 3); retrying in $((attempt * 15))s."
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
           docker tag "${{ inputs.your_ecr_image }}" "${{ steps.names.outputs.image_uri }}"
-          docker push "${{ steps.names.outputs.image_uri }}"
+          push "${{ steps.names.outputs.image_uri }}"
           docker tag "${{ inputs.your_frontend_ecr_image }}" "${{ steps.names.outputs.frontend_uri }}"
-          docker push "${{ steps.names.outputs.frontend_uri }}"
+          push "${{ steps.names.outputs.frontend_uri }}"
 
       - name: "Terraform apply — full deploy"
         working-directory: ${{ env.TF_DIR }}

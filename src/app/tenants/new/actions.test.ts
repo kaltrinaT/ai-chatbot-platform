@@ -16,10 +16,16 @@ const {
   redirectMock,
   revalidatePathMock,
   dbSelectLimit,
+  firstTakenGlobalName,
 } = vi.hoisted(() => {
     // What a lookup finds — the slug's, then the deployment identity's. Empty
     // means the value belongs to no other tenant.
     const dbSelectLimit = vi.fn<(n: number) => Promise<Record<string, unknown>[]>>(async () => []);
+    // The DNS and S3 probe for names held outside the platform. Never the
+    // network in a test: by default every name is free.
+    const firstTakenGlobalName = vi.fn<
+      () => Promise<{ resource: string; name: string; host: string } | null>
+    >(async () => null);
     const authMock = vi.fn();
     const dbInsertReturning = vi.fn();
     // Declared here (rather than via insertValuesReturningChain) so tests can
@@ -49,6 +55,7 @@ const {
     const revalidatePathMock = vi.fn();
     return {
       dbSelectLimit,
+      firstTakenGlobalName,
       revalidatePathMock,
       authMock,
       dbInsertValues,
@@ -83,6 +90,7 @@ vi.mock("@/lib/deploy", () => ({ triggerDeployment }));
 vi.mock("@/lib/crypto", () => ({ encryptSecret }));
 vi.mock("@/lib/aws", () => ({ assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret }));
 vi.mock("@/lib/azure", () => ({ generateDocsSignerSecret }));
+vi.mock("@/lib/nameAvailability", () => ({ firstTakenGlobalName }));
 
 import { db } from "@/db";
 import { tenantDrafts } from "@/db/schema";
@@ -201,6 +209,7 @@ describe("createTenantAndDeploy", () => {
   it("refuses an Azure identity another chatbot used, naming that chatbot", async () => {
     dbSelectLimit
       .mockResolvedValueOnce([]) // the slug is free
+      .mockResolvedValueOnce([]) // no live Azure chatbot shares its names
       .mockResolvedValueOnce([{ slug: "product-chatbot", deletedAt: new Date() }]);
 
     const result = await createTenantAndDeploy(null, formData(validAzure));
@@ -209,6 +218,35 @@ describe("createTenantAndDeploy", () => {
     expect(result?.errors.azureClientId).toMatch(/clientId output/);
     expect(db.insert).not.toHaveBeenCalled();
     expect(triggerDeployment).not.toHaveBeenCalled();
+  });
+
+  // Unique on the platform, but Azure drops hyphens from storage and registry
+  // names: "beta-co" and "betaco" both need chatbotbetaco. Whoever deployed
+  // second failed half way through terraform apply.
+  it("refuses an Azure slug whose names another customer's live chatbot already needs", async () => {
+    dbSelectLimit
+      .mockResolvedValueOnce([]) // the exact slug is free
+      .mockResolvedValueOnce([{ slug: "betaco" }]); // a live Azure chatbot
+
+    const result = await createTenantAndDeploy(null, formData(validAzure));
+
+    expect(result?.errors.slug).toMatch(/Chatbot "betaco" already needs the Azure .* name chatbotbetaco/);
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(triggerDeployment).not.toHaveBeenCalled();
+  });
+
+  it("refuses a slug whose name someone outside the platform holds, before any cloud call", async () => {
+    firstTakenGlobalName.mockResolvedValueOnce({
+      resource: "documents bucket",
+      name: "chatbot-acme-co-docs",
+      host: "chatbot-acme-co-docs.s3.amazonaws.com",
+    });
+
+    const result = await createTenantAndDeploy(null, formData(validAws));
+
+    expect(result?.errors.slug).toMatch(/documents bucket would be named chatbot-acme-co-docs, which someone outside/);
+    expect(assumeTenantRole).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("refuses an AWS role another chatbot used, before assuming it", async () => {
@@ -875,13 +913,13 @@ describe("checkSlugAvailable", () => {
   });
 
   it("reports a slug no tenant has as available", async () => {
-    await expect(checkSlugAvailable("acme-co")).resolves.toEqual({ available: true });
+    await expect(checkSlugAvailable("acme-co", "aws")).resolves.toEqual({ available: true });
   });
 
   it("reports a slug another tenant has, and says why it cannot be reused", async () => {
     dbSelectLimit.mockResolvedValueOnce([{ id: "older-tenant" }]);
 
-    const result = await checkSlugAvailable("acme-co");
+    const result = await checkSlugAvailable("acme-co", "aws");
 
     expect(result.available).toBe(false);
     expect(!result.available && result.reason).toMatch(/Slugs are permanent/);
@@ -890,7 +928,7 @@ describe("checkSlugAvailable", () => {
   it("says nothing about any slug without a session", async () => {
     authMock.mockResolvedValue(null);
 
-    const result = await checkSlugAvailable("acme-co");
+    const result = await checkSlugAvailable("acme-co", "aws");
 
     expect(result.available).toBe(false);
     expect(db.select).not.toHaveBeenCalled();
@@ -933,5 +971,26 @@ describe("checkDeploymentIdentity", () => {
 
     expect(result.available).toBe(false);
     expect(db.select).not.toHaveBeenCalled();
+  });
+});
+
+describe("checkSlugAvailable — the cloud it is asked for", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.mockResolvedValue({ user: { id: "user-1" } });
+  });
+
+  // The cloud arrives from the browser, so it cannot pick anything else.
+  it("answers only for the two clouds there are", async () => {
+    const result = await checkSlugAvailable("acme-co", "gcp" as never);
+
+    expect(result.available).toBe(false);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it("checks the names the slug would need on that cloud", async () => {
+    await checkSlugAvailable("acme-co", "azure");
+
+    expect(firstTakenGlobalName).toHaveBeenCalledWith("azure", "acme-co");
   });
 });

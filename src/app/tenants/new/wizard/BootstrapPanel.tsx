@@ -127,6 +127,11 @@ export function AwsBootstrapPanel({
   /** False while the wizard has not yet confirmed the slug is free. */
   slugReady?: boolean;
 }) {
+  // An account can register GitHub as an identity provider only once, so the
+  // second chatbot in an account — or any account already using GitHub
+  // Actions — has to reuse it, or the stack fails on creating it again.
+  const [providerExists, setProviderExists] = useState(false);
+
   // Every one of these ends up in the link, and a link built from a blank is
   // a stack the customer has to fill in by hand — worse than no link, because
   // it looks complete.
@@ -173,6 +178,19 @@ export function AwsBootstrapPanel({
 
       {ready ? (
         <div className="mt-3">
+          <label className="mb-3 flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={providerExists}
+              onChange={(e) => setProviderExists(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              This AWS account already has GitHub registered as an identity provider — for example
+              because another chatbot from this platform runs in it, or it uses GitHub Actions
+              elsewhere. The setup then reuses it instead of creating a second one, which AWS refuses.
+            </span>
+          </label>
           <BootstrapButton
             href={awsQuickCreateUrl({
               templateBaseUrl: templateBaseUrl!,
@@ -181,6 +199,7 @@ export function AwsBootstrapPanel({
               githubRepo: githubRepo!,
               platformAccountId: platformAccountId!,
               region: awsRegion,
+              createOidcProvider: !providerExists,
             })}
             label="Configure AWS account"
           />

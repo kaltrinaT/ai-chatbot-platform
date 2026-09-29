@@ -223,9 +223,19 @@ jobs:
           role-duration-seconds: 3600
           unset-current-credentials: true
 
+      # Pushes are retried: a registry's network blips on its own (see the same
+      # step in deploy-tenant-azure.yml), and a push is idempotent.
       - name: Replicate images to client ECR
         id: client_image
         run: |
+          push() {
+            for attempt in 1 2 3; do
+              docker push "$1" && return 0
+              echo "::warning::Pushing $1 failed (attempt $attempt of 3); retrying in $((attempt * 15))s."
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
           CLIENT_REGISTRY="${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com"
           aws ecr get-login-password --region ${{ inputs.aws_region }} \
             | docker login --username AWS --password-stdin "$CLIENT_REGISTRY"
@@ -239,7 +249,7 @@ jobs:
                  --image-scanning-configuration scanOnPush=true
           BACKEND_URI="$CLIENT_REGISTRY/$BACKEND_REPO:${{ inputs.chatbot_version }}"
           docker tag "${{ inputs.your_ecr_image }}" "$BACKEND_URI"
-          docker push "$BACKEND_URI"
+          push "$BACKEND_URI"
 
           # Frontend (chat UI)
           FRONTEND_REPO="${{ inputs.tenant_slug }}/chatbot-frontend"
@@ -250,7 +260,7 @@ jobs:
                  --image-scanning-configuration scanOnPush=true
           FRONTEND_URI="$CLIENT_REGISTRY/$FRONTEND_REPO:${{ inputs.chatbot_version }}"
           docker tag "${{ inputs.your_frontend_ecr_image }}" "$FRONTEND_URI"
-          docker push "$FRONTEND_URI"
+          push "$FRONTEND_URI"
 
           echo "uri=$BACKEND_URI" >> "$GITHUB_OUTPUT"
           echo "frontend_uri=$FRONTEND_URI" >> "$GITHUB_OUTPUT"

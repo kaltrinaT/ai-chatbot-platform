@@ -16,13 +16,23 @@ export type AvailabilityStatus = "idle" | "checking" | "available" | "taken";
  * stored; "checking" is derived, so an answer about an older value never shows
  * against a newer one. `ask` must be stable across renders, or every render
  * restarts the wait.
+ *
+ * `scope` is whatever else the answer depends on — the cloud, for a slug,
+ * since the names built from it differ — so switching it asks again rather
+ * than showing an answer given for the other one.
  */
-export function useAvailability(value: string, skip: boolean, ask: (value: string) => Promise<Availability>) {
-  const [answer, setAnswer] = useState<{ value: string; result: Availability } | null>(null);
+export function useAvailability(
+  value: string,
+  skip: boolean,
+  ask: (value: string) => Promise<Availability>,
+  scope = "",
+) {
+  const [answer, setAnswer] = useState<{ value: string; scope: string; result: Availability } | null>(null);
 
+  const current = answer?.value === value && answer.scope === scope ? answer : null;
   const status: AvailabilityStatus =
-    !value || skip ? "idle" : answer?.value !== value ? "checking" : answer.result.available ? "available" : "taken";
-  const reason = status === "taken" && answer && !answer.result.available ? answer.result.reason : undefined;
+    !value || skip ? "idle" : !current ? "checking" : current.result.available ? "available" : "taken";
+  const reason = status === "taken" && current && !current.result.available ? current.result.reason : undefined;
 
   useEffect(() => {
     if (!value || skip) return;
@@ -30,10 +40,10 @@ export function useAvailability(value: string, skip: boolean, ask: (value: strin
       // A failed request is left unanswered: settle() asks again, and the
       // server checks once more before it writes anything.
       const result = await ask(value).catch(() => null);
-      if (result) setAnswer({ value, result });
+      if (result) setAnswer({ value, scope, result });
     }, 400);
     return () => clearTimeout(timer);
-  }, [value, skip, ask]);
+  }, [value, skip, ask, scope]);
 
   /**
    * Whether the wizard may move on, asking now if the answer is not in yet.
@@ -45,7 +55,7 @@ export function useAvailability(value: string, skip: boolean, ask: (value: strin
     if (status === "taken") return false;
     const result = await ask(value).catch(() => null);
     if (!result) return true;
-    setAnswer({ value, result });
+    setAnswer({ value, scope, result });
     return result.available;
   }
 
