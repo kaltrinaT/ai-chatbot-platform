@@ -130,6 +130,38 @@ export async function fetchRunSteps(runId: number): Promise<RunStep[]> {
 }
 
 /**
+ * The error lines a run's failed jobs reported — what GitHub shows at the top
+ * of the run, and what an operator would otherwise have to open the run to
+ * read. For a sign-in that failed, one of them carries the cloud's own error.
+ */
+export async function fetchFailureAnnotations(runId: number): Promise<string[]> {
+  const { owner, repo } = getChatbotRepo();
+  const client = getOctokit();
+
+  const { data } = await client.actions.listJobsForWorkflowRun({
+    owner,
+    repo,
+    run_id: runId,
+    filter: "latest",
+    per_page: 30,
+  });
+
+  const messages: string[] = [];
+  for (const job of data.jobs.filter((j) => j.conclusion === "failure")) {
+    const { data: annotations } = await client.checks.listAnnotations({
+      owner,
+      repo,
+      check_run_id: job.id,
+      per_page: 50,
+    });
+    for (const a of annotations) {
+      if (a.annotation_level === "failure" && a.message) messages.push(a.message);
+    }
+  }
+  return messages;
+}
+
+/**
  * Locate a dispatched run by a platform-generated ID embedded in its
  * `run-name:`, which GitHub exposes as `display_title`.
  *

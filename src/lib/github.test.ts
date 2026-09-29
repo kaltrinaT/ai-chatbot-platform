@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Octokit } from "@octokit/rest";
 import AdmZip from "adm-zip";
 
+// Each test imports the GitHub client afresh, and the first import loads
+// Octokit and adm-zip cold. Alone that takes well under a second; with the
+// whole suite running in parallel it crossed the five-second default.
+vi.setConfig({ testTimeout: 20_000 });
+
 const getWorkflowRun = vi.fn();
 const listJobsForWorkflowRun = vi.fn();
 const listWorkflowRuns = vi.fn();

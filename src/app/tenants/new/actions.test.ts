@@ -17,8 +17,9 @@ const {
   revalidatePathMock,
   dbSelectLimit,
 } = vi.hoisted(() => {
-    // What the slug lookup finds: empty means the slug is free.
-    const dbSelectLimit = vi.fn<(n: number) => Promise<{ id: string }[]>>(async () => []);
+    // What a lookup finds — the slug's, then the deployment identity's. Empty
+    // means the value belongs to no other tenant.
+    const dbSelectLimit = vi.fn<(n: number) => Promise<Record<string, unknown>[]>>(async () => []);
     const authMock = vi.fn();
     const dbInsertReturning = vi.fn();
     // Declared here (rather than via insertValuesReturningChain) so tests can
@@ -85,7 +86,13 @@ vi.mock("@/lib/azure", () => ({ generateDocsSignerSecret }));
 
 import { db } from "@/db";
 import { tenantDrafts } from "@/db/schema";
-import { checkSlugAvailable, createTenantAndDeploy, saveTenantDraft, deleteTenantDraft } from "./actions";
+import {
+  checkDeploymentIdentity,
+  checkSlugAvailable,
+  createTenantAndDeploy,
+  saveTenantDraft,
+  deleteTenantDraft,
+} from "./actions";
 
 function formData(fields: Record<string, string | undefined>): FormData {
   return buildFormData(fields);
@@ -186,6 +193,33 @@ describe("createTenantAndDeploy", () => {
     expect(ensureDocsSignerSecret).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(triggerDeployment).not.toHaveBeenCalled();
+  });
+
+  // Each chatbot's setup creates its own identity. One another tenant used —
+  // here an old app registration, entered for chatbot after chatbot — could
+  // only fail at sign-in, after a check or a deploy had been dispatched.
+  it("refuses an Azure identity another chatbot used, naming that chatbot", async () => {
+    dbSelectLimit
+      .mockResolvedValueOnce([]) // the slug is free
+      .mockResolvedValueOnce([{ slug: "product-chatbot", deletedAt: new Date() }]);
+
+    const result = await createTenantAndDeploy(null, formData(validAzure));
+
+    expect(result?.errors.azureClientId).toMatch(/"product-chatbot", which has been deleted/);
+    expect(result?.errors.azureClientId).toMatch(/clientId output/);
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(triggerDeployment).not.toHaveBeenCalled();
+  });
+
+  it("refuses an AWS role another chatbot used, before assuming it", async () => {
+    dbSelectLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([{ slug: "hr-info-chatbot", deletedAt: null }]);
+
+    const result = await createTenantAndDeploy(null, formData(validAws));
+
+    expect(result?.errors.deploymentRoleArn).toMatch(/"hr-info-chatbot"\./);
+    expect(assumeTenantRole).not.toHaveBeenCalled();
+    expect(writeTenantSecret).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   describe("shared field validation", () => {
@@ -857,6 +891,45 @@ describe("checkSlugAvailable", () => {
     authMock.mockResolvedValue(null);
 
     const result = await checkSlugAvailable("acme-co");
+
+    expect(result.available).toBe(false);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+});
+
+describe("checkDeploymentIdentity", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.mockResolvedValue({ user: { id: "user-1" } });
+  });
+
+  it("accepts an identity no tenant has used", async () => {
+    await expect(checkDeploymentIdentity("azureClientId", "e837d9e4-5147-4215-985c-4387ba86acf4")).resolves.toEqual({
+      available: true,
+    });
+  });
+
+  it("refuses one another tenant used, and says what to paste instead", async () => {
+    dbSelectLimit.mockResolvedValueOnce([{ slug: "kastriot-chatbot", deletedAt: new Date() }]);
+
+    const result = await checkDeploymentIdentity("azureClientId", "b2ed660e-1508-439c-8f12-2187fb40d3db");
+
+    expect(result.available).toBe(false);
+    expect(!result.available && result.reason).toMatch(/"kastriot-chatbot", which has been deleted.*clientId output/);
+  });
+
+  // The field name arrives from the browser, so it cannot pick a column.
+  it("looks up only the two identity columns", async () => {
+    const result = await checkDeploymentIdentity("llmApiKeyEncrypted" as never, "anything");
+
+    expect(result.available).toBe(false);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it("says nothing without a session", async () => {
+    authMock.mockResolvedValue(null);
+
+    const result = await checkDeploymentIdentity("deploymentRoleArn", "arn:aws:iam::111122223333:role/chatbot-client-deploy-acme");
 
     expect(result.available).toBe(false);
     expect(db.select).not.toHaveBeenCalled();

@@ -30,6 +30,7 @@ import {
   NumberedItem,
   SummaryRow,
 } from "./fields";
+import type { AvailabilityStatus } from "./useAvailability";
 
 export type Values = Record<string, string>;
 export type Errors = Record<string, string>;
@@ -190,11 +191,8 @@ export function StepPrerequisites({ values, set }: StepProps) {
 
 // ── Step 2 ────────────────────────────────────────────────────────────────
 
-/**
- * Whether the platform has confirmed the typed slug is free. "idle" covers an
- * empty slug and one the format rules already reject.
- */
-export type SlugStatus = "idle" | "checking" | "available" | "taken";
+/** Whether the platform has confirmed the typed slug is free. */
+export type SlugStatus = AvailabilityStatus;
 
 export function StepCloudConfig({
   values,
@@ -363,6 +361,7 @@ export function StepCloudConfig({
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               hint="The clientId output of the setup deployment below, not an existing app registration."
               error={errors.azureClientId}
+              autoComplete="off"
               tooltip="After running the setup below: the deployment's Outputs → clientId. It must be the identity whose federated credential names this chatbot; an app registration from another setup has none, and the sign-in is refused."
             />
           </div>
@@ -419,6 +418,7 @@ export function StepCloudConfig({
               placeholder="arn:aws:iam::123456789012:role/chatbot-client-deploy-acme"
               hint="The DeploymentRoleArn output of the setup stack below."
               error={errors.deploymentRoleArn}
+              autoComplete="off"
               tooltip="The platform's IAM policy only permits assuming roles with the chatbot-client-deploy- prefix."
             />
             <Field

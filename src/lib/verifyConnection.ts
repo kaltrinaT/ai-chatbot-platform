@@ -23,7 +23,14 @@
  * lets the wizard verify a customer's setup before creating anything.
  */
 
-import { getChatbotRepo, getOctokit, fetchRunProgress, fetchRunSteps, findRunByMarker } from "@/lib/github";
+import {
+  getChatbotRepo,
+  getOctokit,
+  fetchFailureAnnotations,
+  fetchRunProgress,
+  fetchRunSteps,
+  findRunByMarker,
+} from "@/lib/github";
 import type { ConnectionCheck } from "@/lib/connectionCheck";
 
 export const AWS_VERIFY_WORKFLOW = "verify-tenant-aws.yml";
@@ -124,6 +131,51 @@ function describeFailure(steps: { name: string; conclusion: string | null }[]): 
 }
 
 /**
+ * The cloud's sign-in errors that have one known cause, in the operator's
+ * terms. The failing step says only that the sign-in failed; the error code
+ * says why, and each of these was hit in practice before it was named here.
+ */
+const SIGN_IN_FAILURES: { pattern: RegExp; reason: string }[] = [
+  {
+    pattern: /AADSTS70025\b/,
+    reason:
+      "The client ID belongs to an identity with no federated credential, so it is not this chatbot's setup identity — often an older app registration. Paste the clientId output of this chatbot's setup deployment.",
+  },
+  {
+    pattern: /AADSTS700213\b|AADSTS70021\b|No matching federated identity record/,
+    reason:
+      "This identity trusts a different chatbot: none of its federated credentials names this chatbot's ID. Run the setup for this chatbot, and paste the clientId it outputs.",
+  },
+  {
+    pattern: /AADSTS700016\b/,
+    reason:
+      "No identity with this client ID exists in the Azure AD tenant entered. Copy both from the setup deployment's outputs (clientId and azureTenantId).",
+  },
+  {
+    pattern: /AADSTS90002\b|AADSTS900023\b/,
+    reason: "The Azure AD Tenant ID was not found. Use the azureTenantId output of the setup deployment.",
+  },
+  {
+    pattern: /No OpenIDConnect provider found/,
+    reason:
+      "This AWS account has not registered GitHub as an identity provider. Create the setup stack with “Register GitHub as an identity provider” set to Yes.",
+  },
+  {
+    pattern: /Not authorized to perform sts:AssumeRoleWithWebIdentity/,
+    reason:
+      "The role does not trust this chatbot's deployments: its trust policy names a different chatbot, or none. Create the setup stack for this chatbot, and paste the DeploymentRoleArn it outputs.",
+  },
+];
+
+/** What the run's errors say went wrong, when it is a cause named above. */
+export function explainSignInFailure(messages: string[]): string | null {
+  for (const { pattern, reason } of SIGN_IN_FAILURES) {
+    if (messages.some((m) => pattern.test(m))) return reason;
+  }
+  return null;
+}
+
+/**
  * Poll once. The caller decides how often and for how long; this never
  * blocks waiting for a run to finish.
  */
@@ -198,5 +250,8 @@ export async function pollConnectionCheck(
     };
   }
 
-  return { status: "failed", runUrl: run.htmlUrl, reason: describeFailure(steps) };
+  // Best effort: the step name still says where it failed if the run's
+  // annotations cannot be read.
+  const explained = explainSignInFailure(await fetchFailureAnnotations(run.runId).catch(() => []));
+  return { status: "failed", runUrl: run.htmlUrl, reason: explained ?? describeFailure(steps) };
 }

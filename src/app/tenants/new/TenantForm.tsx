@@ -1,18 +1,25 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Loader2, Rocket } from "lucide-react";
 import DeploymentProgress from "../[id]/DeploymentProgress";
-import { checkSlugAvailable, createTenantAndDeploy, saveTenantDraft, type FormState } from "./actions";
+import {
+  checkDeploymentIdentity,
+  checkSlugAvailable,
+  createTenantAndDeploy,
+  saveTenantDraft,
+  type FormState,
+  type IdentityField,
+} from "./actions";
 import {
   StepAiConfig,
   StepCloudConfig,
   StepPrerequisites,
   StepReview,
-  type SlugStatus,
   type Values,
 } from "./wizard/StepBodies";
+import { useAvailability } from "./wizard/useAvailability";
 import {
   FIELDS_BY_STEP,
   LAST_INPUT_STEP,
@@ -66,45 +73,35 @@ export default function TenantForm({
   // minutes into a workflow run, with infrastructure already created.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // Whether the slug is free, asked of the server shortly after typing stops.
+  const cloud = (values.cloudProvider ?? "aws") as "aws" | "azure";
+
   // Settled on step 2, before the customer runs any setup in their cloud: the
   // setup names resources after the slug, and a slug refused only at Deploy
-  // meant running it all again under another. Only the answer is stored;
-  // "checking" is derived, so a newer slug never shows an older slug's answer.
-  const [slugCheck, setSlugCheck] = useState<
-    { slug: string; available: true } | { slug: string; available: false; reason: string } | null
-  >(null);
+  // meant running it all again under another.
   const slug = (values.slug ?? "").trim();
-  const slugFormatError = validateTenantValues(values, ["slug"]).slug;
-  const slugStatus: SlugStatus =
-    !slug || slugFormatError
-      ? "idle"
-      : slugCheck?.slug !== slug
-        ? "checking"
-        : slugCheck.available
-          ? "available"
-          : "taken";
+  const slugCheck = useAvailability(slug, Boolean(validateTenantValues(values, ["slug"]).slug), checkSlugAvailable);
 
-  useEffect(() => {
-    if (!slug || slugFormatError) return;
-    const timer = setTimeout(async () => {
-      const result = await checkSlugAvailable(slug).catch(() => null);
-      // A failed check is left unanswered: Continue asks again, and the server
-      // checks once more before it writes anything.
-      if (result) setSlugCheck(result.available ? { slug, available: true } : { slug, available: false, reason: result.reason });
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [slug, slugFormatError]);
+  // Each chatbot's setup creates its own deployment identity, so one another
+  // chatbot already used is always a leftover — usually offered by the
+  // browser's history of the field — and would only fail at sign-in.
+  const identityField: IdentityField = cloud === "azure" ? "azureClientId" : "deploymentRoleArn";
+  const identity = (values[identityField] ?? "").trim();
+  const askIdentity = useCallback((value: string) => checkDeploymentIdentity(identityField, value), [identityField]);
+  const identityCheck = useAvailability(
+    identity,
+    Boolean(validateTenantValues(values, [identityField])[identityField]),
+    askIdentity,
+  );
 
   // Touched but not deployed: a reload or a closed tab starts a new wizard,
   // and with it a new chatbot ID — so a customer who had already run the
   // setup for this one would have to run it again.
   const [unsaved, setUnsaved] = useState(false);
 
-  const cloud = (values.cloudProvider ?? "aws") as "aws" | "azure";
   const errors: Record<string, string> = {
     ...fieldErrors,
-    ...(slugStatus === "taken" && slugCheck && !slugCheck.available ? { slug: slugCheck.reason } : {}),
+    ...(slugCheck.reason ? { slug: slugCheck.reason } : {}),
+    ...(identityCheck.reason ? { [identityField]: identityCheck.reason } : {}),
     ...(state?.errors ?? {}),
   };
   const rejectedOnSubmit = Object.keys(state?.errors ?? {}).length > 0;
@@ -166,18 +163,12 @@ export default function TenantForm({
   }
 
   /**
-   * Leaving step 2 needs the server's word that the slug is free, even if the
-   * check while typing has not answered yet. If the server cannot be reached,
-   * the wizard moves on: createTenantAndDeploy checks again before it writes
-   * anything, so this is a convenience rather than the control.
+   * Leaving step 2 needs the server's word that the slug and the deployment
+   * identity are this chatbot's own, even if the checks while typing have not
+   * answered yet.
    */
-  async function slugIsFree(): Promise<boolean> {
-    if (slugStatus === "available") return true;
-    if (slugStatus === "taken") return false;
-    const result = await checkSlugAvailable(slug).catch(() => null);
-    if (!result) return true;
-    setSlugCheck(result.available ? { slug, available: true } : { slug, available: false, reason: result.reason });
-    return result.available;
+  async function step2Settled(): Promise<boolean> {
+    return (await slugCheck.settle()) && (await identityCheck.settle());
   }
 
   async function goNext() {
@@ -192,7 +183,7 @@ export default function TenantForm({
       setFieldErrors(invalid);
       return;
     }
-    if (step === 2 && !(await slugIsFree())) return;
+    if (step === 2 && !(await step2Settled())) return;
     setBlocked([]);
     setFieldErrors({});
     setStep((s) => Math.min(s + 1, LAST_INPUT_STEP));
@@ -220,7 +211,7 @@ export default function TenantForm({
         setStep(s);
         return;
       }
-      if (s === 2 && !(await slugIsFree())) {
+      if (s === 2 && !(await step2Settled())) {
         setStep(2);
         return;
       }
@@ -315,7 +306,7 @@ export default function TenantForm({
             githubRepo={githubRepo}
             platformAccountId={platformAccountId}
             templateBaseUrl={templateBaseUrl}
-            slugStatus={slugStatus}
+            slugStatus={slugCheck.status}
           />
         )}
         {activeStep === 3 && <StepAiConfig values={values} set={set} errors={errors} />}

@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { TenantInput, rawTenantInput, type TenantValues } from "@/lib/tenantInput";
 import { auth } from "@/auth";
 import { db } from "@/db";
@@ -114,6 +114,53 @@ export async function checkSlugAvailable(
   return (await slugTaken(value)) ? { available: false, reason: SLUG_TAKEN } : { available: true };
 }
 
+/** The field that names a chatbot's deployment identity, per cloud. */
+export type IdentityField = "azureClientId" | "deploymentRoleArn";
+
+/**
+ * The tenant, live or deleted, whose deployment identity this already is.
+ *
+ * Each chatbot's setup creates its own identity, trusting that chatbot's
+ * deploys only, so a value another tenant used is never this chatbot's: it is
+ * a leftover from an earlier setup, typically offered by the browser's form
+ * history. Signing in with it fails, and only after a check or a deploy has
+ * been dispatched — which is how an old app registration was entered for
+ * chatbot after chatbot.
+ */
+async function identityOwner(field: IdentityField, value: string): Promise<{ slug: string; deleted: boolean } | null> {
+  const column = field === "azureClientId" ? tenants.azureClientId : tenants.deploymentRoleArn;
+  const [row] = await db
+    .select({ slug: tenants.slug, deletedAt: tenants.deletedAt })
+    .from(tenants)
+    .where(sql`lower(${column}) = ${value.trim().toLowerCase()}`)
+    .limit(1);
+  return row ? { slug: row.slug, deleted: row.deletedAt !== null } : null;
+}
+
+function identityReused(owner: { slug: string; deleted: boolean }, field: IdentityField): string {
+  const output = field === "azureClientId" ? "clientId output of this chatbot's setup deployment" : "DeploymentRoleArn output of this chatbot's setup stack";
+  return (
+    `Already the deployment identity of chatbot "${owner.slug}"${owner.deleted ? ", which has been deleted" : ""}. ` +
+    `Each chatbot's setup creates its own, trusting that chatbot only. Paste the ${output} instead.`
+  );
+}
+
+/** Asked by the wizard as the identity is entered, like the slug. */
+export async function checkDeploymentIdentity(
+  field: IdentityField,
+  value: string,
+): Promise<{ available: true } | { available: false; reason: string }> {
+  const session = await auth();
+  if (!session?.user?.id) return { available: false, reason: "Sign in again to check this value." };
+  // Named by the browser, so held to the two columns it may mean.
+  if (field !== "azureClientId" && field !== "deploymentRoleArn") {
+    return { available: false, reason: "Unknown field." };
+  }
+  if (!value.trim()) return { available: false, reason: "Enter a value." };
+  const owner = await identityOwner(field, value);
+  return owner ? { available: false, reason: identityReused(owner, field) } : { available: true };
+}
+
 export async function createTenantAndDeploy(
   _prev: FormState,
   formData: FormData
@@ -148,6 +195,16 @@ export async function createTenantAndDeploy(
   // insert's unique constraint stays as the guard against two submissions
   // racing each other.
   if (await slugTaken(parsed.slug)) return { errors: { slug: SLUG_TAKEN } };
+
+  // Likewise before any cloud call: onboarding an AWS tenant assumes this
+  // role to write its secrets, and another chatbot's role is not one this
+  // tenant should be writing through.
+  const [identityField, identityValue]: [IdentityField, string] =
+    parsed.cloudProvider === "azure"
+      ? ["azureClientId", parsed.azureClientId]
+      : ["deploymentRoleArn", parsed.deploymentRoleArn];
+  const owner = await identityOwner(identityField, identityValue);
+  if (owner) return { errors: { [identityField]: identityReused(owner, identityField) } };
 
   const { llmApiKey, ...tenantFields } = parsed;
   const llmApiKeyEncrypted = encryptSecret(llmApiKey);

@@ -177,6 +177,7 @@ export function Field({
   type = "text",
   inputMode,
   maxLength,
+  autoComplete,
 }: {
   label: string;
   value: string;
@@ -189,6 +190,12 @@ export function Field({
   type?: string;
   inputMode?: "numeric" | "decimal";
   maxLength?: number;
+  /**
+   * "off" for values that belong to one chatbot, such as its deployment
+   * identity: the browser's history of earlier entries offers exactly the
+   * value that is wrong here.
+   */
+  autoComplete?: "off";
 }) {
   return (
     <label className="block">
@@ -205,7 +212,7 @@ export function Field({
         // that actually suppresses autofill, which matters here because a
         // saved key filled into the wrong box silently would only fail
         // minutes into a deploy.
-        autoComplete={type === "password" ? "new-password" : undefined}
+        autoComplete={type === "password" ? "new-password" : autoComplete}
         className={`${inputBase} ${error ? "border-red-400" : ""}`}
       />
       {hintOrError(hint, error)}
