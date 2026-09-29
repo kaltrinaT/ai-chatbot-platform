@@ -152,11 +152,7 @@
               }
             },
             {
-              "comments": [
-                "The trust itself, in place of a client secret. It tells Entra ID to accept a token signed by GitHub Actions, for one exact subject, as this identity.",
-                "",
-                "The environment segment of that subject is what keeps one customer's trust from covering another's. A branch subject would be identical for every customer, so any chatbot's deploy could sign in to any subscription that trusts the platform. Entra compares the subject exactly and case-sensitively: every other chatbot's runs are refused here, by Azure, rather than by a check inside the platform's application."
-              ],
+              "comments": "The trust itself, in place of a client secret. It tells Entra ID to accept a token signed by GitHub Actions, for one exact subject, as this identity. The environment segment of that subject is what keeps one customer's trust from covering another's. A branch subject would be identical for every customer, so any chatbot's deploy could sign in to any subscription that trusts the platform. Entra compares the subject exactly and case-sensitively: every other chatbot's runs are refused here, by Azure, rather than by a check inside the platform's application.",
               "type": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
               "apiVersion": "2023-01-31",
               "name": "[format('{0}/{1}', parameters('identityName'), parameters('credentialName'))]",
@@ -184,11 +180,7 @@
               }
             },
             {
-              "comments": [
-                "Contributor cannot grant roles, and the chatbot's own runtime depends on granted roles: the container app pulls from the registry as itself, and the document-signing function reaches storage as itself. Terraform creates those assignments during a deploy, so the deployment identity has to be able to make them.",
-                "",
-                "This is the one permission here that can widen access, which is why its scope matters more than any other: confined to this resource group, it can grant roles over the chatbot's own resources and nothing else in the subscription."
-              ],
+              "comments": "Contributor cannot grant roles, and the chatbot's own runtime depends on granted roles: the container app pulls from the registry as itself, and the document-signing function reaches storage as itself. Terraform creates those assignments during a deploy, so the deployment identity has to be able to make them. This is the one permission here that can widen access, which is why its scope matters more than any other: confined to this resource group, it can grant roles over the chatbot's own resources and nothing else in the subscription.",
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "name": "[guid(resourceGroup().id, parameters('identityName'), variables('userAccessAdministratorRoleId'))]",
@@ -202,13 +194,7 @@
               }
             },
             {
-              "comments": [
-                "Where this chatbot's Terraform state lives: in the customer's subscription, beside the infrastructure it describes, rather than with the platform. State records every value Terraform manages — the LLM key, the Pinecone key, the docs-signer secret and the vector database password among them — so it belongs inside the same boundary as the secrets themselves.",
-                "",
-                "No account key works here. Shared Key authorization is off, so the only way in is an Entra ID identity with a data role; the deployment identity holds one on the state container below and nowhere else. Terraform's backend signs in with the same GitHub OIDC token the deploy already uses.",
-                "",
-                "A storage account's name is global. The workflows only ever use the account of this name found inside this resource group, and an account of the same name in any other tenant would refuse this subscription's tokens, so a name taken elsewhere can stop a deploy but never receive state."
-              ],
+              "comments": "Where this chatbot's Terraform state lives: in the customer's subscription, beside the infrastructure it describes, rather than with the platform. State records every value Terraform manages — the LLM key, the Pinecone key, the docs-signer secret and the vector database password among them — so it belongs inside the same boundary as the secrets themselves. No account key works here. Shared Key authorization is off, so the only way in is an Entra ID identity with a data role; the deployment identity holds one on the state container below and nowhere else. Terraform's backend signs in with the same GitHub OIDC token the deploy already uses. A storage account's name is global. The workflows only ever use the account of this name found inside this resource group, and an account of the same name in any other tenant would refuse this subscription's tokens, so a name taken elsewhere can stop a deploy but never receive state.",
               "type": "Microsoft.Storage/storageAccounts",
               "apiVersion": "2023-05-01",
               "name": "[parameters('stateAccountName')]",
@@ -286,11 +272,7 @@
               }
             },
             {
-              "comments": [
-                "Lets the deployment identity read, write and lease the state — Terraform's backend locks it with a blob lease for each run — in this one container and nowhere else.",
-                "",
-                "Scoped to the container rather than the account, and never granted on the chatbot's documents account: the deployment identity can manage that account, but reading documents needs a data role it does not hold."
-              ],
+              "comments": "Lets the deployment identity read, write and lease the state — Terraform's backend locks it with a blob lease for each run — in this one container and nowhere else. Scoped to the container rather than the account, and never granted on the chatbot's documents account: the deployment identity can manage that account, but reading documents needs a data role it does not hold.",
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "scope": "[format('Microsoft.Storage/storageAccounts/{0}/blobServices/default/containers/{1}', parameters('stateAccountName'), parameters('stateContainerName'))]",
@@ -331,7 +313,7 @@
       "metadata": {
         "description": "Paste this into the platform's onboarding form as the Managed Identity Client ID. It identifies the identity but is not a credential — it grants nothing on its own."
       },
-      "value": "[reference(resourceId(variables('resourceGroupName'), 'Microsoft.Resources/deployments', variables('nestedDeploymentName')), '2021-04-01').outputs.clientId.value]"
+      "value": "[reference(resourceId(subscription().subscriptionId, variables('resourceGroupName'), 'Microsoft.Resources/deployments', variables('nestedDeploymentName')), '2021-04-01').outputs.clientId.value]"
     },
     "azureTenantId": {
       "type": "string",

@@ -371,10 +371,24 @@ describe("the Azure template's identity", () => {
 
   // The nested deployment lives in the resource group, so its ID includes
   // the group; a subscription-level ID names a deployment that does not exist.
+  // In a subscription-level template resourceId() reads its first argument as
+  // a subscription ID, so the group has to come second: given first, ARM
+  // rejected the template with "'chatbot-<slug>' is not valid subscription
+  // identifier" before creating anything.
   it("reads the nested deployment's outputs from where that deployment lives", () => {
     const clientId = azureTemplate.outputs.clientId.value as string;
-    expect(clientId).toContain("resourceId(variables('resourceGroupName'), 'Microsoft.Resources/deployments'");
+    expect(clientId).toContain(
+      "resourceId(subscription().subscriptionId, variables('resourceGroupName'), 'Microsoft.Resources/deployments'",
+    );
     expect(clientId).not.toContain("subscriptionResourceId('Microsoft.Resources/deployments'");
+  });
+
+  // ARM reads a resource's `comments` as one string. A list of lines failed
+  // the nested deployment's validation with "Unexpected token: StartArray".
+  it("gives every nested resource's comments as a single string", () => {
+    for (const resource of azureNested.properties.template.resources as { comments?: unknown }[]) {
+      if (resource.comments !== undefined) expect(typeof resource.comments).toBe("string");
+    }
   });
 
   it("trusts exactly the subject the parent builds", () => {
