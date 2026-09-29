@@ -163,6 +163,17 @@ describe("azureBootstrapParameters", () => {
 
     expect(shown.filter((name) => required.includes(name))).toEqual(required);
   });
+
+  // The portal labels a parameter by splitting its name at capitals, next to
+  // the customer's own Azure tenant. Named tenantId, the chatbot's ID read as
+  // that tenant's, the wrong ID went in, and the credential trusted a subject
+  // no run carries.
+  it("calls the chatbot's ID a chatbot ID, not a tenant ID, where the portal shows it", () => {
+    expect(Object.keys(azureTemplate.parameters)).not.toContain("tenantId");
+    const first = azureBootstrapParameters({ tenantId, tenantSlug: "acme-corp", githubRepo, region: "westeurope" })[0];
+    expect(first).toEqual({ name: "chatbotId", label: "Chatbot Id", value: tenantId });
+    expect(azureTemplate.variables.federatedSubject).toContain("parameters('chatbotId')");
+  });
 });
 
 describe("the templates match the subject the workflows present", () => {
@@ -183,7 +194,7 @@ describe("the templates match the subject the workflows present", () => {
     const expected = azureFederatedSubject({ owner: "{0}", repo: "{1}" }, "{2}");
 
     expect(azureTemplate.variables.federatedSubject).toBe(
-      `[format('${expected}', parameters('gitHubOwner'), parameters('gitHubRepo'), parameters('tenantId'))]`,
+      `[format('${expected}', parameters('gitHubOwner'), parameters('gitHubRepo'), parameters('chatbotId'))]`,
     );
   });
 
@@ -399,7 +410,7 @@ describe("the Azure template's identity", () => {
 
   it("creates the resource group Terraform expects to find", () => {
     expect(azureTemplate.variables.resourceGroupName).toBe(
-      "[format('chatbot-{0}', parameters('tenantSlug'))]",
+      "[format('chatbot-{0}', parameters('chatbotSlug'))]",
     );
     // Terraform's local.name, which the data source looks up by.
     expect(source("infra/terraform/azure/main.tf")).toContain('name         = "chatbot-${var.tenant_slug}"');
@@ -423,7 +434,7 @@ describe("the Azure template's Terraform state storage", () => {
 
   it("is named exactly as the platform derives it", () => {
     expect(azureTemplate.variables.stateAccountName).toBe(
-      "[format('cbtf{0}', replace(parameters('tenantSlug'), '-', ''))]",
+      "[format('cbtf{0}', replace(parameters('chatbotSlug'), '-', ''))]",
     );
     expect(azureStateStorageAccountName("acme-corp")).toBe("cbtfacmecorp");
     expect(account.name).toBe("[parameters('stateAccountName')]");
@@ -484,6 +495,21 @@ describe("azureBootstrapCommand", () => {
     for (const name of Object.keys(azureTemplate.parameters)) {
       expect(command).toMatch(new RegExp(`\\b${name}=\\S+`));
     }
+  });
+
+  // Without it the CLI deploys into whichever subscription it defaults to —
+  // for an operator who also has a work subscription, rarely the customer's.
+  it("names the customer's subscription when it is known", () => {
+    const pinned = azureBootstrapCommand({
+      templateBaseUrl,
+      tenantId,
+      tenantSlug: "acme-corp",
+      githubRepo,
+      region: "westeurope",
+      subscriptionId: "22222222-2222-2222-2222-222222222222",
+    });
+    expect(pinned).toContain("--subscription 22222222-2222-2222-2222-222222222222");
+    expect(command).not.toContain("--subscription");
   });
 });
 

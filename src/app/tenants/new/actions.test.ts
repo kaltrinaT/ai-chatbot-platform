@@ -15,7 +15,10 @@ const {
   generateDocsSignerSecret,
   redirectMock,
   revalidatePathMock,
+  dbSelectLimit,
 } = vi.hoisted(() => {
+    // What the slug lookup finds: empty means the slug is free.
+    const dbSelectLimit = vi.fn<(n: number) => Promise<{ id: string }[]>>(async () => []);
     const authMock = vi.fn();
     const dbInsertReturning = vi.fn();
     // Declared here (rather than via insertValuesReturningChain) so tests can
@@ -44,6 +47,7 @@ const {
     });
     const revalidatePathMock = vi.fn();
     return {
+      dbSelectLimit,
       revalidatePathMock,
       authMock,
       dbInsertValues,
@@ -65,6 +69,8 @@ vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/db", () => ({
   db: {
+    // The slug lookup: select().from(tenants).where(...).limit(1).
+    select: vi.fn(() => ({ from: () => ({ where: () => ({ limit: dbSelectLimit }) }) })),
     insert: vi.fn(() => ({ values: dbInsertValues })),
     update: vi.fn(() => ({ set: dbUpdateValues })),
     // Only reached when the wizard submits a draftId; stubbed so the
@@ -79,7 +85,7 @@ vi.mock("@/lib/azure", () => ({ generateDocsSignerSecret }));
 
 import { db } from "@/db";
 import { tenantDrafts } from "@/db/schema";
-import { createTenantAndDeploy, saveTenantDraft, deleteTenantDraft } from "./actions";
+import { checkSlugAvailable, createTenantAndDeploy, saveTenantDraft, deleteTenantDraft } from "./actions";
 
 function formData(fields: Record<string, string | undefined>): FormData {
   return buildFormData(fields);
@@ -165,6 +171,21 @@ describe("createTenantAndDeploy", () => {
 
     await expect(createTenantAndDeploy(null, formData(validAws))).rejects.toThrow("REDIRECT:/signin");
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  // A taken slug used to be caught only by the insert — after AWS onboarding
+  // had already written secrets named after it into the customer's account.
+  it("refuses a slug already in use before anything reaches the customer's cloud", async () => {
+    dbSelectLimit.mockResolvedValueOnce([{ id: "older-tenant" }]);
+
+    const result = await createTenantAndDeploy(null, formData(validAws));
+
+    expect(result?.errors.slug).toMatch(/Slugs are permanent/);
+    expect(assumeTenantRole).not.toHaveBeenCalled();
+    expect(writeTenantSecret).not.toHaveBeenCalled();
+    expect(ensureDocsSignerSecret).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(triggerDeployment).not.toHaveBeenCalled();
   });
 
   describe("shared field validation", () => {
@@ -810,5 +831,34 @@ describe("deleteTenantDraft", () => {
     await deleteTenantDraft("draft-1");
 
     expect(db.delete).toHaveBeenCalledWith(tenantDrafts);
+  });
+});
+
+describe("checkSlugAvailable", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.mockResolvedValue({ user: { id: "user-1" } });
+  });
+
+  it("reports a slug no tenant has as available", async () => {
+    await expect(checkSlugAvailable("acme-co")).resolves.toEqual({ available: true });
+  });
+
+  it("reports a slug another tenant has, and says why it cannot be reused", async () => {
+    dbSelectLimit.mockResolvedValueOnce([{ id: "older-tenant" }]);
+
+    const result = await checkSlugAvailable("acme-co");
+
+    expect(result.available).toBe(false);
+    expect(!result.available && result.reason).toMatch(/Slugs are permanent/);
+  });
+
+  it("says nothing about any slug without a session", async () => {
+    authMock.mockResolvedValue(null);
+
+    const result = await checkSlugAvailable("acme-co");
+
+    expect(result.available).toBe(false);
+    expect(db.select).not.toHaveBeenCalled();
   });
 });

@@ -4,12 +4,13 @@ import { useActionState, useEffect, useRef, useState, useTransition } from "reac
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Loader2, Rocket } from "lucide-react";
 import DeploymentProgress from "../[id]/DeploymentProgress";
-import { createTenantAndDeploy, saveTenantDraft, type FormState } from "./actions";
+import { checkSlugAvailable, createTenantAndDeploy, saveTenantDraft, type FormState } from "./actions";
 import {
   StepAiConfig,
   StepCloudConfig,
   StepPrerequisites,
   StepReview,
+  type SlugStatus,
   type Values,
 } from "./wizard/StepBodies";
 import {
@@ -65,12 +66,62 @@ export default function TenantForm({
   // minutes into a workflow run, with infrastructure already created.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // Whether the slug is free, asked of the server shortly after typing stops.
+  // Settled on step 2, before the customer runs any setup in their cloud: the
+  // setup names resources after the slug, and a slug refused only at Deploy
+  // meant running it all again under another. Only the answer is stored;
+  // "checking" is derived, so a newer slug never shows an older slug's answer.
+  const [slugCheck, setSlugCheck] = useState<
+    { slug: string; available: true } | { slug: string; available: false; reason: string } | null
+  >(null);
+  const slug = (values.slug ?? "").trim();
+  const slugFormatError = validateTenantValues(values, ["slug"]).slug;
+  const slugStatus: SlugStatus =
+    !slug || slugFormatError
+      ? "idle"
+      : slugCheck?.slug !== slug
+        ? "checking"
+        : slugCheck.available
+          ? "available"
+          : "taken";
+
+  useEffect(() => {
+    if (!slug || slugFormatError) return;
+    const timer = setTimeout(async () => {
+      const result = await checkSlugAvailable(slug).catch(() => null);
+      // A failed check is left unanswered: Continue asks again, and the server
+      // checks once more before it writes anything.
+      if (result) setSlugCheck(result.available ? { slug, available: true } : { slug, available: false, reason: result.reason });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [slug, slugFormatError]);
+
+  // Touched but not deployed: a reload or a closed tab starts a new wizard,
+  // and with it a new chatbot ID — so a customer who had already run the
+  // setup for this one would have to run it again.
+  const [unsaved, setUnsaved] = useState(false);
+
   const cloud = (values.cloudProvider ?? "aws") as "aws" | "azure";
-  const errors = { ...fieldErrors, ...(state?.errors ?? {}) };
+  const errors: Record<string, string> = {
+    ...fieldErrors,
+    ...(slugStatus === "taken" && slugCheck && !slugCheck.available ? { slug: slugCheck.reason } : {}),
+    ...(state?.errors ?? {}),
+  };
   const rejectedOnSubmit = Object.keys(state?.errors ?? {}).length > 0;
   const deployed = state?.deployed;
 
+  useEffect(() => {
+    if (!unsaved || deployed) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved, deployed]);
+
   function set(key: string, value: string) {
+    setUnsaved(true);
     setValues((v) => ({ ...v, [key]: value }));
     // Clearing as soon as the field is touched — leaving the marker up while
     // the user types reads as "still wrong" when it no longer is.
@@ -114,7 +165,22 @@ export default function TenantForm({
     return validateTenantValues(values, FIELDS_BY_STEP[target] ?? []);
   }
 
-  function goNext() {
+  /**
+   * Leaving step 2 needs the server's word that the slug is free, even if the
+   * check while typing has not answered yet. If the server cannot be reached,
+   * the wizard moves on: createTenantAndDeploy checks again before it writes
+   * anything, so this is a convenience rather than the control.
+   */
+  async function slugIsFree(): Promise<boolean> {
+    if (slugStatus === "available") return true;
+    if (slugStatus === "taken") return false;
+    const result = await checkSlugAvailable(slug).catch(() => null);
+    if (!result) return true;
+    setSlugCheck(result.available ? { slug, available: true } : { slug, available: false, reason: result.reason });
+    return result.available;
+  }
+
+  async function goNext() {
     const missing = missingFor(step);
     if (missing.length > 0) {
       setBlocked(missing);
@@ -126,12 +192,13 @@ export default function TenantForm({
       setFieldErrors(invalid);
       return;
     }
+    if (step === 2 && !(await slugIsFree())) return;
     setBlocked([]);
     setFieldErrors({});
     setStep((s) => Math.min(s + 1, LAST_INPUT_STEP));
   }
 
-  function goToStep(target: number) {
+  async function goToStep(target: number) {
     // Backwards is always allowed; forwards still has to pass the gate so the
     // stepper can't be used to skip a step's required fields.
     if (target < step) {
@@ -153,6 +220,10 @@ export default function TenantForm({
         setStep(s);
         return;
       }
+      if (s === 2 && !(await slugIsFree())) {
+        setStep(2);
+        return;
+      }
     }
     setBlocked([]);
     setFieldErrors({});
@@ -169,6 +240,7 @@ export default function TenantForm({
       const result = await saveTenantDraft(null, fd);
       if (result && "draftId" in result) {
         setDraftId(result.draftId);
+        setUnsaved(false);
         setDraftNote("Draft saved. API keys are never stored in a draft — re-enter them to deploy.");
       } else if (result && "error" in result) {
         setDraftNote(result.error);
@@ -190,14 +262,16 @@ export default function TenantForm({
   // click until it has outlived a double-click. Windows defaults to 500ms
   // between clicks, hence the margin. A deliberate press is never affected:
   // reading the review page takes far longer than this.
+  // Disarmed on the way out rather than on the way in: leaving the review runs
+  // the cleanup, so the button is never armed on arrival.
   const [deployArmed, setDeployArmed] = useState(false);
   useEffect(() => {
-    if (activeStep !== LAST_INPUT_STEP) {
-      setDeployArmed(false);
-      return;
-    }
+    if (activeStep !== LAST_INPUT_STEP) return;
     const timer = setTimeout(() => setDeployArmed(true), 600);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      setDeployArmed(false);
+    };
   }, [activeStep]);
 
   return (
@@ -241,6 +315,7 @@ export default function TenantForm({
             githubRepo={githubRepo}
             platformAccountId={platformAccountId}
             templateBaseUrl={templateBaseUrl}
+            slugStatus={slugStatus}
           />
         )}
         {activeStep === 3 && <StepAiConfig values={values} set={set} errors={errors} />}

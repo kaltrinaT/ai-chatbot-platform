@@ -76,6 +76,20 @@ function Panel({ children }: { children: React.ReactNode }) {
 }
 
 /**
+ * Shown in place of the setup until the wizard has confirmed the slug is free.
+ * The setup names the role, resource group and state storage after the slug,
+ * and a slug refused only at Deploy meant running it all again under another.
+ */
+function SlugFirst() {
+  return (
+    <p className="mt-3 rounded border border-gray-200 bg-white p-2 text-gray-700">
+      Enter a slug above that is not in use yet. The setup names cloud resources after it, so it
+      has to be settled before you run it.
+    </p>
+  );
+}
+
+/**
  * Why the buttons are missing, in terms of the setting that would bring them
  * back. Silence here would look like the feature does not exist.
  */
@@ -98,6 +112,7 @@ export function AwsBootstrapPanel({
   awsAccountId,
   awsRegion,
   existingStack = false,
+  slugReady = true,
 }: BootstrapContext & {
   tenantId: string;
   tenantSlug: string;
@@ -109,19 +124,33 @@ export function AwsBootstrapPanel({
    * Quick Create link cannot do.
    */
   existingStack?: boolean;
+  /** False while the wizard has not yet confirmed the slug is free. */
+  slugReady?: boolean;
 }) {
   // Every one of these ends up in the link, and a link built from a blank is
   // a stack the customer has to fill in by hand — worse than no link, because
   // it looks complete.
   const ready = Boolean(templateBaseUrl && platformAccountId && githubRepo && tenantSlug && awsRegion);
 
+  const intro = (
+    <p>
+      <span className="font-medium text-gray-900">No access key is shared with the platform.</span>{" "}
+      Deployments sign in to this account through GitHub&apos;s identity provider and receive
+      credentials that last only as long as the run. Create the role that allows it below.
+    </p>
+  );
+  if (!slugReady) {
+    return (
+      <Panel>
+        {intro}
+        <SlugFirst />
+      </Panel>
+    );
+  }
+
   return (
     <Panel>
-      <p>
-        <span className="font-medium text-gray-900">No access key is shared with the platform.</span>{" "}
-        Deployments sign in to this account through GitHub&apos;s identity provider and receive
-        credentials that last only as long as the run. Create the role that allows it below.
-      </p>
+      {intro}
 
       {existingStack && templateBaseUrl && tenantSlug && awsRegion && (
         <div className="mt-3">
@@ -129,9 +158,9 @@ export function AwsBootstrapPanel({
           <p className="mt-1">
             The template now also creates the bucket that keeps this chatbot&apos;s Terraform state in
             this account instead of with the platform. Update the existing stack once with this
-            command, which keeps every value it was created with. The next deploy moves the state
-            into the bucket, and <span className="font-medium">Test connection</span> confirms the
-            bucket exists before then.
+            command, which keeps every value it was created with. Deploys refuse to run without the
+            bucket, and <span className="font-medium">Test connection</span> confirms it exists
+            before then.
           </p>
           <dl className="mt-2 space-y-2">
             <CopyableValue
@@ -232,6 +261,7 @@ export function AzureBootstrapPanel({
   azureRegion,
   subscriptionId = "",
   existingDeployment = false,
+  slugReady = true,
 }: BootstrapContext & {
   tenantId: string;
   tenantSlug: string;
@@ -244,6 +274,8 @@ export function AzureBootstrapPanel({
    * everything else as it is.
    */
   existingDeployment?: boolean;
+  /** False while the wizard has not yet confirmed the slug is free. */
+  slugReady?: boolean;
 }) {
   if (!githubRepo) {
     return (
@@ -264,13 +296,25 @@ export function AzureBootstrapPanel({
     region: azureRegion || "westeurope",
   });
 
+  const intro = (
+    <p>
+      <span className="font-medium text-gray-900">No secret is shared with the platform.</span>{" "}
+      Deployments exchange a token signed by GitHub for an Azure token, and nothing reusable is
+      stored anywhere. Create the identity that allows it below.
+    </p>
+  );
+  if (!slugReady) {
+    return (
+      <Panel>
+        {intro}
+        <SlugFirst />
+      </Panel>
+    );
+  }
+
   return (
     <Panel>
-      <p>
-        <span className="font-medium text-gray-900">No secret is shared with the platform.</span>{" "}
-        Deployments exchange a token signed by GitHub for an Azure token, and nothing reusable is
-        stored anywhere. Create the identity that allows it below.
-      </p>
+      {intro}
 
       {existingDeployment && templateBaseUrl && tenantSlug && azureRegion && (
         <div className="mt-3">
@@ -279,14 +323,21 @@ export function AzureBootstrapPanel({
             The template now also creates the storage account that keeps this chatbot&apos;s
             Terraform state in this subscription instead of with the platform. Run the bootstrap
             again, with the button below or this command. Every resource in it is declared by name,
-            so it adds what is missing and leaves the rest as it is. The next deploy moves the state
-            into it, and <span className="font-medium">Test connection</span> confirms it is ready
-            before then.
+            so it adds what is missing and leaves the rest as it is. Deploys refuse to run without
+            it, and <span className="font-medium">Test connection</span> confirms it is ready before
+            then.
           </p>
           <dl className="mt-2 space-y-2">
             <CopyableValue
               label="Run the bootstrap again"
-              value={azureBootstrapCommand({ templateBaseUrl, tenantId, tenantSlug, githubRepo, region: azureRegion })}
+              value={azureBootstrapCommand({
+                templateBaseUrl,
+                tenantId,
+                tenantSlug,
+                githubRepo,
+                region: azureRegion,
+                subscriptionId,
+              })}
             />
           </dl>
         </div>
@@ -306,6 +357,28 @@ export function AzureBootstrapPanel({
               <CopyableValue key={p.name} label={p.label} value={p.value} />
             ))}
           </dl>
+          {!existingDeployment && tenantSlug && azureRegion && (
+            <>
+              <p className="mt-3">
+                Or run the same template from the command line, with every value filled in. Nothing
+                has to be typed, and it deploys into the subscription entered above rather than
+                whichever one the Azure CLI defaults to.
+              </p>
+              <dl className="mt-2 space-y-2">
+                <CopyableValue
+                  label="Azure CLI"
+                  value={azureBootstrapCommand({
+                    templateBaseUrl,
+                    tenantId,
+                    tenantSlug,
+                    githubRepo,
+                    region: azureRegion,
+                    subscriptionId,
+                  })}
+                />
+              </dl>
+            </>
+          )}
         </div>
       ) : (
         <MissingConfig what="PLATFORM_BOOTSTRAP_TEMPLATE_BASE_URL is not set, so the one-click setup is unavailable." />

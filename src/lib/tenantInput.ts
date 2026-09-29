@@ -104,7 +104,7 @@ const azureUuid = (label: string) =>
 const AzureInput = SharedInput.extend({
   cloudProvider: z.literal("azure"),
   azureSubscriptionId: azureUuid("Subscription ID"),
-  azureTenantId: azureUuid("Tenant ID"),
+  azureTenantId: azureUuid("Azure AD Tenant ID"),
   azureClientId: azureUuid("Client ID"),
   azureRegion: z.string().min(1, "Required"),
 });

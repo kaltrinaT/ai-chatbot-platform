@@ -181,10 +181,15 @@ export function azureStateStorageAccountName(tenantSlug: string): string {
 }
 
 /**
- * Runs the bootstrap from the command line. For an existing chatbot it adds
- * what the template has gained since — the Terraform state storage, most
- * recently — and leaves everything else as it is, since every resource in the
- * template is declared by name.
+ * Runs the bootstrap from the command line, with every value filled in — the
+ * one route on Azure that involves no typing, since the portal cannot take
+ * values from a link. For an existing chatbot it adds what the template has
+ * gained since and leaves everything else as it is, since every resource in
+ * the template is declared by name.
+ *
+ * `--subscription` is included whenever it is known. Without it `az` deploys
+ * into whichever subscription it happens to default to, which for an operator
+ * who also has a work subscription is rarely the customer's.
  */
 export function azureBootstrapCommand(opts: {
   templateBaseUrl: string;
@@ -192,14 +197,17 @@ export function azureBootstrapCommand(opts: {
   tenantSlug: string;
   githubRepo: GithubRepo;
   region: string;
+  subscriptionId?: string;
 }): string {
   const region = opts.region.trim();
+  const subscription = opts.subscriptionId?.trim();
   return [
     "az deployment sub create",
+    ...(subscription ? [`--subscription ${subscription}`] : []),
     `--name chatbot-bootstrap-${opts.tenantSlug}`,
     `--location ${region}`,
     `--template-uri ${joinUrl(opts.templateBaseUrl, AZURE_TEMPLATE_OBJECT)}`,
-    `--parameters tenantId=${opts.tenantId} tenantSlug=${opts.tenantSlug} gitHubOwner=${opts.githubRepo.owner} gitHubRepo=${opts.githubRepo.repo} location=${region}`,
+    `--parameters chatbotId=${opts.tenantId} chatbotSlug=${opts.tenantSlug} gitHubOwner=${opts.githubRepo.owner} gitHubRepo=${opts.githubRepo.repo} location=${region}`,
   ].join(" \\\n  ");
 }
 
@@ -231,6 +239,13 @@ export function azureStateStorageCommands(opts: {
  * order the template declares them. Kept here rather than in the component so
  * the template's parameter names and the wizard's labels cannot drift apart
  * without a test noticing.
+ *
+ * Each label is what the portal itself shows for that parameter — it splits
+ * the name at capitals — so the customer can match the two field by field.
+ * The first parameter is named chatbotId, not tenantId: the portal is where
+ * the customer also sees their Azure tenant, and "Tenant Id" there read as
+ * that, so the wrong ID went in and the federated credential trusted a
+ * subject no run carries.
  */
 export function azureBootstrapParameters(opts: {
   tenantId: string;
@@ -239,10 +254,10 @@ export function azureBootstrapParameters(opts: {
   region: string;
 }): { name: string; label: string; value: string }[] {
   return [
-    { name: "tenantId", label: "Tenant ID", value: opts.tenantId },
-    { name: "tenantSlug", label: "Tenant Slug", value: opts.tenantSlug },
-    { name: "gitHubOwner", label: "GitHub Owner", value: opts.githubRepo.owner },
-    { name: "gitHubRepo", label: "GitHub Repo", value: opts.githubRepo.repo },
+    { name: "chatbotId", label: "Chatbot Id", value: opts.tenantId },
+    { name: "chatbotSlug", label: "Chatbot Slug", value: opts.tenantSlug },
+    { name: "gitHubOwner", label: "Git Hub Owner", value: opts.githubRepo.owner },
+    { name: "gitHubRepo", label: "Git Hub Repo", value: opts.githubRepo.repo },
     { name: "location", label: "Location", value: opts.region },
   ];
 }

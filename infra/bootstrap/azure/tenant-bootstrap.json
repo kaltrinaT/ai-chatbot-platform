@@ -38,18 +38,18 @@
   },
 
   "parameters": {
-    "tenantId": {
+    "chatbotId": {
       "type": "string",
       "metadata": {
-        "description": "This chatbot's ID in the platform. It names the GitHub environment that only this chatbot's deployments run in, which is the subject the federated credential below trusts. It is not a secret."
+        "description": "This chatbot's ID in the platform, shown next to the setup button in its onboarding form. Not your Azure (Entra) tenant ID. It names the GitHub environment that only this chatbot's deployments run in, which is the subject the federated credential below trusts. It is not a secret."
       }
     },
-    "tenantSlug": {
+    "chatbotSlug": {
       "type": "string",
       "minLength": 3,
       "maxLength": 18,
       "metadata": {
-        "description": "The chatbot's short name. Names the resource group, the deployment identity and the state storage account."
+        "description": "The chatbot's slug, exactly as entered in its onboarding form. Names the resource group, the deployment identity and the state storage account, which the platform looks up by the same names."
       }
     },
     "gitHubOwner": {
@@ -74,11 +74,11 @@
   },
 
   "variables": {
-    "resourceGroupName": "[format('chatbot-{0}', parameters('tenantSlug'))]",
-    "identityName": "[format('chatbot-deploy-{0}', parameters('tenantSlug'))]",
-    "credentialName": "[format('ai-chatbot-platform-{0}', parameters('tenantId'))]",
-    "federatedSubject": "[format('repo:{0}/{1}:environment:tenant-{2}', parameters('gitHubOwner'), parameters('gitHubRepo'), parameters('tenantId'))]",
-    "stateAccountName": "[format('cbtf{0}', replace(parameters('tenantSlug'), '-', ''))]",
+    "resourceGroupName": "[format('chatbot-{0}', parameters('chatbotSlug'))]",
+    "identityName": "[format('chatbot-deploy-{0}', parameters('chatbotSlug'))]",
+    "credentialName": "[format('ai-chatbot-platform-{0}', parameters('chatbotId'))]",
+    "federatedSubject": "[format('repo:{0}/{1}:environment:tenant-{2}', parameters('gitHubOwner'), parameters('gitHubRepo'), parameters('chatbotId'))]",
+    "stateAccountName": "[format('cbtf{0}', replace(parameters('chatbotSlug'), '-', ''))]",
     "stateContainerName": "tfstate",
     "nestedDeploymentName": "chatbot-deployment-identity"
   },
@@ -92,7 +92,7 @@
       "location": "[parameters('location')]",
       "tags": {
         "Project": "ai-chatbot-platform",
-        "Tenant": "[parameters('tenantSlug')]"
+        "Tenant": "[parameters('chatbotSlug')]"
       }
     },
     {
@@ -111,7 +111,7 @@
         },
         "parameters": {
           "location": { "value": "[parameters('location')]" },
-          "tenantSlug": { "value": "[parameters('tenantSlug')]" },
+          "tenantSlug": { "value": "[parameters('chatbotSlug')]" },
           "identityName": { "value": "[variables('identityName')]" },
           "credentialName": { "value": "[variables('credentialName')]" },
           "federatedSubject": { "value": "[variables('federatedSubject')]" },
@@ -341,7 +341,7 @@
       "metadata": {
         "description": "The only GitHub environment whose workflow runs this identity will accept."
       },
-      "value": "[format('tenant-{0}', parameters('tenantId'))]"
+      "value": "[format('tenant-{0}', parameters('chatbotId'))]"
     },
     "stateStorageAccount": {
       "type": "string",

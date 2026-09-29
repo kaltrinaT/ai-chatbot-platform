@@ -63,7 +63,7 @@ const PREREQS = {
   ],
   azure: [
     ["Azure subscription ID", "The subscription where resources will be deployed."],
-    ["Tenant ID", "Your Microsoft Entra ID (Azure AD) tenant identifier."],
+    ["Azure AD Tenant ID", "Your Microsoft Entra ID (Azure AD) directory identifier."],
     ["Deployment region", "The Azure region where the chatbot will be deployed (e.g. westeurope)."],
     [
       "Deployment identity",
@@ -190,6 +190,12 @@ export function StepPrerequisites({ values, set }: StepProps) {
 
 // ── Step 2 ────────────────────────────────────────────────────────────────
 
+/**
+ * Whether the platform has confirmed the typed slug is free. "idle" covers an
+ * empty slug and one the format rules already reject.
+ */
+export type SlugStatus = "idle" | "checking" | "available" | "taken";
+
 export function StepCloudConfig({
   values,
   set,
@@ -197,10 +203,16 @@ export function StepCloudConfig({
   githubRepo,
   platformAccountId,
   templateBaseUrl,
-}: StepProps & BootstrapContext) {
+  slugStatus = "idle",
+}: StepProps & BootstrapContext & { slugStatus?: SlugStatus }) {
   const cloud = (values.cloudProvider ?? "aws") as "aws" | "azure";
   const azure = cloud === "azure";
-  const bootstrap = { githubRepo, platformAccountId, templateBaseUrl };
+  // The setup names cloud resources after the slug, so it is offered only once
+  // the slug is known to be usable.
+  const bootstrap = { githubRepo, platformAccountId, templateBaseUrl, slugReady: slugStatus === "available" };
+  const slugRules = azure
+    ? "3–18 chars, lowercase letters, numbers, hyphens. Limited by Azure Key Vault naming."
+    : "3–21 chars, lowercase letters, numbers, hyphens. Limited by AWS target group naming.";
 
   return (
     <div className="space-y-6">
@@ -231,9 +243,11 @@ export function StepCloudConfig({
               onChange={(v) => set("slug", v)}
               placeholder={azure ? "acme (max 18 chars for Azure)" : "acme-research-assistant"}
               hint={
-                azure
-                  ? "3–18 chars, lowercase letters, numbers, hyphens. Limited by Azure Key Vault naming."
-                  : "3–21 chars, lowercase letters, numbers, hyphens. Limited by AWS target group naming."
+                slugStatus === "checking"
+                  ? "Checking that this slug is not already in use…"
+                  : slugStatus === "available"
+                    ? `Available. ${slugRules}`
+                    : slugRules
               }
               error={errors.slug}
               maxLength={azure ? 18 : 21}
@@ -337,7 +351,7 @@ export function StepCloudConfig({
               value={values.azureRegion ?? ""}
               onChange={(v) => set("azureRegion", v)}
               placeholder="eastus"
-              hint="Azure region for all resources."
+              hint="Azure region for all resources. Some subscriptions, such as Azure for Students, allow only a few."
               error={errors.azureRegion}
               tooltip="List them with: az account list-locations -o table"
             />
@@ -347,9 +361,9 @@ export function StepCloudConfig({
               value={values.azureClientId ?? ""}
               onChange={(v) => set("azureClientId", v)}
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              hint="App registration or managed identity with Contributor access."
+              hint="The clientId output of the setup deployment below, not an existing app registration."
               error={errors.azureClientId}
-              tooltip="App registration: Azure Portal → App registrations → the deploy app → Application (client) ID. Managed identity: Managed Identities → the identity → Client ID."
+              tooltip="After running the setup below: the deployment's Outputs → clientId. It must be the identity whose federated credential names this chatbot; an app registration from another setup has none, and the sign-in is refused."
             />
           </div>
           <AzureBootstrapPanel
@@ -403,7 +417,7 @@ export function StepCloudConfig({
               value={values.deploymentRoleArn ?? ""}
               onChange={(v) => set("deploymentRoleArn", v)}
               placeholder="arn:aws:iam::123456789012:role/chatbot-client-deploy-acme"
-              hint="Role name must start with chatbot-client-deploy-."
+              hint="The DeploymentRoleArn output of the setup stack below."
               error={errors.deploymentRoleArn}
               tooltip="The platform's IAM policy only permits assuming roles with the chatbot-client-deploy- prefix."
             />
@@ -712,7 +726,7 @@ export function StepReview({
                   <SummaryRow label="Subscription ID">
                     {values.azureSubscriptionId || <Missing />}
                   </SummaryRow>
-                  <SummaryRow label="Tenant ID">{values.azureTenantId || <Missing />}</SummaryRow>
+                  <SummaryRow label="Azure AD Tenant ID">{values.azureTenantId || <Missing />}</SummaryRow>
                   <SummaryRow label="Region">{values.azureRegion || <Missing />}</SummaryRow>
                   <SummaryRow label="Deployment Identity">
                     {values.azureClientId || <Missing />}

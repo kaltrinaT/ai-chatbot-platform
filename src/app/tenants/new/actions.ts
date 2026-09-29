@@ -89,6 +89,31 @@ function describeProvisioningFailure(err: unknown): string {
   return "Could not provision the tenant. The platform's server log has the reason.";
 }
 
+const SLUG_TAKEN =
+  "Already used by another chatbot. Slugs are permanent, even after a chatbot is deleted, because its cloud resources are named after it. Choose another.";
+
+/** Whether any tenant, live or deleted, already has this slug. */
+async function slugTaken(slug: string): Promise<boolean> {
+  const [row] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, slug)).limit(1);
+  return Boolean(row);
+}
+
+/**
+ * Asked by the wizard while the slug is typed, before the customer runs any
+ * setup in their cloud. The bootstrap names the role, resource group and state
+ * storage after the slug, so a slug refused only at Deploy meant running that
+ * setup again under a new one.
+ */
+export async function checkSlugAvailable(
+  slug: string,
+): Promise<{ available: true } | { available: false; reason: string }> {
+  const session = await auth();
+  if (!session?.user?.id) return { available: false, reason: "Sign in again to check this slug." };
+  const value = slug.trim();
+  if (!value) return { available: false, reason: "Enter a slug." };
+  return (await slugTaken(value)) ? { available: false, reason: SLUG_TAKEN } : { available: true };
+}
+
 export async function createTenantAndDeploy(
   _prev: FormState,
   formData: FormData
@@ -116,6 +141,14 @@ export async function createTenantAndDeploy(
   }
 
   const parsed = result.data;
+
+  // Before anything reaches the customer's cloud. AWS onboarding writes
+  // secrets named after the slug into their Secrets Manager, so a taken slug
+  // caught only by the insert below would already have written them. The
+  // insert's unique constraint stays as the guard against two submissions
+  // racing each other.
+  if (await slugTaken(parsed.slug)) return { errors: { slug: SLUG_TAKEN } };
+
   const { llmApiKey, ...tenantFields } = parsed;
   const llmApiKeyEncrypted = encryptSecret(llmApiKey);
 
