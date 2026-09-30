@@ -51,12 +51,14 @@ export function controlPlaneUrl(
 }
 
 /**
- * Triggers the tenant's own chatbot backend to (re)load documents from S3
- * into its vector store. Per CHATBOT-LOGIC.md, POST /api/index does a full
- * resync of everything under the prefix — it does not incrementally embed
- * just the changed document, and it never removes vectors for a document
- * that's been deleted from S3. Both are limitations of the external
- * ai-chatbot/ai-backend repo, not something this call can control.
+ * Triggers the tenant's own chatbot backend to (re)load documents from its
+ * storage into its vector store. Per CHATBOT-LOGIC.md, POST /api/index does a
+ * full resync of everything under the prefix, not just the changed document,
+ * and then deletes the vectors of every document no longer in storage.
+ *
+ * The body is ignored: the backend takes its tenant, bucket and prefix only
+ * from its own environment, because the endpoint is public. It is still sent
+ * so an older backend image keeps working.
  */
 export async function triggerReindex(
   tenant: Pick<Tenant, "slug" | "chatbotUrl" | "s3DocsBucket" | "s3DocsPrefix"> &

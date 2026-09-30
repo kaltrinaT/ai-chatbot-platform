@@ -181,8 +181,9 @@ type DestroyInput = {
 /**
  * Tears down a tenant's infrastructure on either cloud: best-effort empties
  * the documents store through the tenant's own docs-signer (no cloud
- * credential needed for that — force_destroy on the AWS bucket, and the
- * workflow's own delete-batch on Azure, are the backstops if this can't run),
+ * credential needed for that — on AWS the workflow empties the bucket and
+ * force_destroy is the backstop; on Azure deleting the storage account
+ * deletes its contents with it),
  * then dispatches the cloud's destroy workflow, which runs `terraform destroy`
  * plus cleanup for the handful of resources Terraform doesn't manage.
  *

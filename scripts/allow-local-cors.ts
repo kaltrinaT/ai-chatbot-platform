@@ -9,12 +9,15 @@ import ws from "ws";
 neonConfig.webSocketConstructor = ws;
 
 /**
- * Re-adds a local origin to an Azure tenant's docs storage CORS rules.
+ * OBSOLETE — this no longer works, and is kept only until it is removed.
  *
- * Terraform builds that rule from platform_origin (the PLATFORM_BASE_URL
- * secret) alone, so every deploy wipes any extra origin — including the one
- * a dev server browses from. Without it the browser's preflight is rejected
- * and uploads fail before the SAS is ever used.
+ * It re-added a local origin to an Azure tenant's docs storage CORS rules,
+ * signing in with the storage account key. The docs account now refuses
+ * Shared Key authorization (shared_access_key_enabled = false in
+ * infra/terraform/azure/main.tf), so the key it fetches authorizes nothing.
+ * It is also unnecessary: Terraform now adds a second origin from the
+ * EXTRA_CORS_ORIGIN repository variable on every deploy. Set that variable
+ * (e.g. http://localhost:3000) and redeploy the tenant instead.
  *
  * Usage:
  *   npx tsx scripts/allow-local-cors.ts <slug> [origin]

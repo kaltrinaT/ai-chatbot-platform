@@ -429,12 +429,11 @@ resource "aws_s3_bucket" "docs" {
   force_destroy = true
 }
 
-# A deleted document is otherwise gone for good, and the chatbot's index only
-# upserts — it never removes the vectors for a document that has disappeared.
-# Without versioning the failure mode is the worst available combination: the
-# source document is unrecoverable while its embeddings keep answering
-# questions about it. The destroy workflow already empties this bucket
-# "object versions included", so teardown still works.
+# A deleted document is otherwise gone for good. The docs-signer can delete,
+# and the reindex that follows removes the document's vectors as well, so
+# without versioning a mistaken delete leaves nothing to recover from. The
+# destroy workflow already empties this bucket "object versions included", so
+# teardown still works.
 resource "aws_s3_bucket_versioning" "docs" {
   bucket = aws_s3_bucket.docs.id
 

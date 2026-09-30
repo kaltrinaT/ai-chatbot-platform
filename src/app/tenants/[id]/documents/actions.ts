@@ -206,9 +206,9 @@ export async function abandonUpload(documentId: string) {
 /**
  * Deletes a document from cloud storage (via the docs-signer function,
  * which does the delete itself using its own narrowly-scoped credentials)
- * and from the platform's own record. Note: this does not remove the
- * document's already-embedded vectors — the chatbot backend's /api/index
- * only upserts, it never purges.
+ * and from the platform's own record. The reindex that follows removes the
+ * document's vectors: the chatbot backend's /api/index deletes the vectors of
+ * every document no longer in storage.
  */
 export async function deleteDocument(documentId: string) {
   const { doc, tenant } = await requireOwnedDocument(documentId);

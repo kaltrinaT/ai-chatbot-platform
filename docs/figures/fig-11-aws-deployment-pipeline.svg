@@ -50,7 +50,7 @@
       <text x="104" y="336">the platform builds the chatbot once; no tenant image is ever built from source</text>
       <text x="104" y="388">the image the tenant runs is pulled from a registry they own, not from the platform's</text>
       <text x="104" y="440">a one-time account prerequisite that Terraform cannot create for itself</text>
-      <text x="104" y="492">tenants/{slug}.tfstate — one state file per tenant, never shared</text>
+      <text x="104" y="492">bucket tfstate-{slug}-{account}-{region}-an, created by the customer's setup stack</text>
       <text x="104" y="544">masked immediately, then handed to the provider; only when vector_store = pinecone</text>
       <text x="104" y="596">the Lambda's zip is built from disk during apply, so the modules must be there first</text>
       <text x="104" y="648">every remaining resource is created here, in one graph, with no ordering gap to bridge</text>

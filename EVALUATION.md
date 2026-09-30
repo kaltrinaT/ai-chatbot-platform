@@ -159,8 +159,12 @@ workflow reports success.
         ▼
   T3 ── providers downloaded, backend ready
         │
-        │   ⟨ P3  terraform apply ⟩           Terraform apply
-        ▼                                      (41 AWS / 24 Azure resources)
+        │   ⟨ P3  terraform apply ⟩           Terraform apply — on Azure two
+        ▼                                      applies with a 90 s pause between
+                                               (46 AWS / 26 Azure resource blocks
+                                               declared; how many a cell creates
+                                               depends on its vector store and, on
+                                               AWS, its HTTPS route)
   T4 ── infrastructure created
         │
         │   ⟨ P4  outputs + callback ⟩        Read Terraform outputs
@@ -194,11 +198,12 @@ time the operator waits with no feedback from the UI.
 | P6 first grounded answer | — | — | — | — |
 | min / max end-to-end | — | — | — | — |
 | Success rate (n = 10) | — | — | — | — |
-| Teardown `destroy-tenant.yml` | — | — | — | — |
+| Teardown `destroy-tenant.yml` / `destroy-tenant-azure.yml` | — | — | — | — |
 
 The `pgvector` cells are expected to dominate P3 (a managed database instance
-is provisioned), and the two clouds differ structurally in P1 — AWS replicates
-into ECR under an assumed role, Azure into ACR. Stating these expectations
+is provisioned), and the two clouds differ structurally in P1 and P3 — AWS
+replicates into ECR as the tenant role, reached through GitHub OIDC, and applies
+once; Azure replicates into ACR between a targeted and a full apply. Stating these expectations
 *before* running the campaign, and reporting whether they held, is stronger
 methodology than reporting the numbers alone.
 
@@ -215,8 +220,12 @@ Expected: `terraform apply` reports no changes and the run succeeds. This tests
 whether the platform is safe to retry — an operational property that the
 one-click framing implicitly promises.
 
-**Destroy/redeploy cycle.** Run `destroy-tenant.yml`, then redeploy the same
-slug. Tests state cleanup and name reuse.
+**Destroy/onboard cycle.** Run the cell's teardown workflow, then onboard a new
+tenant into the same account or subscription. A deleted tenant cannot be
+redeployed and its slug is never reused, so the new tenant takes a new slug and
+its own setup. Tests that teardown leaves nothing behind that blocks the next
+tenant — on Azure, the soft-deleted Key Vault keeps its name reserved, which the
+slug rule already makes harmless.
 
 **Webhook-loss recovery (fault injection).** The progress endpoint contains a
 self-healing reconciliation path: if GitHub reports the run finished but the

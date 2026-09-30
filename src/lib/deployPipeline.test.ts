@@ -576,8 +576,9 @@ describe("infra/terraform/azure — Container Apps environment", () => {
     expect(main).not.toMatch(/resource "azurerm_container_app_environment"/);
   });
 
-  // sensitive_body is write-only; the same key in body would sit in state.
-  it("keeps the Log Analytics key out of state", () => {
+  // sensitive_body is write-only; the same key in body would be a second copy
+  // in state, beside the one the workspace resource exports.
+  it("does not copy the Log Analytics key into the environment's state", () => {
     const sensitive = environment.indexOf("sensitive_body = {");
     expect(sensitive).toBeGreaterThan(0);
     expect(environment.indexOf("sharedKey")).toBeGreaterThan(sensitive);

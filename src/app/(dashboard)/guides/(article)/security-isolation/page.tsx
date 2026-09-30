@@ -34,12 +34,12 @@ const PRINCIPLES = [
   {
     icon: UserCog,
     title: "Dedicated per-tenant role",
-    detail: "Each tenant's deploy role is created and scoped by the client, and trusted only by the platform's own account.",
+    detail: "Each tenant's deployment identity is created by the client's own one-click setup, and trusts only that chatbot's deployment runs.",
   },
   {
     icon: Users,
     title: "Strong tenant isolation",
-    detail: "A dedicated VPC per tenant; backing services like the vector database are reachable only from that tenant's own compute.",
+    detail: "A dedicated network and resource set per tenant. On AWS the vector database is reachable only from that tenant's own compute; on Azure it is not yet network-isolated.",
   },
   {
     icon: Key,
@@ -54,7 +54,7 @@ const PRINCIPLES = [
   {
     icon: Lock,
     title: "Encrypted where it matters most",
-    detail: "Platform-to-cloud API calls and database connections use TLS. The AWS chatbot's own public endpoint is HTTP-only today — see Cloud Prerequisites.",
+    detail: "Platform-to-cloud API calls and database connections use TLS, and every chatbot is served over HTTPS. On AWS without your own certificate, the hop from CloudFront to the load balancer is plain HTTP — see Cloud Prerequisites.",
   },
   {
     icon: Globe,
@@ -233,12 +233,15 @@ export default function SecurityIsolationPage() {
           <section id="tenant-isolation">
             <h2 className="text-lg font-semibold text-gray-900">Tenant Isolation</h2>
             <p className="mt-3 text-sm leading-relaxed text-gray-600">
-              Every tenant gets its own VPC, deployed by its own Terraform run — nothing is shared with any other
-              tenant at the network level. Where a per-tenant service needs to be reachable at all (the vector
-              database, for pgvector tenants), a security group restricts it to that tenant&apos;s own compute
-              only — it has no public IP and no ingress from anywhere else. Compute currently runs in public
-              subnets (tasks get public IPs directly, to avoid the cost of NAT gateways), so isolation between
-              tenants comes from separate VPCs and security groups, not from private subnetting.
+              Every tenant gets its own network, deployed by its own Terraform run — nothing is shared with any
+              other tenant at the network level. On AWS each tenant has its own VPC, and where a per-tenant service
+              needs to be reachable at all (the vector database, for pgvector tenants), a security group restricts
+              it to that tenant&apos;s own compute only — it has no public IP and no ingress from anywhere else.
+              Compute runs in public subnets (tasks get public IPs directly, to avoid the cost of NAT gateways), so
+              isolation between tenants comes from separate VPCs and security groups, not from private subnetting.
+              On Azure each tenant has its own Container Apps environment in its own resource group, but the
+              pgvector server uses public networking that admits any Azure-hosted client; its password is what
+              protects it.
             </p>
           </section>
 
@@ -257,10 +260,11 @@ export default function SecurityIsolationPage() {
             <p className="mt-3 text-sm leading-relaxed text-gray-600">
               The platform never holds an AWS or Azure credential capable of reading your documents. Uploads go
               through a small Lambda (or Function) that lives inside your own account and can only write and
-              delete under your tenant&apos;s own prefix — never list or read the bucket. The platform&apos;s
-              deploy role is likewise scoped: it can only be assumed from the platform&apos;s own account, and its
-              permissions policy is broad rather than fully minimal today (see Cloud Prerequisites for the exact
-              policy and why).
+              delete under your tenant&apos;s own prefix — never list or read the bucket. The deployment identity
+              is likewise scoped: it accepts only this chatbot&apos;s deployment runs, signed by GitHub, and the
+              platform itself may use it on AWS only at onboarding, to write your keys, for this chatbot only. On
+              Azure its roles stop at the chatbot&apos;s own resource group. Its AWS permissions policy is broad
+              rather than fully minimal today (see Cloud Prerequisites for the exact policy and why).
             </p>
           </section>
 

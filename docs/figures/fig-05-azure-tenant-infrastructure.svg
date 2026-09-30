@@ -64,7 +64,7 @@
 
     <!-- acr -->
     <rect x="70" y="572" width="640" height="78" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.2"/>
-    <text x="390" y="596" font-size="12" font-weight="bold" text-anchor="middle">Container Registry chatbot{slug}acr</text>
+    <text x="390" y="596" font-size="12" font-weight="bold" text-anchor="middle">Container Registry chatbot{slug}</text>
     <text x="390" y="616" font-size="10.5" fill="#5b6270" text-anchor="middle">Basic SKU with the admin account enabled; holds this tenant's copy of the backend and frontend images</text>
     <text x="390" y="634" font-size="10.5" fill="#5b6270" text-anchor="middle">the registry password is stored as an app secret, not in the platform's database</text>
 

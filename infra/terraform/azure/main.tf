@@ -373,9 +373,9 @@ resource "azurerm_storage_account" "docs" {
   # separate one).
   blob_properties {
     # The Azure half of the same durability problem as S3 versioning: the
-    # docs-signer can delete, the chatbot's index never purges the vectors of
-    # a deleted document, so a mistaken delete otherwise leaves embeddings
-    # answering for a document nobody can recover.
+    # docs-signer can delete, and the reindex that follows removes the
+    # document's vectors as well, so a mistaken delete otherwise leaves
+    # nothing to recover from.
     delete_retention_policy {
       days = 30
     }
@@ -649,8 +649,10 @@ resource "azapi_resource" "container_app_environment" {
     }
   }
 
-  # Write-only: sent with every create and update, never kept in state. Azure
-  # does not return the key on a read, so there is nothing to compare anyway.
+  # Write-only: sent with every create and update, and not kept in this
+  # resource's state. Azure does not return the key on a read, so there is
+  # nothing to compare anyway. The key is still in state through the workspace
+  # resource above, which exports it; this only avoids a second copy.
   sensitive_body = {
     properties = {
       appLogsConfiguration = {

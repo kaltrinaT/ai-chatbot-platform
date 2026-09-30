@@ -27,7 +27,9 @@ If you're unsure on vector store: Pinecone is cheaper and needs nothing extra fr
 
 ### 2. Create the deployment identity — one click
 
-Start the onboarding form first (step 9) and fill in your account ID, region and a short name. Its Cloud Configuration step then shows a **Configure AWS account** button.
+Start the onboarding form first (step 9) and fill in your account ID, region and a short name (the slug). The form checks the slug as you type, against every other chatbot and against S3 bucket names anyone already holds, because the setup names your role and your state bucket after it. Once the slug is confirmed free, its Cloud Configuration step shows a **Configure AWS account** button.
+
+> **Keep the same form.** The form generates your chatbot's ID when it opens, and the setup trusts that ID. Save a draft if you need to leave; reopening the draft keeps the ID. A fresh form gets a new ID, and a setup already run does not trust it.
 
 That button opens the AWS console on a CloudFormation stack with every value already filled in. Review what it will create and press **Create stack**. It creates:
 
@@ -38,7 +40,7 @@ That button opens the AWS console on a CloudFormation stack with every value alr
 
 When it finishes, open the stack's **Outputs** tab and copy `DeploymentRoleArn` back into the form.
 
-> **Already have GitHub registered as an identity provider** — from another chatbot, or from your own use of GitHub Actions? An AWS account can register an issuer only once. Set the stack's **Register GitHub as an identity provider?** parameter to **No** and it will reuse the existing one.
+> **Already have GitHub registered as an identity provider** — from another chatbot, or from your own use of GitHub Actions? An AWS account can register an issuer only once, and a second attempt fails the whole stack. Tick the box above the button that says so, and the link sets the stack's **Register GitHub as an identity provider?** parameter to **No**, reusing the existing one.
 
 ⚠️ **Do this before submitting the form.** Onboarding writes your API keys into your Secrets Manager right away, so the role has to exist first.
 
@@ -110,12 +112,14 @@ tfstate-<slug>-<your-account-id>-<region>-an
 
 If you create the role by hand instead of with the stack, create this bucket too. The platform's setup panel shows the commands. The role's `s3:*` grant already covers it, so there is nothing to add to the policy.
 
-**Bootstrapped before the stack created this bucket?** Update the existing stack to the current template once. The tenant page shows the exact `aws cloudformation update-stack` command, which keeps every value the stack was created with. The next deployment moves the chatbot's state from the platform into the new bucket. **Test connection** confirms the bucket exists before then.
+**Bootstrapped before the stack created this bucket?** Update the existing stack to the current template once. The tenant page shows the exact `aws cloudformation update-stack` command, which keeps every value the stack was created with. Deployments refuse to run until the bucket exists, and **Test connection** confirms it does.
 
 ### 5. Copy the role's ARN and test the connection
 `arn:aws:iam::<your-account-id>:role/chatbot-client-deploy-<something>` — from the stack's Outputs tab, or from the role itself if you created it by hand.
 
-Paste it into the form, then press **Test connection**. That runs a check which signs in to your account exactly as a deployment would, confirms the state bucket exists, and does nothing else: no resources, no changes, a few seconds, repeatable as often as you like. If it says **Connected**, your setup is correct. If it fails, it names the step that failed. That is almost always a subject mismatch, a missing identity provider, or a stack that predates the state bucket, and far easier to fix now than thirty minutes into a deployment.
+Paste it into the form. The form refuses a role ARN another chatbot already uses: each chatbot's setup creates its own role, trusting that chatbot only, so someone else's is always a leftover, typically offered by the browser's form history.
+
+Then press **Test connection**. That runs a check which signs in to your account exactly as a deployment would, confirms the state bucket exists, and does nothing else: no resources, no changes, a few seconds, repeatable as often as you like. If it says **Connected**, your setup is correct. If it fails, it says why when the cause is known, such as a missing identity provider or a role that does not trust this chatbot, and otherwise names the step that failed. That is almost always a subject mismatch, a missing identity provider, or a stack that predates the state bucket, and far easier to fix now than thirty minutes into a deployment.
 
 ### 6. Get your LLM API key
 | Provider | Where |
@@ -154,7 +158,7 @@ Put that ARN, and the same hostname, into the onboarding form. Both are needed: 
 | Field | Value |
 |---|---|
 | Cloud provider | AWS |
-| Tenant name / Slug | Your choice — slug is 3–21 chars, lowercase + hyphens, can't change later |
+| Tenant name / Slug | Your choice — slug is 3–21 chars, lowercase + hyphens, can't change later, and can never be reused, even after the chatbot is deleted |
 | AWS account ID | From step 1 |
 | AWS region | From step 1 |
 | Deployment role ARN | From step 5 |
@@ -193,7 +197,9 @@ A newly created CloudFront address can take a few minutes after the deploy repor
 
 ### 2. Create the deployment identity — one click
 
-Start the onboarding form first (step 8) and fill in your subscription ID, tenant ID, region and a short name. Its Cloud Configuration step then shows a **Configure Azure** button.
+Start the onboarding form first (step 8) and fill in your subscription ID, tenant ID, region and a short name (the slug). The slug names your resource group, deployment identity and state storage, and several Azure names built from it must be unique worldwide. So the form checks it as you type: against every other chatbot, including names that only collide once Azure drops the hyphens and shortens them, and against names Azure already has in use anywhere. Once the slug is confirmed free, its Cloud Configuration step shows a **Configure Azure** button.
+
+> **Keep the same form.** The form generates your chatbot's ID when it opens, and the setup's federated credential trusts that ID. Save a draft if you need to leave; reopening the draft keeps the ID. A fresh form gets a new ID, and a setup already run does not trust it.
 
 That button opens the Azure portal on a template that creates everything at once:
 
@@ -203,7 +209,18 @@ That button opens the Azure portal on a template that creates everything at once
 - **Contributor** and **User Access Administrator**, scoped to that resource group and nothing else
 - A **storage account** `cbtf<your short name>` in that group, which keeps your chatbot's Terraform state (see below)
 
-The portal cannot take values from a link, so the form lists the parameters to enter with copy buttons next to each. When the deployment finishes, open its **Outputs** and copy `clientId` back into the form.
+The portal cannot take values from a link, so the form lists the parameters to enter, under the labels the portal shows, with copy buttons next to each:
+
+| Portal field | Value |
+|---|---|
+| Chatbot Id | This chatbot's ID, shown in the form. **Not** your Azure (Entra) tenant ID, which the portal also displays nearby |
+| Chatbot Slug | Your slug, exactly as entered |
+| Git Hub Owner / Git Hub Repo | The repository the platform's deployments run from |
+| Location | Your chosen region |
+
+Pick the right subscription at the top of the portal form. Alternatively, the form shows an `az deployment sub create` command with every value filled in, including `--subscription`, so it cannot land in whichever subscription your Azure CLI defaults to.
+
+When the deployment finishes, open its **Outputs** and copy `clientId` back into the form. The outputs also show your subscription ID and Azure tenant ID.
 
 #### Where the deployment state lives
 
@@ -214,7 +231,7 @@ Terraform records everything it creates for this chatbot in a state file, includ
 - **It is versioned.** Superseded versions expire after 30 days.
 - **It goes with the resource group.** Deleting the group removes it, along with everything else.
 
-**Set up before the template created this storage?** Run the template again, from the same button or with the `az deployment sub create` command the tenant page shows. It adds what is missing and leaves everything else as it is. The next deployment moves the chatbot's state from the platform into your storage, and **Test connection** confirms it is ready before then. If your deployment identity is not the one the template created (for example, an app registration you set up by hand), also run the role-assignment command the tenant page shows, so that identity can read the state.
+**Set up before the template created this storage?** Run the template again, from the same button or with the `az deployment sub create` command the tenant page shows. It adds what is missing and leaves everything else as it is. Deployments refuse to run until the storage exists, and **Test connection** confirms it is ready. If your deployment identity is not the one the template created (for example, an app registration you set up by hand), also run the role-assignment command the tenant page shows, so that identity can read the state.
 
 **Do not create a client secret.** The platform never asks for one.
 
@@ -223,7 +240,7 @@ Terraform records everything it creates for this chatbot in a state file, includ
 | Field | Value |
 |---|---|
 | Issuer | `https://token.actions.githubusercontent.com` |
-| Subject | `repo:<owner>/<repo>:environment:tenant-<tenant id shown in the form>` |
+| Subject | `repo:<owner>/<repo>:environment:tenant-<chatbot ID shown in the form>` |
 | Audience | `api://AzureADTokenExchange` |
 
 GitHub signs a token for each workflow run describing which repository and environment it ran in. Entra ID compares that subject — exactly, and case-sensitively — against the credential. The environment names this one chatbot, so a deployment for anyone else's chatbot is refused before any token is issued.
@@ -240,9 +257,11 @@ Confined to the one resource group, User Access Administrator can grant roles ov
 
 ### 5. If you'd rather not use the template, and testing the connection
 
-By hand: create an app registration or managed identity, add the federated credential above (portal: the identity → **Federated credentials** → Add), create a resource group named exactly `chatbot-<your short name>`, and grant the identity Contributor and User Access Administrator on it. Then create the state storage and grant the identity its data role. The onboarding form shows ready-made `az` commands for the credential and for the state storage.
+By hand: create an app registration or managed identity, add the federated credential above (portal: the identity → **Federated credentials** → Add), create a resource group named exactly `chatbot-<your short name>`, and grant the identity Contributor and User Access Administrator on it. Then create the state storage and grant the identity its data role. The onboarding form shows ready-made `az` commands for the state storage.
 
-Either way, press **Test connection** in the form once the client ID is in place. It exchanges a token exactly as a deployment would, checks the resource group exists, and checks the identity can read its state storage. It is read-only, takes a few seconds, and can be repeated. It distinguishes the failures that look identical from the outside: federation that doesn't work at all, federation that works into a subscription where the setup never ran, and setup that predates the state storage.
+Either way, paste the client ID into the form. The form refuses a client ID another chatbot already uses: each chatbot's setup creates its own identity, trusting that chatbot only, so someone else's is always a leftover, typically offered by the browser's form history.
+
+Then press **Test connection**. It exchanges a token exactly as a deployment would, checks the resource group exists, and checks the identity can read its state storage. It is read-only, takes a few seconds, and can be repeated. It distinguishes the failures that look identical from the outside: federation that doesn't work at all, federation that works into a subscription where the setup never ran, and setup that predates the state storage. When Azure refuses the sign-in for a known reason, it says what to do: for example, a credential whose subject names another chatbot ID (`AADSTS700213`), an identity with no federated credential at all (`AADSTS70025`), or a client ID or tenant ID that does not exist (`AADSTS700016`, `AADSTS90002`).
 
 ### 6. Get your LLM API key
 Same providers/links as the AWS section above (including the OpenRouter caveat).
@@ -254,7 +273,7 @@ Same as the AWS section — one dedicated index provisioned per tenant, always i
 | Field | Value |
 |---|---|
 | Cloud provider | Azure |
-| Tenant name / Slug | Slug is 3–18 chars (Azure Key Vault naming limit) |
+| Tenant name / Slug | Slug is 3–18 chars (Azure Key Vault naming limit), can't change later, and can never be reused |
 | Subscription ID / Tenant ID | From step 1 |
 | Deployment identity client ID | From step 2 (the bootstrap creates it, and the credential, together) |
 | Azure region | From step 2 |
@@ -272,7 +291,7 @@ Azure Container Apps automatically provisions a managed HTTPS endpoint on the `*
 
 ## After deployment
 
-- **Managing documents (AWS):** once your first deployment succeeds, a "Documents" section appears on your tenant page — upload, and delete documents for your knowledge base directly from the platform, instead of going to the AWS Console. Uploads go straight from your browser to your S3 bucket; the platform never receives or stores the file contents, and holds no AWS credential capable of reading them — see `ARCHITECTURE.md` for how this is enforced. After an upload or delete, the platform automatically asks your chatbot to reindex — this re-embeds every document under your prefix, not just the changed one, so it can take a moment for larger knowledge bases. **Deleting a document does not remove its already-generated answers from the vector index** — the chatbot's indexing endpoint only adds/updates, it doesn't purge. Azure tenants: this isn't available yet — keep using your Storage account directly.
+- **Managing documents:** once your first deployment succeeds, a "Documents" section appears on your tenant page on both clouds. Upload and delete documents for your knowledge base directly from the platform, instead of going to the AWS Console or Azure portal. Uploads go straight from your browser to your S3 bucket or Blob container; the platform never receives or stores the file contents, and holds no credential capable of reading them — see `DOCUMENT-MANAGEMENT.md` for how this is enforced. Your storage accepts uploads only from the platform's own address, so upload from there. After an upload or delete, the platform automatically asks your chatbot to reindex. This re-embeds every document under your prefix, not just the changed one, so it can take a moment for larger knowledge bases. The same reindex removes a deleted document's vectors, so the chatbot stops answering from it once reindexing finishes.
 - **Cost visibility:** both the onboarding form and the tenant page show a live estimated monthly cost breakdown for your specific configuration (see `src/lib/pricing.ts`). For **actual** spend, every resource is tagged `Tenant = <your-slug>` — activate that tag in AWS Cost Explorer or Azure Cost Management to filter your real bill.
 - **Redeploying:** use the "Redeploy" button on the tenant page to push a new chatbot version or pick up infrastructure changes — this triggers a fresh deployment run. Re-running a failed GitHub Actions job directly (rather than via the platform's Redeploy button) replays the workflow file as it existed at that run's original commit, which may not include recent fixes.
 - **Troubleshooting:** see the Known Limitations section in `SECURITY.md` for documented gaps (Pinecone region, Azure pgvector networking, etc.).

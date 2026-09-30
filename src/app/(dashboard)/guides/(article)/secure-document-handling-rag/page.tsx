@@ -10,9 +10,9 @@ const SECTIONS = [
 ];
 
 const FLOW_STEPS = [
-  "Open the tenant's Documents tab (AWS tenants only — Azure document upload isn't wired up yet).",
-  "Pick a file. The platform requests a presigned upload URL from that tenant's own docs-signer Lambda, which runs inside the tenant's own AWS account, not the platform's.",
-  "The browser uploads the file bytes directly to the tenant's S3 bucket using that presigned URL — bytes never pass through the platform's server.",
+  "Open the tenant's Documents tab, from the platform's own address — the tenant's storage accepts uploads only from there.",
+  "Pick a file. The platform asks that tenant's own docs-signer — a Lambda on AWS, a Function App on Azure, running in the tenant's cloud, not the platform's — for a short-lived upload URL for that one file.",
+  "The browser uploads the file bytes directly to the tenant's S3 bucket or Blob container using that URL — bytes never pass through the platform's server.",
   "The browser confirms the upload, which flips the document's status and triggers the tenant's own chatbot backend to re-index.",
   "The chatbot backend chunks, embeds, and stores the document in the tenant's own vector store (pgvector, or the customer's own Pinecone project).",
   "At question-answering time, the chatbot retrieves the most relevant chunks and sends them as context to the configured LLM provider.",
@@ -23,13 +23,13 @@ const PRINCIPLES = [
     icon: ShieldOff,
     title: "No control-plane document proxying",
     detail:
-      "File bytes flow directly between the browser and the tenant's own storage via a presigned URL — the platform's server never receives or forwards document content.",
+      "File bytes flow directly between the browser and the tenant's own storage via a signed upload URL — the platform's server never receives or forwards document content.",
   },
   {
     icon: X,
     title: "No document preview or download in the platform UI",
     detail:
-      "The platform never calls S3's GetObject or ListBucket for a tenant's documents — it can't display, preview, or download contents even if it wanted to.",
+      "The platform holds no credential that can read or list a tenant's storage, and the docs-signer's own role can write and delete but never read — so it can't display, preview, or download contents even if it wanted to.",
   },
   {
     icon: Users,
@@ -99,7 +99,7 @@ export default function SecureDocumentHandlingPage() {
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:gap-1">
                 <FlowNode icon={Monitor} label="Browser" />
                 <FlowArrow />
-                <FlowNode icon={HardDrive} label="Client S3 (AWS only)" />
+                <FlowNode icon={HardDrive} label="Client S3 or Blob Storage" />
                 <FlowArrow />
                 <FlowNode icon={Server} label="Tenant Runtime" />
                 <FlowArrow />
@@ -172,10 +172,9 @@ export default function SecureDocumentHandlingPage() {
           </div>
           <p className="mt-2 text-xs text-gray-500">(Example row — for illustration only.)</p>
           <p className="mt-4 text-xs leading-relaxed text-gray-500">
-            Two limitations worth knowing: reindexing after an upload or delete is a full resync — it re-embeds
-            every document under the tenant&apos;s prefix, not just the one that changed — and deleting a document
-            removes it from storage and from this list, but its already-generated vectors aren&apos;t purged from
-            the vector store until something else cleans them up.
+            One limitation worth knowing: reindexing after an upload or delete is a full resync — it re-embeds
+            every document under the tenant&apos;s prefix, not just the one that changed. The same resync removes
+            the vectors of a deleted document, so it stops being used for answers once reindexing finishes.
           </p>
         </section>
       </div>

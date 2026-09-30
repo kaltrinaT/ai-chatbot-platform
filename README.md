@@ -1,36 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Chatbot Platform
 
-## Getting Started
+A control plane that deploys a retrieval-augmented chatbot into each customer's **own** AWS account or Azure subscription, one isolated stack per tenant. The platform never sees chat traffic, documents or logs, and holds no credential for any customer cloud: the customer's one-click setup creates an identity that trusts only that chatbot's GitHub Actions runs, and every deploy signs in with a token GitHub issues for the run.
 
-First, run the development server:
+It is a Next.js application backed by Postgres. Deployments run as GitHub Actions workflows that apply Terraform in the customer's cloud, with the Terraform state kept there too.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Documentation
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Document | Covers |
+|---|---|
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | The control-plane / data-plane boundary, per-tenant infrastructure on both clouds, secret and credential flows, data model |
+| [`DOCS.md`](DOCS.md) | Reference: routes, database schema, onboarding flow, workflows, Terraform variables, environment variables, cost model |
+| [`docs/DEPLOYMENT-AWS-VS-AZURE.md`](docs/DEPLOYMENT-AWS-VS-AZURE.md) | A deployment step by step on each cloud, and how the two paths compare |
+| [`CLIENT-DEPLOYMENT-GUIDE.md`](CLIENT-DEPLOYMENT-GUIDE.md) | What a customer prepares in their own cloud, and what to expect afterwards |
+| [`DOCUMENT-MANAGEMENT.md`](DOCUMENT-MANAGEMENT.md) | Uploading and deleting knowledge-base documents without the platform holding a storage credential |
+| [`CHATBOT-LOGIC.md`](CHATBOT-LOGIC.md) | What the deployed chatbot does: indexing, retrieval, prompting, configuration |
+| [`SECURITY.md`](SECURITY.md) | Credential inventory, the trust model on each cloud, and known security limitations |
+| [`LIMITATIONS.md`](LIMITATIONS.md) | Known architectural limitations, and why each exists |
+| [`EVALUATION.md`](EVALUATION.md) | How the platform's claims are to be evaluated |
+| [`docs/figures/`](docs/figures/) | The figures the documents refer to |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The chatbot backend itself lives in the separate `ai-chatbot/ai-backend` repository.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Running locally
 
-## Learn More
+1. `npm install`
+2. Copy [`.env.example`](.env.example) to `.env.local` and fill it in. Each variable is explained there; the AWS ones assume the one-time setup in [`infra/platform/`](infra/platform/).
+3. Apply the database schema to your Postgres database (`npm run db:migrate`).
+4. `npm run dev`, then open [http://localhost:3000](http://localhost:3000).
 
-To learn more about Next.js, take a look at the following resources:
+The deploy workflows reach the platform at the `PLATFORM_BASE_URL` repository secret, which must be publicly reachable. Browser uploads to a tenant's storage are accepted only from that address and the optional `EXTRA_CORS_ORIGIN` repository variable, so a platform run at `localhost:3000` needs `EXTRA_CORS_ORIGIN=http://localhost:3000`, followed by a redeploy of each tenant (`LIMITATIONS.md` #7).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Tests
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`npm test` runs the Vitest suite. Much of it checks the infrastructure code as source — the workflows, Terraform and setup templates — for the security properties the documents claim.

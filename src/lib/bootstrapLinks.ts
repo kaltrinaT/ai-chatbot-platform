@@ -112,8 +112,8 @@ const AWS_TEMPLATE_PARAMETERS = [
  *
  * A Quick Create link cannot do this: the stack's name is fixed per tenant, so
  * creating it again fails. Tenants bootstrapped before the template gained
- * its Terraform state bucket run this once, and their next deploy moves their
- * state into it.
+ * its Terraform state bucket run this once; their deploys refuse to run until
+ * the bucket exists.
  */
 export function awsUpdateStackCommand(opts: {
   templateBaseUrl: string;

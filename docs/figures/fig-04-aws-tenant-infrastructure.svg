@@ -76,7 +76,7 @@
     <text x="96" y="582" font-size="10.5" fill="#5b6270">alb — ingress from 0.0.0.0/0 on port 80 only.</text>
     <text x="96" y="600" font-size="10.5" fill="#5b6270">task — ingress only from the alb group, on the frontend and container ports; egress open.</text>
     <text x="96" y="618" font-size="10.5" fill="#5b6270">vectors — ingress only from the task group, on 5432.</text>
-    <text x="96" y="640" font-size="10.5" fill="#5b6270">Terraform state for this tenant lives in the platform's own S3 bucket, keyed by slug.</text>
+    <text x="96" y="640" font-size="10.5" fill="#5b6270">Terraform state lives in the customer's own bucket, tfstate-{slug}-{account}-{region}-an.</text>
 
     <!-- right column -->
     <rect x="740" y="150" width="316" height="104" rx="4" fill="#ffffff" stroke="#2f343d" stroke-width="1.2"/>

@@ -16,7 +16,7 @@
     <text x="72" y="140" font-size="11" font-weight="bold" fill="#5b6270">SCAFFOLDING</text>
     <text x="72" y="156" font-size="9.5" fill="#898781">0 · 1</text>
     <text x="210" y="144" font-size="10.5" fill="#898781">None — resources sit directly in the account</text>
-    <text x="710" y="144" font-size="10.5">Resource group chatbot-{slug}<tspan fill="#898781" font-size="9.5"> · azurerm_resource_group</tspan></text>
+    <text x="710" y="144" font-size="10.5">Resource group chatbot-{slug}<tspan fill="#898781" font-size="9.5"> · data.azurerm_resource_group, from the setup</tspan></text>
 
     <!-- band 2: networking -->
     <rect x="60" y="170" width="1130" height="142" fill="#ffffff"/>

@@ -156,9 +156,10 @@ export default function GettingStartedPage() {
                 deployed until you submit it.
               </li>
               <li>
-                The platform assumes a role you create in your own account (AWS) or signs in to an identity you
-                trust through a federated credential (Azure) — no credential is stored either way. See the Cloud
-                Prerequisites guide for exactly what to set up.
+                A one-click setup in your own account creates the identity deployments sign in as. Each
+                deployment signs in with a token GitHub issues for that one chatbot, which your identity trusts —
+                no credential for your cloud is stored anywhere. See the Cloud Prerequisites guide for exactly what
+                the setup creates.
               </li>
               <li>Terraform provisions the chatbot&apos;s infrastructure directly inside your cloud account.</li>
               <li>
@@ -208,9 +209,9 @@ export default function GettingStartedPage() {
             <div id="deploy" className="mt-4 scroll-mt-8">
               <h3 className="text-sm font-semibold text-gray-900">3. Deploy</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Submitting the form triggers a deployment right away. You can watch its progress on the tenant
-                page — it assumes your role, writes your keys into your own account&apos;s secret store, then
-                provisions everything.
+                Submitting the form triggers a deployment right away. On AWS the platform first writes your keys
+                into your own Secrets Manager; on Azure the deployment writes them into a Key Vault it creates in
+                your resource group. You can watch its progress on the tenant page as it provisions everything.
               </p>
             </div>
 
@@ -227,7 +228,7 @@ export default function GettingStartedPage() {
           <section id="next-steps">
             <h2 className="text-lg font-semibold text-gray-900">Next Steps</h2>
             <ul className="mt-3 space-y-2 text-sm text-gray-600">
-              <li>Upload your knowledge-base documents from the tenant&apos;s Documents tab (AWS tenants only, for now).</li>
+              <li>Upload your knowledge-base documents from the tenant&apos;s Documents tab, from the platform&apos;s own address.</li>
               <li>Check the tenant page&apos;s Infrastructure tab to see what was provisioned in your account.</li>
               <li>Review the estimated monthly cost breakdown for your configuration.</li>
               <li>

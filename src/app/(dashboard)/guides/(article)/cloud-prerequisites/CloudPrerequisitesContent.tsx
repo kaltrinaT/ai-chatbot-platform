@@ -14,23 +14,19 @@ const AWS_STEPS: Step[] = [
       "Copy your 12-digit AWS account ID (top-right in the console, or run aws sts get-caller-identity) and pick the region you want your chatbot infrastructure to run in.",
   },
   {
-    title: "Create the IAM role",
+    title: "Start onboarding and choose a slug",
     detail:
-      "IAM → Roles → Create role → Custom trust policy, trusting the platform's account with the sts:ExternalId condition the onboarding form shows for this chatbot. The condition is what keeps the role usable for this chatbot only; apply it before submitting the form, since onboarding assumes the role immediately.",
+      "The slug names your deployment role and your Terraform state bucket, so the form checks it as you type, against every other chatbot and against S3 bucket names held anywhere. The setup button appears once the slug is confirmed free. Save a draft before leaving the form: a new form gets a new chatbot ID, which a setup already run does not trust.",
   },
   {
-    title: "Name it correctly",
+    title: "Run the one-click setup",
     detail:
-      "The role name must start with chatbot-client-deploy- (e.g. chatbot-client-deploy-acme). This is required, not cosmetic — the platform can only assume roles matching that prefix; any other name is denied before your trust policy is even evaluated.",
+      "Configure AWS account opens CloudFormation with every value filled in. The stack registers GitHub as an identity provider (if your account already has it, the form offers to reuse it), creates the role chatbot-client-deploy-<slug> with the trust policy and permissions below, and creates the state bucket tfstate-<slug>-<account>-<region>-an. Run it before submitting the form, since onboarding writes your keys into your Secrets Manager immediately.",
   },
   {
-    title: "Attach the permissions policy",
+    title: "Copy the role's ARN and test the connection",
     detail:
-      "Grants everything Terraform provisions on your behalf: a VPC, load balancer, ECS cluster with two Fargate services, two ECR repos, an S3 documents bucket, a docs-signer Lambda, Secrets Manager secrets, a CloudWatch log group, and (if you chose pgvector) an RDS instance. See the policy below.",
-  },
-  {
-    title: "Copy the role's ARN",
-    detail: "arn:aws:iam::<your-account-id>:role/chatbot-client-deploy-<something> — you'll paste this during onboarding.",
+      "Copy DeploymentRoleArn from the stack's Outputs tab into the form, then press Test connection. It signs in exactly as a deployment would and checks the state bucket, without changing anything. A role another chatbot already uses is refused: each chatbot's setup creates its own.",
   },
 ];
 
@@ -38,22 +34,22 @@ const AZURE_STEPS: Step[] = [
   {
     title: "Get your subscription & tenant ID",
     detail:
-      "Azure Portal → Subscriptions for the Subscription ID; Microsoft Entra ID → Overview for the Tenant ID. Or run az account show --query \"{sub:id, tenant:tenantId}\".",
+      "Azure Portal → Subscriptions for the Subscription ID; Microsoft Entra ID → Overview for the Tenant ID. Or run az account show --query \"{sub:id, tenant:tenantId}\". The setup deployment also shows both in its outputs.",
   },
   {
-    title: "Create a deployment identity",
+    title: "Start onboarding and choose a slug",
     detail:
-      "Microsoft Entra ID → App registrations → New registration, or a user-assigned managed identity. Copy its client ID. Do not create a client secret — the platform never asks for one.",
+      "3–18 characters. The slug names your resource group, deployment identity and state storage, and several Azure names built from it must be unique worldwide, so the form checks it as you type, against every other chatbot and against names Azure already holds. The setup button appears once the slug is confirmed free. Save a draft before leaving the form: a new form gets a new chatbot ID, which a setup already run does not trust.",
   },
   {
-    title: "Grant Contributor and User Access Administrator at the subscription level",
+    title: "Run the one-click setup",
     detail:
-      "Must be subscription-scoped, not a resource group — Terraform creates the resource group itself during deployment, so a narrower scope will fail at the very first deploy step. User Access Administrator lets it create the chatbot's narrow role assignments.",
+      "Configure Azure opens the portal's custom deployment. Enter the values the form lists beside the button — Chatbot Id is this chatbot's ID from the form, not your Azure tenant ID — or run the az deployment sub create command the form shows with every value filled in. The setup creates the resource group chatbot-<slug>, a user-assigned managed identity with a federated credential that trusts this chatbot's deployments only, Contributor and User Access Administrator on that resource group alone, and the state storage account cbtf<slug>.",
   },
   {
-    title: "Add the federated credential shown during onboarding",
+    title: "Copy the client ID and test the connection",
     detail:
-      "The Cloud Configuration step shows an issuer, audience and subject naming this chatbot, with a ready-made az command. Add it to the identity before pressing Deploy. It trusts this chatbot's deployments only; delete it to revoke the platform's access.",
+      "Copy clientId from the deployment's Outputs into the form, then press Test connection. It signs in exactly as a deployment would and checks the resource group and state storage, without changing anything; if sign-in fails, it says why and what to fix. A client ID another chatbot already uses is refused. Never create a client secret: the platform does not ask for one.",
   },
 ];
 
@@ -61,13 +57,26 @@ const AWS_TRUST_POLICY = `{
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "GitHubActionsDeploy",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:OWNER/REPO:environment:tenant-CHATBOT_ID"
+        }
+      }
+    },
+    {
+      "Sid": "PlatformOnboarding",
       "Effect": "Allow",
       "Principal": { "AWS": "arn:aws:iam::PLATFORM_ACCOUNT_ID:root" },
       "Action": "sts:AssumeRole",
       "Condition": {
-        "StringEquals": {
-          "sts:ExternalId": "TENANT_ID_SHOWN_IN_THE_ONBOARDING_FORM"
-        }
+        "StringEquals": { "sts:ExternalId": "CHATBOT_ID" }
       }
     }
   ]
@@ -102,14 +111,13 @@ const AWS_PERMISSIONS_POLICY = `{
   ]
 }`;
 
-const AZURE_ROLE_ASSIGNMENT_CMD = `az role assignment create \\
-  --assignee <identity-client-id> \\
-  --role Contributor \\
-  --scope /subscriptions/<subscription-id>
-az role assignment create \\
-  --assignee <identity-client-id> \\
-  --role "User Access Administrator" \\
-  --scope /subscriptions/<subscription-id>`;
+const AZURE_BOOTSTRAP_CMD = `az deployment sub create \\
+  --subscription <subscription-id> \\
+  --name chatbot-bootstrap-<slug> \\
+  --location <region> \\
+  --template-uri <template URL shown in the form> \\
+  --parameters chatbotId=<chatbot ID shown in the form> chatbotSlug=<slug> \\
+    gitHubOwner=<owner> gitHubRepo=<repo> location=<region>`;
 
 const TOC = [
   { id: "aws-prerequisites", label: "AWS Prerequisites" },
@@ -196,7 +204,8 @@ export default function CloudPrerequisitesContent() {
             <div className="mt-6">
               <h2 className="text-base font-semibold text-gray-900">AWS Prerequisites</h2>
               <p className="mt-1 text-sm text-gray-500">
-                Create an IAM role that the platform will assume to provision resources in your AWS account.
+                A one-click setup creates the role your chatbot&apos;s deployments sign in as, through GitHub&apos;s
+                identity provider. No access key is created or shared.
               </p>
 
               <div className="mt-6">
@@ -206,7 +215,11 @@ export default function CloudPrerequisitesContent() {
               <div className="mt-6 rounded-lg border bg-gray-50 p-4">
                 <div className="text-sm font-semibold text-gray-900">Trust Policy</div>
                 <p className="mt-1 text-xs text-gray-500">
-                  Replace PLATFORM_ACCOUNT_ID with the value the platform operator gives you.
+                  The setup applies this for you. Only if you build the role by hand: the form shows it with your
+                  values filled in, GitHub must be registered as an identity provider with audience sts.amazonaws.com,
+                  and the role name must start with chatbot-client-deploy- — the platform may assume no other role.
+                  The first statement lets this chatbot&apos;s deployments sign in; the second lets the platform
+                  write your keys into your Secrets Manager at onboarding, for this chatbot only.
                 </p>
                 <pre className="mt-3 overflow-x-auto rounded-md bg-gray-900 p-3 text-xs text-gray-100">
                   <code>{AWS_TRUST_POLICY}</code>
@@ -238,7 +251,9 @@ export default function CloudPrerequisitesContent() {
             <div className="mt-6">
               <h2 className="text-base font-semibold text-gray-900">Azure Prerequisites</h2>
               <p className="mt-1 text-sm text-gray-500">
-                Create an identity the platform&apos;s deployments sign in as through a federated credential. No secret is created or shared.
+                A one-click setup creates the identity your chatbot&apos;s deployments sign in as, through a federated
+                credential, with permissions confined to the chatbot&apos;s own resource group. No secret is created or
+                shared.
               </p>
 
               <div className="mt-6">
@@ -246,9 +261,15 @@ export default function CloudPrerequisitesContent() {
               </div>
 
               <div className="mt-6 rounded-lg border bg-gray-50 p-4">
-                <div className="text-sm font-semibold text-gray-900">Role Assignment Command</div>
+                <div className="text-sm font-semibold text-gray-900">Setup Command</div>
+                <p className="mt-1 text-xs text-gray-500">
+                  The same setup as the Configure Azure button, from the command line. The form shows it with every
+                  value filled in, including your subscription, so it cannot land in whichever subscription the
+                  Azure CLI defaults to. Running it again for an existing chatbot is safe: it adds what is missing
+                  and leaves the rest as it is.
+                </p>
                 <pre className="mt-3 overflow-x-auto rounded-md bg-gray-900 p-3 text-xs text-gray-100">
-                  <code>{AZURE_ROLE_ASSIGNMENT_CMD}</code>
+                  <code>{AZURE_BOOTSTRAP_CMD}</code>
                 </pre>
               </div>
 
@@ -341,7 +362,9 @@ export default function CloudPrerequisitesContent() {
             <li>
               <span className="font-medium text-gray-900">Custom domain.</span>{" "}
               <span className="text-gray-600">
-                Optional on both clouds — point a CNAME at the URL assigned after your first deployment.
+                AWS only for now — supply the hostname with its certificate, then point a CNAME at the load
+                balancer address shown after your first deployment. On Azure a custom domain is accepted but not
+                yet bound, so the chatbot answers on its *.azurecontainerapps.io address only.
               </span>
             </li>
           </ul>

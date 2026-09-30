@@ -87,8 +87,11 @@ No cloud credential is recoverable that way, since none is stored.
 │                    ├── NextAuth (GitHub OAuth)                      │
 │                    ├── Server Actions                               │
 │                    ├── Drizzle ORM ──────────────► Neon Postgres    │
-│                    ├── AWS SDK (STS + Secrets Manager)              │
-│                    ├── Azure SDK (Key Vault)                        │
+│                    ├── AWS SDK (STS + Secrets Manager), onboarding  │
+│                    │   only — no Azure SDK: the platform makes no   │
+│                    │   Azure calls at all                           │
+│                    ├── jose — verifies GitHub OIDC tokens on the    │
+│                    │   Azure secret-release endpoint                │
 │                    └── Octokit ──────────────────► GitHub Actions   │
 │                                                         │           │
 └─────────────────────────────────────────────────────────┼───────────┘
@@ -98,19 +101,27 @@ No cloud credential is recoverable that way, since none is stored.
                               ▼
               ┌──────────────────────────────────────────┐
               │              GitHub Actions              │
+              │  job environment: tenant-{id}, so each   │
+              │  run's OIDC token names its tenant       │
               │                                          │
               │  deploy-tenant.yml (AWS):                │
               │    1. Pull image from platform ECR       │
-              │    2. Replicate to customer ECR          │
-              │    3. terraform apply                    │
+              │    2. Sign in to the tenant role (OIDC)  │
+              │    3. Replicate to customer ECR          │
+              │    4. terraform apply                    │
               │                                          │
               │  deploy-tenant-azure.yml (Azure):        │
-              │    1. Pull image from platform ECR       │
-              │    2. Replicate to customer ACR          │
-              │    3. terraform apply                    │
+              │    1. Fetch secrets from the platform    │
+              │    2. Pull image from platform ECR       │
+              │    3. Sign in to the customer (OIDC)     │
+              │    4. Replicate to customer ACR          │
+              │    5. terraform apply (twice)            │
               │                                          │
-              │  Both: POST /api/deployments/{id}/       │
-              │        status  (running, then final)     │
+              │  Also: destroy-tenant(-azure).yml,       │
+              │        verify-tenant-{aws,azure}.yml     │
+              │                                          │
+              │  All: POST /api/deployments/{id}/        │
+              │       status  (running, then final)      │
               └───────────┬──────────────────────────────┘
                           │
           ┌───────────────┴──────────────┬──────────────────────┐
@@ -140,12 +151,26 @@ No cloud credential is recoverable that way, since none is stored.
 
 ## Tenant Onboarding & Deployment Flow
 
+Before the form is submitted, the wizard generates the tenant's ID and checks
+the slug as it is typed: against every tenant, live or deleted; on Azure,
+against the names every live Azure tenant derives from its slug; and against
+DNS (Azure) or S3 (AWS) for the globally unique names someone outside the
+platform may hold. Only once the slug is confirmed free does it show the
+customer's one-click setup — a CloudFormation stack or a subscription-level ARM
+deployment, both prefilled — which creates the deployment identity trusting
+`repo:{owner}/{repo}:environment:tenant-{id}`, and the Terraform state storage,
+in the customer's own cloud. The customer pastes the identity back, and the
+wizard refuses one another tenant already uses.
+
 ```
 Operator                Platform (Next.js)           Customer Cloud      GitHub Actions
    │                          │                            │                    │
-   │── POST /tenants/new ────►│                            │                    │
-   │   (form data)            │                            │                    │
-   │                          │ validate (Zod)             │                    │
+   │── submit wizard ────────►│                            │                    │
+   │   (server action)        │                            │                    │
+   │                          │ validate (Zod), then the   │                    │
+   │                          │ slug and identity checks   │                    │
+   │                          │ again — before any cloud   │                    │
+   │                          │ call                       │                    │
    │                          │                            │                    │
    │                   ┌──────┴───────┐                    │                    │
    │              AWS  │              │ Azure               │                    │
@@ -169,7 +194,8 @@ Operator                Platform (Next.js)           Customer Cloud      GitHub 
    │                          │ UPDATE deployment          │                    │
    │                          │   (status: running)        │                    │
    │                          │                            │                    │
-   │◄─ redirect /tenants/{id}─│                            │  pull ECR image    │
+   │◄─ live progress in the ──│                            │  pull ECR image    │
+   │   wizard's last step     │                            │                    │
    │                          │                            │◄───────────────────│
    │                          │                            │  push to customer  │
    │                          │                            │  registry          │
@@ -284,7 +310,8 @@ VPC  10.20.0.0/16
 ├── S3 Bucket: chatbot-{slug}-docs
 │   ├── AES-256 SSE
 │   ├── all public access blocked
-│   └── CORS: POST from the platform's own origin (browser → S3 uploads)
+│   └── CORS: POST from PLATFORM_BASE_URL, plus EXTRA_CORS_ORIGIN if set
+│       (browser → S3 uploads; any other origin fails the preflight)
 │
 ├── Lambda: chatbot-{slug}-docs-signer  (Function URL, auth: NONE)
 │   ├── Role: s3:PutObject + s3:DeleteObject → docs bucket/{prefix}*  ONLY
@@ -326,13 +353,24 @@ CUSTOMER'S OWN PINECONE PROJECT                  [vector_store = pinecone]
         customer's key from THEIR Secrets Manager under the assumed role,
         masks it, and passes it to the pinecone provider via TF_VAR.
 
-S3 Bucket: tfstate-{slug}-{account}-{region}-an   (created by the bootstrap stack)
-├── this chatbot's Terraform state (terraform.tfstate), in the customer's
-│   own account rather than the platform's
-├── account-regional namespace: no other AWS account can create this name
-├── versioned (superseded versions expire after 30 days), private, TLS-only
-├── S3 lock file per run (use_lockfile, Terraform 1.15.3)
-└── retained when the stack is deleted — the customer deletes it last
+CloudFormation stack: chatbot-bootstrap-{slug}   (created by the CUSTOMER,
+│                                                 before onboarding)
+├── IAM OIDC provider: token.actions.githubusercontent.com
+│   └── skipped when the account already has one (CreateGitHubOidcProvider=No)
+├── IAM Role: chatbot-client-deploy-{slug}   (1-hour maximum session)
+│   ├── trust GitHubActionsDeploy: sts:AssumeRoleWithWebIdentity,
+│   │     sub = repo:{owner}/{repo}:environment:tenant-{id}, aud = sts.amazonaws.com
+│   │     — every deploy, teardown and connection check
+│   ├── trust PlatformOnboarding: sts:AssumeRole from the platform account,
+│   │     sts:ExternalId = {tenant id} — onboarding's secret writes only
+│   └── permissions: what Terraform needs to build everything above
+└── S3 Bucket: tfstate-{slug}-{account}-{region}-an
+    ├── this chatbot's Terraform state (terraform.tfstate), in the customer's
+    │   own account rather than the platform's
+    ├── account-regional namespace: no other AWS account can create this name
+    ├── versioned (superseded versions expire after 30 days), private, TLS-only
+    ├── S3 lock file per run (use_lockfile, Terraform 1.15.3)
+    └── retained when the stack is deleted — the customer deletes it last
 ```
 
 ---
@@ -342,14 +380,22 @@ S3 Bucket: tfstate-{slug}-{account}-{region}-an   (created by the bootstrap stac
 ```
 CUSTOMER AZURE SUBSCRIPTION
 ─────────────────────────────────────────────────────────────
-Resource Group: chatbot-{slug}
+Resource Group: chatbot-{slug}   (created by the CUSTOMER's setup deployment,
+│                                 before onboarding; Terraform only reads it)
 │
-├── Container Registry: chatbot{slug}acr  (Basic SKU, admin user disabled)
+├── Managed Identity: chatbot-deploy-{slug}   (user-assigned, created by the setup)
+│   ├── federated credential: issuer token.actions.githubusercontent.com,
+│   │     audience api://AzureADTokenExchange,
+│   │     subject repo:{owner}/{repo}:environment:tenant-{id}
+│   └── Contributor + User Access Administrator on THIS resource group only
+│
+├── Container Registry: chatbot{slug}  (hyphens stripped; Basic SKU, admin
+│   │                                  user disabled)
 │   │  images are the platform's prebuilt golden images, pulled from the
 │   │  platform ECR and replicated here by deploy-tenant-azure.yml — same
 │   │  model AWS uses to replicate into the customer's ECR
-│   ├── image: chatbot{slug}acr.azurecr.io/chatbot-backend:{version}
-│   └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
+│   ├── image: chatbot{slug}.azurecr.io/chatbot-backend:{version}
+│   └── image: chatbot{slug}.azurecr.io/chatbot-frontend:{version}
 │
 ├── Key Vault: cb-{slug}-kv  (Standard SKU)
 │   ├── secret: llm-api-key        ← written by Terraform during apply
@@ -359,9 +405,11 @@ Resource Group: chatbot-{slug}
 │   │    refuses it: both containers reach Blob Storage through managed
 │   │    identities. Terraform state still records the key; see below)
 │   ├── secret: docs-signer-secret ← shared auth secret for the Function below
-│   └── Access policy: the deploying identity ONLY. The Container App
-│       does not read from this vault — Terraform sets its app secrets directly
-│       (see below), so the vault is a durable record, not the injection path.
+│   ├── Access policy: the deploying identity ONLY. The Container App
+│   │   does not read from this vault — Terraform sets its app secrets directly
+│   │   (see below), so the vault is a durable record, not the injection path.
+│   └── On destroy: secrets purged, vault only soft-deleted — purging a vault
+│       is a subscription-level action the deploying identity lacks
 │
 ├── PostgreSQL Flexible Server: chatbot-{slug}-pg  [vector_store = pgvector]
 │   ├── B_Standard_B1ms, 32 GB, PG 16, 7-day backups
@@ -376,7 +424,8 @@ Resource Group: chatbot-{slug}
 │   │     user-delegation SAS tokens work, so the access key Terraform
 │   │     records in state authorizes nothing. Terraform itself manages the
 │   │     container through Entra ID (provider storage_use_azuread).
-│   └── CORS: PUT from the platform's own origin (browser → Blob uploads)
+│   └── CORS: PUT from PLATFORM_BASE_URL, plus EXTRA_CORS_ORIGIN if set
+│       (browser → Blob uploads; the origin must match exactly)
 │
 ├── Storage Account: chatbot{slug}fn  (truncated to 22 chars, then "fn")
 │   └── the Azure Functions runtime's own bookkeeping store. Deliberately
@@ -413,7 +462,7 @@ Resource Group: chatbot-{slug}
 │
 └── Container App: chatbot-{slug}   (no path-based ingress routing, so both
     │                                containers run in one app and share localhost)
-    ├── Revision mode: Single
+    ├── Revision mode: Single; workload profile: Consumption
     ├── Ingress: external, target port 80  → frontend container
     ├── Scaling: min 1 replica, max 3
     ├── Identity: user-assigned (chatbot-{slug}-chatbot-id), created in the
@@ -437,7 +486,7 @@ Resource Group: chatbot-{slug}
     │               [pgvector] DATABASE_URL, PGVECTOR_URL ← vector-db-url
     └── Container: frontend  (chat UI, nginx :80, 0.25 vCPU / 0.5 Gi)
         ├── env: BACKEND_PORT (nginx proxies /api → localhost:8000)
-        └── image: chatbot{slug}acr.azurecr.io/chatbot-frontend:{version}
+        └── image: chatbot{slug}.azurecr.io/chatbot-frontend:{version}
 
 CUSTOMER'S OWN PINECONE PROJECT                  [vector_store = pinecone]
 ─────────────────────────────────────────────────────────────
@@ -447,7 +496,8 @@ CUSTOMER'S OWN PINECONE PROJECT                  [vector_store = pinecone]
         the platform with its OIDC token (see "Azure — LLM API Key" below)
         rather than reading it from their cloud.
 
-Storage Account: cbtf{slug}   (hyphens stripped; created by the bootstrap)
+Storage Account: cbtf{slug}   (hyphens stripped; created by the setup, inside
+│                              the resource group above)
 ├── container tfstate: this chatbot's Terraform state (terraform.tfstate),
 │   in the customer's own subscription rather than the platform's
 ├── Shared Key disabled: Entra ID only. The deployment identity holds
@@ -506,27 +556,32 @@ Form input (plaintext)
        ▼
   Passed as Terraform variable
        │
-       ▼
-  Key Vault secret: llm-api-key (written by Terraform apply)
+       ├──► Key Vault secret: llm-api-key (written by Terraform apply)
+       │      a durable copy the customer can see and rotate
        │
-       ▼
-  Container App mounts secret reference at runtime
+       └──► Container App secret: llm-api-key (value set by Terraform)
+              → LLM_API_KEY in the container; this is what the app reads
 ```
 
 ### Azure — Subscription Access (no credential)
 
 ```
-Onboarding                                   Customer (once, in their own tenant)
-  wizard generates tenant id (UUID)            federated credential on their identity:
-  shows subject ─────────────────────────────►   issuer   token.actions.githubusercontent.com
-                                                 audience api://AzureADTokenExchange
-                                                 subject  repo:{owner}/{repo}:environment:tenant-{id}
+Onboarding                                   Customer's setup deployment (once, in
+  wizard generates tenant id (UUID)            their own subscription), from the
+  and shows it as "Chatbot Id" ─────────────►  wizard's link or az command:
+                                                 resource group chatbot-{slug}
+                                                 managed identity + federated credential:
+                                                   issuer   token.actions.githubusercontent.com
+                                                   audience api://AzureADTokenExchange
+                                                   subject  repo:{owner}/{repo}:environment:tenant-{id}
+                                                 roles on that resource group only
+                                                 state storage cbtf{slug}
 
 Deploy (deploy-tenant-azure.yml, job environment: tenant-{id})
   GitHub signs OIDC token, sub = …:environment:tenant-{id}
        │
        ▼
-  azure/login + azurerm (use_oidc) ──► Entra ID: subject matches this identity's credential?
+  azure/login + azurerm + azapi (use_oidc) ──► Entra ID: subject matches this identity's credential?
                                           │ yes → short-lived access token (never stored)
                                           │ no  → login refused, nothing created
        ▼
@@ -631,8 +686,9 @@ tenant_drafts — owned by users, NOT attached to a tenant
   name, step, data (jsonb)
   Non-secret wizard state only: llmApiKey and pineconeApiKey are stripped
   before saving and must be re-entered on resume. The generated tenantId is
-  kept, since a federated credential may already name it. Deliberately not a tenants row with nullable columns, so a draft
-  can never be deployed. Deleted once the tenant it describes exists.
+  kept, since the customer's setup may already trust it. Deliberately not a
+  tenants row with nullable columns, so a draft can never be deployed.
+  Deleted once the tenant it describes exists.
 
 Note: s3DocsBucket exists in the schema but nothing ever writes it, so it is
 null for every tenant. The name is deterministic — chatbot-{slug}-docs — and
@@ -693,9 +749,12 @@ GitHub Actions                          Platform
 | ORM | Drizzle ORM |
 | Validation | Zod v4 |
 | Encryption | Node.js `crypto` — AES-256-GCM |
-| AWS integration | AWS SDK v3 (STS, Secrets Manager) |
-| Azure integration | `@azure/identity`, `@azure/keyvault-secrets` |
+| AWS integration | AWS SDK v3 (STS, Secrets Manager), for onboarding only |
+| Azure integration | None in the application. Customer setup is an ARM template; deploys use GitHub OIDC and Terraform |
+| Token verification | `jose`, for GitHub OIDC tokens on the Azure secret-release endpoint |
 | GitHub integration | Octokit REST |
-| Infrastructure | Terraform 1.9.5 — AWS provider ~5.60, azurerm ~3.110, pinecone ~2.0 |
-| CI/CD | GitHub Actions |
-| Runtime | Node.js on Vercel / any Node host |
+| Customer setup | CloudFormation (AWS) and a subscription-level ARM template (Azure), published to a public bucket |
+| Infrastructure | Terraform 1.15.3 — AWS provider ~5.60; azurerm ~3.110 and azapi ~2.0; pinecone ~2.0; random ~3.6 |
+| CI/CD | GitHub Actions, with one environment per tenant |
+| Tests | Vitest |
+| Runtime | Node.js; run locally by the operator, with a copy on Vercel serving the workflows' callbacks (`LIMITATIONS.md` #7) |

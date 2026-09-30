@@ -124,8 +124,8 @@ POST /api/index  (body ignored — tenant, bucket and prefix come from the
   │
   ├── Load documents from the tenant's object storage
   │   ├── AWS:   S3, via s3_loader.load_text_from_s3(bucket, prefix)
-  │   └── Azure: Blob Storage, reached with AZURE_STORAGE_ACCOUNT /
-  │              _CONTAINER / _KEY (set by this repo's Terraform)
+  │   └── Azure: Blob Storage, AZURE_STORAGE_ACCOUNT / _CONTAINER, read as
+  │              the container's user-assigned identity (AZURE_CLIENT_ID)
   │       → lists objects under prefix, reads text content
   │
   ├── For each document:
@@ -140,15 +140,22 @@ POST /api/index  (body ignored — tenant, bucket and prefix come from the
   │       → each vector: { id, values, metadata: { tenant, source, text } }
   │       → tenant_id in metadata enables per-tenant filtering at query time
   │
+  ├── purge_removed_sources(tenant_id, current_sources)
+  │   → deletes the vectors of every document no longer in storage,
+  │     in Pinecone and pgvector alike — this is how a deleted document
+  │     stops being used for answers
+  │
   └── return { message: "Data indexed successfully" }
 ```
 
-> **Note on the request body.** `triggerReindex` (`src/lib/reindex.ts`) sends the
-> same `{ tenant_id, bucket, prefix }` body for both clouds, and `bucket` is
-> always derived AWS-style as `chatbot-{slug}-docs`. For an Azure tenant that
-> names nothing that exists; the container is expected to fall back to its
-> `AZURE_STORAGE_*` settings. Whether it does can only be confirmed against the
-> backend repo.
+> **Note on the request body.** `triggerReindex` (`src/lib/reindex.ts`) still sends
+> `{ tenant_id, bucket, prefix }`, with `bucket` derived AWS-style as
+> `chatbot-{slug}-docs` even for an Azure tenant. The backend ignores the body
+> entirely (`IndexRequest` in `models.py` declares no fields) and reads its
+> tenant, storage and prefix from its own environment, because the endpoint is
+> public: a caller-chosen empty prefix would have made the purge step delete
+> every vector the tenant had. The body is sent only so an older image keeps
+> working.
 
 ---
 
@@ -166,7 +173,7 @@ never needs the unused backend's dependency to be importable.
 
 - **Index name**: `PINECONE_INDEX` — `chatbot-{slug}`, one **dedicated serverless index per tenant** (`pinecone_index.this`, AWS and Azure alike)
 - **Dimension**: 384 (matches `all-MiniLM-L6-v2` output) · **Metric**: cosine
-- **Pinecone key**: `PINECONE_API_KEY` — the **customer's own** key, collected at onboarding. On AWS it is injected from *their* Secrets Manager; on Azure from *their* Key Vault. The platform holds no standing access to the index.
+- **Pinecone key**: `PINECONE_API_KEY` — the **customer's own** key, collected at onboarding. On AWS it is injected from *their* Secrets Manager; on Azure from a Container App secret Terraform sets, with a copy in *their* Key Vault. The platform holds no standing access to the index.
 - **Tenant isolation**: the index boundary itself — a container is only ever given its own index name, so no query can reach another tenant's vectors. The `{"tenant": {"$eq": tenant_id}}` metadata filter still applied on every query is now redundant defence-in-depth rather than the primary control.
 - **Index quota**: Pinecone caps serverless indexes per project by plan (Starter 5, Builder 10, Standard 20, Enterprise 200). Since each tenant now uses their *own* project, this is a per-customer limit rather than a ceiling on how many tenants the platform can host.
 
@@ -239,11 +246,16 @@ one set or the other, never both.
 | Scenario | Response |
 |---|---|
 | No API key set | 200 with `[Mock Response] No API key configured` |
-| LLM auth failure (401) | 500 `AuthenticationError` — check key and base URL |
-| LLM quota exceeded (429) | 500 `RateLimitError` — add billing credits |
-| Pinecone connection failure | 502 `Pinecone error` |
-| S3 access denied | 400 or 500 depending on error code |
-| AWS credentials missing | 500 `NoCredentialsError` — check ECS task role |
+| LLM auth failure (401) | 500 `{"error": "Internal Server Error", "type": "AuthenticationError"}` — check key and base URL |
+| LLM quota exceeded (429) | 500, `type: "RateLimitError"` — add billing credits |
+| Pinecone failure | 502 `Pinecone error (<class>)` |
+| pgvector failure | 502 `Vector database error (<class>)` |
+| Missing or invalid configuration | 500 `Configuration error; see the container logs.` |
+| S3 access denied or no such bucket | 400; other S3 errors 502 |
+| AWS credentials missing | 500 — check ECS task role |
+| `/api/index` while one resync runs and another waits | 202 — the waiting resync will include the change |
+
+Responses name the kind of failure, never the exception text, which can name hosts or configuration; the full error goes to the tenant's own logs.
 
 ---
 

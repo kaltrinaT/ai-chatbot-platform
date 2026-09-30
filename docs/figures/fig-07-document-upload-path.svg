@@ -105,7 +105,7 @@
     <text x="970" y="470" font-size="10.5">7 read and embed</text>
 
     <text x="60" y="700" font-size="11" fill="#5b6270">The thick arrow is the only path the file's bytes ever take. Everything the platform learns about a document — its name, size and type — it learned from the browser before the upload, not from the store afterwards.</text>
-    <text x="60" y="720" font-size="11" fill="#5b6270">Deleting a document removes the object and the platform's record of it, but the vectors already derived from it remain: the backend's index endpoint only upserts, so nothing purges them.</text>
+    <text x="60" y="720" font-size="11" fill="#5b6270">Deleting a document removes the object and the platform's record of it; the reindex that follows deletes its vectors too, since each resync purges every source no longer in storage.</text>
     <text x="60" y="740" font-size="11" fill="#5b6270">If the browser's upload fails, the pending row is removed; the platform cannot verify either outcome against the store, so the browser's report is authoritative.</text>
   </g>
 </svg>

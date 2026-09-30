@@ -1,6 +1,6 @@
 # Architectural Limitations
 
-This document lists the known limitations of the platform's architecture: what the design cannot do, where it is weaker than it looks, and why. It describes the code as of 28 September 2026.
+This document lists the known limitations of the platform's architecture: what the design cannot do, where it is weaker than it looks, and why. It describes the code as of 30 September 2026.
 
 Security limitations have their own list in [`SECURITY.md`](SECURITY.md#known-limitations), numbered #1–#13. This document cites them as "`SECURITY.md` #n" where an architectural choice is the cause, and does not repeat them.
 
@@ -25,7 +25,7 @@ Each limitation has one disposition:
 | 4 | Changing the customer-side footprint needs every customer to act | Isolation model | By design |
 | 5 | Query-time data still leaves the customer's cloud | Isolation model | Scope / Deferred |
 | 6 | The platform still calls into the data plane | Isolation model | By design / Deferred |
-| 7 | The control plane is a single, unhosted instance | Control plane | Scope |
+| 7 | The control plane has no production deployment | Control plane | Scope |
 | 8 | Nothing runs in the background | Control plane | Deferred |
 | 9 | One user owns each tenant | Control plane | Scope |
 | 10 | One static encryption key | Control plane | Deferred |
@@ -44,7 +44,7 @@ Each limitation has one disposition:
 | 23 | Chat and indexing share one CPU process | Tenant runtime | Deferred |
 | 24 | The embedding model is fixed and downloaded at start-up | Tenant runtime | Deferred |
 | 25 | Network exposure is set by cost, not by least exposure | Tenant runtime | Deferred |
-| 26 | Resource names derived from the slug can collide | Tenant runtime | Deferred |
+| 26 | Resource names derived from the slug are checked, not reserved | Tenant runtime | Deferred |
 | 27 | The AWS and Azure paths are not equivalent | Tenant runtime | Deferred / By design |
 | 28 | The chatbot backend lives outside this repository | Scope boundary | Scope |
 
@@ -81,7 +81,9 @@ The customer owns every resource, including the Terraform state that describes t
 
 The Terraform state itself lives in the customer's account (`tfstate-<slug>-<account>-<region>-an` on AWS, `cbtf<slug>` on Azure). If the customer deletes it, the platform can no longer update or remove that chatbot: the next run stops rather than start again from empty state.
 
-**Disposition: By design.** Customer control over their own account is the point. The platform can report only what it observes, and **Test connection** checks the sign-in at one moment without storing the result.
+The cloud provider's own defaults can change the same way. The Azure Container Apps environment was once declared without a mode, and on 29 September 2026 Azure created one as **Express**, a tier that refuses sidecar containers, health probes and revision suffixes, so the chatbot's app could not be created in it. The mode is now stated explicitly ([`infra/terraform/azure/main.tf`](infra/terraform/azure/main.tf)), but any other setting left to a provider default can shift the same way, and the platform learns of it only when a deploy fails.
+
+**Disposition: By design.** Customer control over their own account is the point. The platform can report only what it observes, and **Test connection** checks the sign-in at one moment without storing the result. Provider defaults are narrowed by stating every setting the chatbot depends on.
 
 ### 4. Changing the customer-side footprint needs every customer to act
 
@@ -118,12 +120,12 @@ Two paths cross the boundary from the control plane:
 
 ## 2. Control plane
 
-### 7. The control plane is a single, unhosted instance
+### 7. The control plane has no production deployment
 
-The prototype runs the Next.js control plane on the operator's own machine. There is no hosted deployment, no second instance and no failover.
+The operator uses the Next.js control plane from their own machine. A second copy of the same application runs on Vercel and shares its database and encryption key. That copy is what `PLATFORM_BASE_URL` names, and so what GitHub runners reach for status callbacks and, on Azure, for secrets (#20). Neither copy is a managed production deployment: nothing keeps their code in step, and there is no failover between them.
 
-- Onboarding reaches AWS through the operator's own `aws login` session, so a person must be signed in. The code already supports a hosted alternative with its own workload identity (`PLATFORM_AWS_ROLE_ARN` in [`src/lib/aws.ts`](src/lib/aws.ts)), which stays unused while the control plane runs locally.
-- GitHub runners must reach `PLATFORM_BASE_URL` for status callbacks and, on Azure, for secrets (#20). Locally this needs a tunnel.
+- Onboarding reaches AWS through the operator's own `aws login` session, so a person must be signed in. The code already supports a host with its own workload identity (`PLATFORM_AWS_ROLE_ARN` in [`src/lib/aws.ts`](src/lib/aws.ts), trusted through [`infra/platform/control-plane`](infra/platform/control-plane/main.tf)); the prototype does not onboard from the hosted copy.
+- A tenant's document storage accepts browser uploads only from `PLATFORM_BASE_URL` and one optional extra origin, `EXTRA_CORS_ORIGIN`. Uploading from the local copy therefore needs `EXTRA_CORS_ORIGIN=http://localhost:3000`, and a tenant picks up a change to either value only when it is redeployed.
 - When the control plane is down, **running chatbots are unaffected**, since they depend on nothing in it. Onboarding, document management and Azure deploys stop. AWS deploys still finish, but their outcome is not recorded until reconciled (#8).
 
 **Disposition: Scope.**
@@ -219,7 +221,7 @@ The two Terraform roots describe the same architecture in each provider's terms,
 Every deploy, teardown and connection check is a GitHub Actions run. On both clouds, the customer's trust rests on the OIDC token GitHub signs for that run.
 
 - A GitHub outage stops every deploy and teardown on both clouds.
-- The per-tenant binding depends on GitHub environments, which a private repository gets only on a paid plan. Without one, nothing deploys. It fails closed.
+- The per-tenant binding depends on GitHub environments, which a private repository gets only on a paid plan. Without one, nothing deploys. It fails closed. The prototype's repository is public for this reason, which also makes its workflows and run logs public.
 - Whoever controls the repository's workflows can act in every customer account that trusts it (`SECURITY.md` #8).
 
 **Disposition: By design.** This is what lets the platform hold no cloud credential. The trust did not disappear; it moved to GitHub and the repository.
@@ -298,15 +300,24 @@ The model's 384-dimension output is fixed in the backend and in Terraform, as th
 
 **Disposition: Deferred.** Private subnets behind a NAT gateway or VPC endpoints, and VNet integration on Azure, add cost to every tenant and raise the fixed cost in #1.
 
-### 26. Resource names derived from the slug can collide
+### 26. Resource names derived from the slug are checked, not reserved
 
-Every resource name is derived from the tenant's slug, and several must be globally unique within their cloud: the S3 bucket `chatbot-<slug>-docs`, and on Azure the storage accounts, the registry, the Key Vault and the Function App host name. The platform checks the slug only against its own tenants. A name already taken outside the platform surfaces only when `terraform apply` fails, after onboarding has already written the tenant's secrets.
+Every resource name is derived from the tenant's slug, and several must be globally unique within their cloud: the S3 bucket `chatbot-<slug>-docs`, and on Azure the storage accounts, the registry, the Key Vault, the Function App host name and the Postgres server. On Azure, storage account and registry names also drop hyphens, and storage account names are cut to 24 characters ([`infra/terraform/azure/main.tf`](infra/terraform/azure/main.tf)), so two valid, distinct slugs can produce the same name: `acme-bot` and `acmebot`, or two long slugs that differ only in their last characters.
 
-On Azure it is worse. Storage account and registry names drop hyphens, and storage account names are cut to 24 characters ([`infra/terraform/azure/main.tf`](infra/terraform/azure/main.tf)). Two valid, distinct slugs can therefore produce the same name, and the second tenant cannot deploy. For example, `acme-bot` and `acmebot` collide, and so do two long slugs that differ only in their last characters.
+Onboarding now checks for both kinds of collision, as the slug is typed and again on the server before anything reaches the customer's cloud ([`src/lib/resourceNames.ts`](src/lib/resourceNames.ts), [`src/lib/nameAvailability.ts`](src/lib/nameAvailability.ts)):
+
+- **Between the platform's own tenants:** every derived Azure name is compared with those of live Azure tenants, using expressions the tests hold to Terraform's own.
+- **With names held outside the platform:** the platform asks DNS whether each Azure name exists, and S3 whether the bucket does, with no credential.
+
+The check narrows the problem without closing it:
+
+- **Only a definite answer counts.** A timeout or an unexpected error reads as free, so a flaky resolver never blocks a good slug, and Terraform remains the authority.
+- **Nothing is reserved.** A name free at onboarding can be taken before the first `terraform apply`, which then fails as before.
+- **The setup's own state storage is not checked**, because the customer's setup creates it before the chatbot is submitted and every Azure onboarding would otherwise be refused.
 
 The slug length limits, 3–21 characters on AWS and 3–18 on Azure, come from the same derived names.
 
-**Disposition: Deferred.** Checking the derived names, not only the slug, at onboarding would catch collisions between the platform's own tenants. Collisions with names outside the platform need a cloud name-availability check or a random suffix.
+**Disposition: Deferred.** A random suffix on the global names would remove the remaining race, at the cost of names the platform can no longer derive from the slug alone.
 
 ### 27. The AWS and Azure paths are not equivalent
 
@@ -319,6 +330,7 @@ The slug length limits, 3–21 characters on AWS and 3–18 on Azure, come from 
 | Application secrets | Written into the customer's cloud once, at onboarding. Only ARNs travel afterwards | Released to every deploy run and written by Terraform, so also held in Terraform state (`SECURITY.md` #9) |
 | Upload size and type | Enforced by S3 | Not enforceable with a SAS (`SECURITY.md` #12) |
 | pgvector network | Private, reachable only from the tenant's tasks | Public, reachable from Azure (`SECURITY.md` #5) |
+| Deploy identity's permissions | Account-wide policy | Confined to the chatbot's resource group |
 | Terraform applies per deploy | One | Two, with a fixed 90-second wait for a role grant to propagate |
 | HTTPS without a domain | Through CloudFront. The load balancer also serves plain HTTP | Built in, with no plain-HTTP endpoint |
 | Scaling | Fixed at one task | 1–3 replicas |
