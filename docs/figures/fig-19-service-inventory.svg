@@ -59,7 +59,7 @@
       <text x="210" y="486">Service — backend, one task<tspan fill="#898781" font-size="9.5"> · aws_ecs_service.this</tspan></text>
       <text x="210" y="502">Task definition — frontend<tspan fill="#898781" font-size="9.5"> · aws_ecs_task_definition.frontend</tspan></text>
       <text x="210" y="518">Service — frontend, one task<tspan fill="#898781" font-size="9.5"> · aws_ecs_service.frontend</tspan></text>
-      <text x="710" y="454">Container Apps environment<tspan fill="#898781" font-size="9.5"> · azurerm_container_app_environment</tspan></text>
+      <text x="710" y="454">Container Apps environment<tspan fill="#898781" font-size="9.5"> · azapi_resource.container_app_environment</tspan></text>
       <text x="710" y="470">Container app — both containers, 1 to 3 replicas<tspan fill="#898781" font-size="9.5"> · azurerm_container_app</tspan></text>
     </g>
 

@@ -405,7 +405,10 @@ Resource Group: chatbot-{slug}
 │
 ├── Log Analytics Workspace: chatbot-{slug}-logs  (30-day retention)
 │
-├── Container Apps Environment: chatbot-{slug}-env
+├── Container Apps Environment: chatbot-{slug}-cae
+│   ├── environmentMode WorkloadProfiles, Consumption profile only — stated
+│   │   through azapi, because an environment left to Azure's default
+│   │   came up Express, which refuses sidecars, probes and revision suffixes
 │   └── linked to Log Analytics
 │
 └── Container App: chatbot-{slug}   (no path-based ingress routing, so both

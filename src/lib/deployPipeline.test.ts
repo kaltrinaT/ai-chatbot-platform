@@ -526,10 +526,16 @@ describe("drizzle/0014 — secrets erasable once a tenant is deleted", () => {
   });
 });
 
-describe("infra/terraform/azure — federated provider", () => {
+// azapi signs in as the same identity for the one resource azurerm cannot
+// express, so it is held to the same rules.
+describe.each(["azurerm", "azapi"])("infra/terraform/azure — federated %s provider", (name) => {
   const main = source("infra/terraform/azure/main.tf");
   const variables = source("infra/terraform/azure/variables.tf");
-  const provider = main.match(/provider "azurerm" \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const provider = main.match(new RegExp(`provider "${name}" \\{[\\s\\S]*?\\n\\}`))?.[0] ?? "";
+
+  it("is declared", () => {
+    expect(provider).not.toBe("");
+  });
 
   it("authenticates with the workflow's OIDC token", () => {
     expect(provider).toMatch(/use_oidc\s*=\s*true/);
@@ -544,6 +550,37 @@ describe("infra/terraform/azure — federated provider", () => {
   it("declares no client secret at all", () => {
     expect(provider).not.toMatch(/client_secret/);
     expect(variables).not.toMatch(/variable "azure_client_secret"/);
+  });
+});
+
+// Left to Azure's default, seeu-chatbot's environment came up Express, which
+// refuses the frontend sidecar, the health probes and the revision suffix
+// outright. The mode is fixed at creation, so it has to be stated.
+describe("infra/terraform/azure — Container Apps environment", () => {
+  const main = source("infra/terraform/azure/main.tf");
+  const start = main.indexOf('resource "azapi_resource" "container_app_environment" {');
+  const environment = main.slice(start, main.indexOf("\n}\n", start));
+
+  it("states a mode that allows sidecars", () => {
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(environment).toMatch(/environmentMode\s*=\s*"WorkloadProfiles"/);
+  });
+
+  // 2026-01-01, the stable version before it, has no such property.
+  it("uses an API version that has environmentMode", () => {
+    expect(environment).toMatch(/Microsoft\.App\/managedEnvironments@2026-07-01"/);
+  });
+
+  it("is what the app runs in", () => {
+    expect(main).toMatch(/container_app_environment_id\s*=\s*azapi_resource\.container_app_environment\.id/);
+    expect(main).not.toMatch(/resource "azurerm_container_app_environment"/);
+  });
+
+  // sensitive_body is write-only; the same key in body would sit in state.
+  it("keeps the Log Analytics key out of state", () => {
+    const sensitive = environment.indexOf("sensitive_body = {");
+    expect(sensitive).toBeGreaterThan(0);
+    expect(environment.indexOf("sharedKey")).toBeGreaterThan(sensitive);
   });
 });
 

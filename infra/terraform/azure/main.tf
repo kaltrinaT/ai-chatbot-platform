@@ -39,6 +39,17 @@ provider "azurerm" {
   storage_use_azuread        = true
 }
 
+# The same identity, signed in the same way, for the one resource azurerm
+# cannot express. It reads the run's OIDC token from the same variables.
+provider "azapi" {
+  subscription_id            = var.azure_subscription_id
+  tenant_id                  = var.azure_tenant_id
+  client_id                  = var.azure_client_id
+  use_oidc                   = true
+  use_cli                    = false
+  skip_provider_registration = true
+}
+
 provider "pinecone" {
   api_key = var.pinecone_api_key
 }
@@ -592,12 +603,63 @@ resource "azurerm_log_analytics_workspace" "this" {
   tags                = local.common_tags
 }
 
-resource "azurerm_container_app_environment" "this" {
-  name                       = "${local.name}-env"
-  location                   = data.azurerm_resource_group.this.location
-  resource_group_name        = data.azurerm_resource_group.this.name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
-  tags                       = local.common_tags
+# Declared through azapi because the environment's mode has to be stated, and
+# azurerm has no argument for it. The azurerm resource this replaces asked for
+# no mode, and Azure made seeu-chatbot's environment (France Central,
+# 2026-09-29) an Express one, although Microsoft documents Express as opt-in.
+# Express refuses this app outright: it has no sidecar containers, which the
+# frontend is, and no health probes or revision suffixes either. The mode is
+# fixed when the environment is created.
+#
+# WorkloadProfiles with only the Consumption profile is billed exactly like a
+# consumption-only environment, free grant included; the management fee
+# applies to Dedicated profiles, and this declares none.
+#
+# Named -cae, not -env like the resource it replaces. A tenant whose state
+# holds the old one has it destroyed in the same apply that creates this, and
+# nothing orders the two, so the same name would be written and deleted at
+# once.
+resource "azapi_resource" "container_app_environment" {
+  type      = "Microsoft.App/managedEnvironments@2026-07-01"
+  name      = "${local.name}-cae"
+  parent_id = data.azurerm_resource_group.this.id
+  location  = data.azurerm_resource_group.this.location
+  tags      = local.common_tags
+
+  # 2026-07-01 is the first stable API version with environmentMode, and the
+  # schemas azapi ships stop at 2026-01-01 (azapi 2.13.0). Azure still
+  # validates the request; only the provider's local check is off.
+  schema_validation_enabled = false
+
+  body = {
+    properties = {
+      environmentMode = "WorkloadProfiles"
+      workloadProfiles = [
+        {
+          name                = "Consumption"
+          workloadProfileType = "Consumption"
+        },
+      ]
+      appLogsConfiguration = {
+        destination = "log-analytics"
+        logAnalyticsConfiguration = {
+          customerId = azurerm_log_analytics_workspace.this.workspace_id
+        }
+      }
+    }
+  }
+
+  # Write-only: sent with every create and update, never kept in state. Azure
+  # does not return the key on a read, so there is nothing to compare anyway.
+  sensitive_body = {
+    properties = {
+      appLogsConfiguration = {
+        logAnalyticsConfiguration = {
+          sharedKey = azurerm_log_analytics_workspace.this.primary_shared_key
+        }
+      }
+    }
+  }
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -606,10 +668,12 @@ resource "azurerm_container_app_environment" "this" {
 
 resource "azurerm_container_app" "this" {
   name                         = local.name
-  container_app_environment_id = azurerm_container_app_environment.this.id
+  container_app_environment_id = azapi_resource.container_app_environment.id
   resource_group_name          = data.azurerm_resource_group.this.name
   revision_mode                = "Single"
-  tags                         = local.common_tags
+  # The environment's only profile, named rather than left to Azure's default.
+  workload_profile_name = "Consumption"
+  tags                  = local.common_tags
 
   # The chatbot pulls its image and reads documents as its own identity. It
   # used to be handed two shared secrets instead: the registry's admin

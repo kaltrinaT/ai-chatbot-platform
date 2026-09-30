@@ -1,10 +1,17 @@
 terraform {
-  # 1.7 for the `removed` block in main.tf. The workflows pin 1.15.3.
-  required_version = ">= 1.7"
+  # 1.11 for write-only arguments (azapi's sensitive_body in main.tf); the
+  # `removed` block there needs 1.7. The workflows pin 1.15.3.
+  required_version = ">= 1.11"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~> 3.110"
+    }
+    # For the Container Apps environment alone: azurerm cannot set its
+    # environment mode (see azapi_resource.container_app_environment).
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.0"
     }
     pinecone = {
       source  = "pinecone-io/pinecone"

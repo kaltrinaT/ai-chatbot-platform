@@ -355,7 +355,7 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 | Storage Account | `chatbot{slug}` | Hyphens removed; 24-char max enforced |
 | Blob container | `documents` | Private access |
 | Log Analytics Workspace | `chatbot-{slug}-logs` | 30-day retention (PerGB2018 SKU) |
-| Container App Environment | `chatbot-{slug}-env` | Linked to Log Analytics |
+| Container App Environment | `chatbot-{slug}-cae` | Linked to Log Analytics; `environmentMode = WorkloadProfiles` with the Consumption profile only, declared through the `azapi` provider because azurerm cannot set the mode and Azure's default produced an Express environment, which refuses the frontend sidecar |
 | Container App | `chatbot-{slug}` | Single revision mode; two containers (backend + frontend) |
 
 ### Container App config
