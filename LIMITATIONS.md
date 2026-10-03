@@ -294,7 +294,7 @@ The model's 384-dimension output is fixed in the backend and in Terraform, as th
 
 ### 25. Network exposure is set by cost, not by least exposure
 
-- **AWS:** tasks run in public subnets with public IPs, to avoid NAT gateway costs, and their security group admits only the load balancer. The load balancer stays reachable on plain HTTP port 80 even when CloudFront fronts it, and CloudFront reaches it over HTTP. Every tenant's VPC uses the same `10.20.0.0/16`, so it cannot be peered with another tenant's VPC, or with a customer network that uses that range.
+- **AWS:** tasks run in public subnets with public IPs, to avoid NAT gateway costs, and their security group admits only the load balancer. The pgvector database is the exception: it sits in private subnets with no route to the internet, which costs nothing because it never calls out. The load balancer stays reachable on plain HTTP port 80 even when CloudFront fronts it, and CloudFront reaches it over HTTP. Every tenant's VPC uses the same `10.20.0.0/16`, so it cannot be peered with another tenant's VPC, or with a customer network that uses that range.
 - **Azure:** the Container Apps environment has no VNet integration, so the pgvector server is reachable from any Azure-hosted client (`SECURITY.md` #5).
 - **Both:** the chat and index endpoints are public, with no WAF and no rate limit (`SECURITY.md` #10 and #13).
 

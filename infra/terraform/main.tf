@@ -694,11 +694,25 @@ resource "aws_security_group" "vectors" {
   tags = local.common_tags
 }
 
+# One private subnet per zone in the region, so RDS can place the instance in
+# any zone that offers its class and storage type. Two zones were not always
+# enough: CreateDBInstance fails with InsufficientDBInstanceCapacity when
+# neither of them can host it. No route table is associated, so these subnets
+# use the VPC's main table, which has no route to the internet gateway.
+resource "aws_subnet" "vectors" {
+  count = local.use_pgvector ? length(data.aws_availability_zones.available.names) : 0
+
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = "10.20.${10 + count.index}.0/24"
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+  tags              = merge(local.common_tags, { Name = "${local.name}-vectors-${count.index}" })
+}
+
 resource "aws_db_subnet_group" "vectors" {
   count = local.use_pgvector ? 1 : 0
 
   name       = "${local.name}-vectors"
-  subnet_ids = aws_subnet.public[*].id
+  subnet_ids = aws_subnet.vectors[*].id
   tags       = local.common_tags
 }
 

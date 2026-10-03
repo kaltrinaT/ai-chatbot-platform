@@ -105,7 +105,7 @@ The role must be named `chatbot-client-deploy-*` even when built by hand: the pl
 
 **What step 21 creates:**
 
-- **Network:** VPC `10.20.0.0/16`, internet gateway, 2 public subnets in 2 AZs, route table. No NAT gateway: tasks get public IPs.
+- **Network:** VPC `10.20.0.0/16`, internet gateway, 2 public subnets in 2 AZs, route table. No NAT gateway: tasks get public IPs. With pgvector, the database gets its own private subnet in every AZ of the region.
 - **Security groups:** the ALB accepts :80 from anywhere, and :443 only when a certificate is set. Tasks accept only the ALB, on 8000 and 80.
 - **ALB** with idle timeout 180s, two target groups, and a listener rule sending `/api/*` to the backend and everything else to the frontend. With a certificate, there is an HTTPS listener (TLS 1.2/1.3) and a 301 redirect from :80.
 - **CloudFront** (created when there is no certificate and `enable_cdn=true`): caching disabled, `redirect-to-https`, origin is the ALB over HTTP, 60s origin read timeout.

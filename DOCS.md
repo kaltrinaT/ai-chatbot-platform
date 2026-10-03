@@ -311,6 +311,7 @@ Defined in `infra/terraform/main.tf`. Everything is created in the **customer's*
 - VPC `10.20.0.0/16` with DNS enabled
 - 2 public subnets (`10.20.0.0/24`, `10.20.1.0/24`) across 2 AZs
 - Internet Gateway + public route table
+- With pgvector only: one private subnet per AZ in the region (`10.20.10.0/24` upward) for the database, with no route to the internet. Spanning every zone lets RDS place the instance wherever its class and storage type are available
 
 > Note: Tasks run with public IPs in public subnets to avoid NAT Gateway cost. Suitable for MVP; revisit for production with private subnets + VPC endpoints.
 

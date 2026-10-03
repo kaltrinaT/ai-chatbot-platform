@@ -7,7 +7,7 @@
     <text x="60" y="66" font-size="11.5" fill="#5b6270">Each line names the service and the Terraform resource type behind it. The same chatbot comes out of both columns.</text>
 
     <text x="210" y="104" font-size="13" font-weight="bold" fill="#2a78d6">AWS</text>
-    <text x="262" y="104" font-size="11" fill="#52514e">41 Terraform resources, plus 5 created outside it</text>
+    <text x="262" y="104" font-size="11" fill="#52514e">42 Terraform resources, plus 5 created outside it</text>
     <text x="710" y="104" font-size="13" font-weight="bold" fill="#eb6834">Azure</text>
     <text x="772" y="104" font-size="11" fill="#52514e">24 Terraform resources, plus 1 created outside it</text>
 
@@ -155,13 +155,14 @@
     <!-- band 11: vector store -->
     <rect x="60" y="1164" width="1130" height="126" fill="#f6f7f9"/>
     <text x="72" y="1184" font-size="11" font-weight="bold" fill="#5b6270">VECTOR STORE †</text>
-    <text x="72" y="1200" font-size="9.5" fill="#898781">4 · 6</text>
+    <text x="72" y="1200" font-size="9.5" fill="#898781">5 · 6</text>
     <g font-size="10.5">
-      <text x="210" y="1188">Database subnet group<tspan fill="#898781" font-size="9.5"> · aws_db_subnet_group.vectors</tspan></text>
-      <text x="210" y="1204">Generated password<tspan fill="#898781" font-size="9.5"> · random_password</tspan></text>
-      <text x="210" y="1220">RDS PostgreSQL 16 with pgvector<tspan fill="#898781" font-size="9.5"> · aws_db_instance.vectors</tspan></text>
-      <text x="210" y="1244">Or, for the other choice:</text>
-      <text x="210" y="1260">Serverless index in the customer's project<tspan fill="#898781" font-size="9.5"> · pinecone_index</tspan></text>
+      <text x="210" y="1188">Private subnets, one per zone<tspan fill="#898781" font-size="9.5"> · aws_subnet.vectors</tspan></text>
+      <text x="210" y="1204">Database subnet group<tspan fill="#898781" font-size="9.5"> · aws_db_subnet_group.vectors</tspan></text>
+      <text x="210" y="1220">Generated password<tspan fill="#898781" font-size="9.5"> · random_password</tspan></text>
+      <text x="210" y="1236">RDS PostgreSQL 16 with pgvector<tspan fill="#898781" font-size="9.5"> · aws_db_instance.vectors</tspan></text>
+      <text x="210" y="1260">Or, for the other choice:</text>
+      <text x="210" y="1276">Serverless index in the customer's project<tspan fill="#898781" font-size="9.5"> · pinecone_index</tspan></text>
       <text x="710" y="1188">PostgreSQL flexible server<tspan fill="#898781" font-size="9.5"> · azurerm_postgresql_flexible_server</tspan></text>
       <text x="710" y="1204">Extension allow-list, azure.extensions<tspan fill="#898781" font-size="9.5"> · ..._configuration</tspan></text>
       <text x="710" y="1220">Database named vectors<tspan fill="#898781" font-size="9.5"> · ..._database</tspan></text>
@@ -172,7 +173,7 @@
 
     <!-- captions -->
     <text x="60" y="1320" font-size="11" fill="#5b6270">† Depends on the vector store chosen at onboarding. The two paths are mutually exclusive, so no single deployment creates every line above. Applied, an AWS tenant comes to 37 resources</text>
-    <text x="60" y="1340" font-size="11" fill="#5b6270">with Pinecone or 42 with the in-account database; an Azure tenant to 18 or 22. ◇ Not created by Terraform — written into the account at onboarding, or pushed by the workflow.</text>
+    <text x="60" y="1340" font-size="11" fill="#5b6270">with Pinecone or 42 plus one subnet per zone (48 in us-east-1) with the in-account database; an Azure tenant to 18 or 22. ◇ Not created by Terraform — written into the account at onboarding, or pushed by the workflow.</text>
     <text x="60" y="1364" font-size="11" fill="#5b6270">Sources: infra/terraform/main.tf and infra/terraform/azure/main.tf, the two deploy workflows, and the onboarding path in src/app/tenants/new/actions.ts.</text>
   </g>
 </svg>

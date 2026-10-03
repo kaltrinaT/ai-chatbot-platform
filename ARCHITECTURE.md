@@ -240,6 +240,9 @@ VPC  10.20.0.0/16
 ├── Public Subnet B  10.20.1.0/24  (AZ-1)
 │   └── ECS Fargate task (public IP)
 │
+├── Private Subnets  10.20.10.0/24, 10.20.11.0/24, …  (one per AZ)
+│   └── RDS pgvector instance, no route to the internet  [vector_store = pgvector]
+│
 ├── Security Group: alb
 │   ├── ingress 0.0.0.0/0 → port 80
 │   └── ingress 0.0.0.0/0 → port 443   [only with acm_certificate_arn]
@@ -339,7 +342,7 @@ VPC  10.20.0.0/16
 │
 ├── RDS PostgreSQL 16: chatbot-{slug}-vectors     [vector_store = pgvector]
 │   ├── db.t4g.micro, 20 GB gp3, storage encrypted, 1-day backups
-│   ├── publicly_accessible = false, in the tenant's own subnet group
+│   ├── publicly_accessible = false, in private subnets in every AZ of the region, so RDS can place it in any zone that has capacity
 │   ├── Security Group: vectors  (ingress 5432 from task-sg ONLY)
 │   └── Secrets Manager: {slug}/vector-db-url
 │         └── postgresql://… connection URL incl. generated password
