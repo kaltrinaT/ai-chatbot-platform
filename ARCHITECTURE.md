@@ -59,7 +59,7 @@ embeddings leave the customer's cloud account for a third-party service.
 pgvector extension *inside the customer's own account*, on the same private
 network as the chatbot. Embeddings sit beside the documents they were derived
 from, so nothing crosses the data-plane boundary; the trade-off is roughly
-$16–17/month for the smallest instance, plus a database to operate.
+$14/month on AWS and $17/month on Azure for the smallest instance, plus a database to operate.
 
 Neither option gives the platform access to embeddings. The residual risk is
 the one already documented for every stored application secret: the platform
@@ -338,7 +338,7 @@ VPC  10.20.0.0/16
 │       (AssumeRole) — never passed to GitHub Actions; only the ARN is
 │
 ├── RDS PostgreSQL 16: chatbot-{slug}-vectors     [vector_store = pgvector]
-│   ├── db.t4g.micro, 32 GB gp3, storage encrypted, 1-day backups
+│   ├── db.t4g.micro, 20 GB gp3, storage encrypted, 1-day backups
 │   ├── publicly_accessible = false, in the tenant's own subnet group
 │   ├── Security Group: vectors  (ingress 5432 from task-sg ONLY)
 │   └── Secrets Manager: {slug}/vector-db-url

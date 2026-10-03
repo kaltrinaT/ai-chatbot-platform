@@ -143,9 +143,9 @@ variable "vector_db_instance_class" {
 }
 
 variable "vector_db_storage_gb" {
-  description = "Allocated storage (GB) for the pgvector store."
+  description = "Allocated storage (GB) for the pgvector store. 20 is the most an AWS Free plan account allows, and RDS cannot shrink storage later."
   type        = number
-  default     = 32
+  default     = 20
 }
 
 variable "llm_secret_arn" {

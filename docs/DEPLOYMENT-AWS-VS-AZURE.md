@@ -120,7 +120,7 @@ The role must be named `chatbot-client-deploy-*` even when built by hand: the pl
   - CORS allows `POST` from `PLATFORM_BASE_URL` and, if set, `EXTRA_CORS_ORIGIN`
 - **Docs-signer Lambda** (Node 20, 128 MB) behind a Function URL with `authorization_type = NONE`. Authentication is the shared-secret header checked inside the handler.
 - **CloudWatch log groups** with 14-day retention.
-- **Vector store:** either a `pinecone_index`, or RDS Postgres 16 (`db.t4g.micro`, 32 GB gp3, encrypted, not publicly accessible, security group allows only the tasks) with its connection URL stored in Secrets Manager.
+- **Vector store:** either a `pinecone_index`, or RDS Postgres 16 (`db.t4g.micro`, 20 GB gp3, encrypted, not publicly accessible, security group allows only the tasks) with its connection URL stored in Secrets Manager.
 - **Secrets reach containers through ECS `secrets.valueFrom`.** The value is resolved at task start and never appears in Terraform variables or GitHub inputs.
 
 ### Phase D — Result
@@ -303,7 +303,7 @@ On AWS, secret values stay in the customer's account after onboarding. On Azure,
 | Documents storage | 0.5–5 | 1–5 |
 | Logs | 1–3 | 0–5 |
 | **Total, Pinecone** | **≈ 66–77** | **≈ 66–75** |
-| pgvector add-on | +16 | +17 |
+| pgvector add-on | +14 | +17 |
 
 Notes:
 

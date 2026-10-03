@@ -369,7 +369,7 @@ showed at onboarding.
 
 - **Isolation premium.** `pgvector` − `pinecone` per cloud, quantifying the
   cost of keeping embeddings inside the customer account. `ARCHITECTURE.md`
-  asserts roughly $16–17/month for the smallest instance; this validates it.
+  asserts roughly $14/month (AWS) and $17/month (Azure) for the smallest instance; this validates it.
 - **Marginal cost of the *n*-th tenant.** The architecture shares no
   infrastructure between tenants, so cost scales linearly. Report the slope and
   discuss it as the deliberate price of the isolation model — a

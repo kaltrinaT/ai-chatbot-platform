@@ -58,7 +58,7 @@ The platform's central property is that each chatbot runs in its customer's own 
 
 Nothing is shared between tenants. Each deploy creates, in the customer's account and through a full `terraform apply`, its own network, load balancer or ingress, container runtime, registry, secret store, document storage, signer function and vector store.
 
-- **Every tenant has a fixed monthly cost.** The platform's estimator ([`src/lib/pricing.ts`](src/lib/pricing.ts)) puts an idle Pinecone tenant at about $66–77 a month on AWS and $66–75 on Azure, before LLM and Pinecone usage. pgvector adds about $16–17. Nearly all of it is always-on compute and, on AWS, the load balancer, so it is paid whether or not anyone uses the chatbot.
+- **Every tenant has a fixed monthly cost.** The platform's estimator ([`src/lib/pricing.ts`](src/lib/pricing.ts)) puts an idle Pinecone tenant at about $66–77 a month on AWS and $66–75 on Azure, before LLM and Pinecone usage. pgvector adds about $14 on AWS and $17 on Azure. Nearly all of it is always-on compute and, on AWS, the load balancer, so it is paid whether or not anyone uses the chatbot.
 - **Cost grows linearly with the number of tenants.** A pooled design would share the fixed part. This one cannot without placing two customers in one account.
 - **Every deploy is a full infrastructure build.** The deploy jobs allow 45 minutes. Actual durations have not been measured yet (`EVALUATION.md` EA2).
 
@@ -330,6 +330,7 @@ The slug length limits, 3–21 characters on AWS and 3–18 on Azure, come from 
 | Application secrets | Written into the customer's cloud once, at onboarding. Only ARNs travel afterwards | Released to every deploy run and written by Terraform, so also held in Terraform state (`SECURITY.md` #9) |
 | Upload size and type | Enforced by S3 | Not enforceable with a SAS (`SECURITY.md` #12) |
 | pgvector network | Private, reachable only from the tenant's tasks | Public, reachable from Azure (`SECURITY.md` #5) |
+| pgvector storage and backups | 20 GB, 1 day: the most an AWS Free plan account accepts | 32 GB, the smallest Flexible Server; 7 days |
 | Deploy identity's permissions | Account-wide policy | Confined to the chatbot's resource group |
 | Terraform applies per deploy | One | Two, with a fixed 90-second wait for a role grant to propagate |
 | HTTPS without a domain | Through CloudFront. The load balancer also serves plain HTTP | Built in, with no plain-HTTP endpoint |

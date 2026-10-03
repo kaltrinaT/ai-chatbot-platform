@@ -345,7 +345,7 @@ Selected per tenant by `vector_store`; exactly one of the following is created.
 **`pinecone`** — Pinecone serverless index `chatbot-{slug}` in the **customer's own** Pinecone project, created by Terraform (`pinecone_index.this`), dimension 384 / cosine, destroyed with the tenant (`deletion_protection = "disabled"`).
 
 **`pgvector`** — RDS PostgreSQL 16 `chatbot-{slug}-vectors` inside the tenant's VPC:
-- `db.t4g.micro`, 32 GB gp3, `storage_encrypted = true`, 1-day backups (the most an AWS Free plan account allows)
+- `db.t4g.micro`, 20 GB gp3, `storage_encrypted = true`, 1-day backups (storage and retention are both the most an AWS Free plan account allows)
 - `publicly_accessible = false`; security group admits port 5432 from the chatbot task SG only
 - Connection URL (with a Terraform-generated password) stored at `{slug}/vector-db-url` and injected as `DATABASE_URL`
 
@@ -377,7 +377,7 @@ Selected per tenant by `vector_store`; exactly one of the following is created.
 | `pinecone_secret_arn` | no | ARN of the customer's Pinecone key secret, injected into the container |
 | `pinecone_environment` | no | Pinecone serverless region for the tenant's index; default `us-east-1`. **Never set by the platform** — see Known Limitation #6 in SECURITY.md |
 | `vector_db_instance_class` | no | RDS class for pgvector; default `db.t4g.micro` |
-| `vector_db_storage_gb` | no | RDS storage for pgvector; default `32` |
+| `vector_db_storage_gb` | no | RDS storage for pgvector; default `20` |
 | `s3_docs_prefix` | no | Optional prefix scope within docs bucket |
 | `retrieval_min_score` | no | Cosine-similarity floor for retrieved chunks. Empty (the default) leaves the container's own 0.15. Set too high, the chatbot answers everything with "I don't have enough information" — see CHATBOT-LOGIC.md |
 | `domain` | no | Custom hostname |
@@ -647,14 +647,14 @@ These estimates also surface **in-product** (computed in `src/lib/pricing.ts`): 
 | **Secrets Manager** | 2 secrets (LLM + Pinecone) / 1 secret (pgvector) | ~$0.40–0.80 |
 | **S3 — docs bucket** | Storage + requests (usage-based) | ~$0.50–5 |
 | **CloudWatch Logs** | 14-day retention, low traffic | ~$1–3 |
-| **RDS PostgreSQL + pgvector** | `db.t4g.micro` + 32 GB gp3 — **only if `vector_store = pgvector`** | ~$16 |
+| **RDS PostgreSQL + pgvector** | `db.t4g.micro` + 20 GB gp3 — **only if `vector_store = pgvector`** | ~$14 |
 | **Data transfer** | Outbound to internet ($0.09/GB) | variable |
 | **Total — `vector_store = pinecone`** | | **~$66–77/month** |
-| **Total — `vector_store = pgvector`** | | **~$82–93/month** |
+| **Total — `vector_store = pgvector`** | | **~$80–91/month** |
 
 > The backend default was raised to 1 vCPU / 2 GB (`task_cpu = 1024`, `task_memory = 2048`) because the embedding model needs the memory headroom — see the note in CHATBOT-LOGIC.md. Drop it to `256 / 512` for a lighter (~$38–50/month) footprint if your backend image doesn't load a local model.
 >
-> **Choosing a vector store.** With `pinecone`, the customer pays Pinecone directly (serverless free tier covers light usage) and the ~$16 RDS line disappears — but embeddings leave their cloud account, and their own Pinecone plan's index-per-project quota (Starter 5, Builder 10, Standard 20, Enterprise 200) limits how many chatbots they can run. With `pgvector`, everything stays inside their account at a fixed ~$16/month.
+> **Choosing a vector store.** With `pinecone`, the customer pays Pinecone directly (serverless free tier covers light usage) and the ~$14 RDS line disappears — but embeddings leave their cloud account, and their own Pinecone plan's index-per-project quota (Starter 5, Builder 10, Standard 20, Enterprise 200) limits how many chatbots they can run. With `pgvector`, everything stays inside their account at a fixed ~$14/month.
 
 #### Recommended production sizing (512 vCPU units / 1 024 MB per service)
 
@@ -734,7 +734,7 @@ Combining infrastructure at the default sizing (Pinecone tenant, figures above) 
 | **Total (GPT-4o mini)** | **~$68–79/month** | **~$68–77/month** |
 | **Total (GPT-4o)** | **~$100–111/month** | **~$100–109/month** |
 
-A pgvector tenant adds about $16 (AWS) or $17 (Azure). Azure's figures are before the Container Apps free grant, about $5.40/month per subscription.
+A pgvector tenant adds about $14 (AWS) or $17 (Azure). Azure's figures are before the Container Apps free grant, about $5.40/month per subscription.
 
 ---
 

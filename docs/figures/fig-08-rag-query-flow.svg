@@ -97,7 +97,7 @@
     <text x="465" y="500" font-size="10.5" fill="#5b6270" text-anchor="middle">customer's own account, on the</text>
     <text x="465" y="516" font-size="10.5" fill="#5b6270" text-anchor="middle">same private network as the app</text>
     <text x="465" y="538" font-size="10.5" fill="#5b6270" text-anchor="middle">isolation: a whole instance per tenant</text>
-    <text x="465" y="552" font-size="10.5" fill="#5b6270" text-anchor="middle">cost: roughly sixteen dollars a month</text>
+    <text x="465" y="552" font-size="10.5" fill="#5b6270" text-anchor="middle">cost: roughly $14–17 a month</text>
 
     <rect x="650" y="438" width="250" height="118" rx="4" fill="#ffffff" stroke="#5b6270" stroke-width="1.4" stroke-dasharray="6 4"/>
     <text x="775" y="462" font-size="12" font-weight="bold" text-anchor="middle" fill="#5b6270">Pinecone serverless index</text>

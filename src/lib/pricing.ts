@@ -48,9 +48,10 @@ const round = (n: number) => Math.round(n);
 export type VectorStore = "pinecone" | "pgvector";
 
 // Smallest burstable managed Postgres on each cloud, which is what the
-// Terraform provisions for the pgvector option (db.t4g.micro / B1ms + 32 GB).
+// Terraform provisions for the pgvector option (db.t4g.micro + 20 GB, the
+// AWS Free plan's ceiling; B1ms + 32 GB, Flexible Server's smallest size).
 const RDS_T4G_MICRO_MONTHLY = 12;
-const RDS_STORAGE_32GB_MONTHLY = 4;
+const RDS_STORAGE_20GB_MONTHLY = 2.3;
 const AZURE_PG_B1MS_MONTHLY = 13;
 const AZURE_PG_STORAGE_32GB_MONTHLY = 4;
 
@@ -116,9 +117,9 @@ export function estimateMonthlyCost(
       provider === "aws"
         ? {
             label: "RDS PostgreSQL + pgvector",
-            detail: "db.t4g.micro, single-AZ, 32 GB gp3",
-            lowUsd: RDS_T4G_MICRO_MONTHLY + RDS_STORAGE_32GB_MONTHLY,
-            highUsd: RDS_T4G_MICRO_MONTHLY + RDS_STORAGE_32GB_MONTHLY,
+            detail: "db.t4g.micro, single-AZ, 20 GB gp3",
+            lowUsd: RDS_T4G_MICRO_MONTHLY + RDS_STORAGE_20GB_MONTHLY,
+            highUsd: RDS_T4G_MICRO_MONTHLY + RDS_STORAGE_20GB_MONTHLY,
           }
         : {
             label: "Azure PostgreSQL + pgvector",

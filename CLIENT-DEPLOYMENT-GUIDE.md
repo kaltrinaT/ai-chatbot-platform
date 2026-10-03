@@ -14,7 +14,7 @@ This is a step-by-step guide for a **client (tenant)** onboarding onto the AI Ch
 | LLM provider | OpenAI, Anthropic, or OpenRouter |
 | Vector store | Customer-owned Pinecone, **or** a Postgres + pgvector database provisioned inside your own cloud account |
 
-If you're unsure on vector store: Pinecone is cheaper and needs nothing extra from you besides an API key, but your embeddings leave your cloud account for Pinecone's own infrastructure (always in AWS `us-east-1`, regardless of where your chatbot itself runs). pgvector costs a small amount more (~$16–17/month) but keeps everything inside your own account.
+If you're unsure on vector store: Pinecone is cheaper and needs nothing extra from you besides an API key, but your embeddings leave your cloud account for Pinecone's own infrastructure (always in AWS `us-east-1`, regardless of where your chatbot itself runs). pgvector costs a small amount more (~$14/month on AWS, ~$17/month on Azure) but keeps everything inside your own account.
 
 ---
 
