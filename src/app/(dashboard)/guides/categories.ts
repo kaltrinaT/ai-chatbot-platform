@@ -1,4 +1,4 @@
-import { Rocket, Cloud, Box, ShieldCheck, ShieldAlert, Wrench, HelpCircle } from "lucide-react";
+import { Rocket, Cloud, Box, ShieldCheck, ShieldAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type GuideTone = "green" | "blue" | "purple" | "amber" | "red" | "teal" | "gray";
@@ -62,17 +62,5 @@ export const GUIDE_CATEGORIES: GuideCategory[] = [
     icon: ShieldAlert,
     tone: "red",
     href: "/guides/security-isolation",
-  },
-  {
-    title: "Troubleshooting",
-    description: "Resolve common issues and errors that may occur during deployment or usage.",
-    icon: Wrench,
-    tone: "teal",
-  },
-  {
-    title: "FAQ",
-    description: "Answers to frequently asked questions about the platform and deployments.",
-    icon: HelpCircle,
-    tone: "gray",
   },
 ];

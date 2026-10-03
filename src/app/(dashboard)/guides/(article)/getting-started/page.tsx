@@ -22,9 +22,10 @@ const TOC = [
     label: "Your First Deployment",
     children: [
       { id: "create-chatbot", label: "1. Create Chatbot" },
-      { id: "configure", label: "2. Configure" },
-      { id: "deploy", label: "3. Deploy" },
-      { id: "access-chatbot", label: "4. Access Chatbot" },
+      { id: "connect-cloud", label: "2. Connect Your Cloud" },
+      { id: "configure", label: "3. Configure" },
+      { id: "deploy", label: "4. Deploy" },
+      { id: "access-chatbot", label: "5. Access Chatbot" },
     ],
   },
   { id: "next-steps", label: "Next Steps" },
@@ -172,7 +173,10 @@ export default function GettingStartedPage() {
           <section id="what-you-need">
             <h2 className="text-lg font-semibold text-gray-900">What You Need</h2>
             <ul className="mt-3 space-y-2 text-sm text-gray-600">
-              <li>An AWS or Azure account with the required role/permissions already set up.</li>
+              <li>
+                An AWS account or Azure subscription where you can run a one-click setup (a CloudFormation stack or
+                an Azure deployment) — you run it from the onboarding form, nothing has to exist beforehand.
+              </li>
               <li>An API key from your chosen LLM provider (OpenAI, Anthropic, or OpenRouter).</li>
               <li>
                 A Pinecone API key, only if you choose Pinecone instead of pgvector as your vector store.
@@ -193,21 +197,37 @@ export default function GettingStartedPage() {
             <div id="create-chatbot" className="mt-4 scroll-mt-8">
               <h3 className="text-sm font-semibold text-gray-900">1. Create Chatbot</h3>
               <p className="mt-1 text-sm text-gray-600">
-                From the Chatbots page, start a new tenant. Give it a name and a slug — the slug can&apos;t be
-                changed later, so pick something short and lowercase.
+                From the Chatbots page, start a new tenant and pick AWS or Azure. Then give it a name and a slug —
+                the slug can&apos;t be changed later, so pick something short and lowercase. The form checks the
+                slug as you type, since your cloud resources are named after it.
+              </p>
+            </div>
+
+            <div id="connect-cloud" className="mt-4 scroll-mt-8">
+              <h3 className="text-sm font-semibold text-gray-900">2. Connect Your Cloud</h3>
+              <p className="mt-1 text-sm text-gray-600">
+                Once the slug is confirmed free, press Configure AWS account or Configure Azure. The one-click
+                setup creates the identity this chatbot&apos;s deployments sign in as, and storage for its
+                Terraform state, in your own account. Copy the role ARN (AWS) or client ID (Azure) from its
+                outputs into the form and press Test connection. Save a draft if you leave the form: the setup
+                trusts this form&apos;s chatbot ID only. See{" "}
+                <Link href="/guides/cloud-prerequisites" className="text-blue-600 hover:underline">
+                  Cloud Prerequisites
+                </Link>{" "}
+                for exactly what it creates.
               </p>
             </div>
 
             <div id="configure" className="mt-4 scroll-mt-8">
-              <h3 className="text-sm font-semibold text-gray-900">2. Configure</h3>
+              <h3 className="text-sm font-semibold text-gray-900">3. Configure</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Pick your cloud provider and paste in your account details, choose an LLM provider and paste in
-                its API key, and choose pgvector or Pinecone as your vector store.
+                Choose an LLM provider and paste in its API key, and choose pgvector or Pinecone as your vector
+                store. The review step then shows an estimated monthly cost for your configuration.
               </p>
             </div>
 
             <div id="deploy" className="mt-4 scroll-mt-8">
-              <h3 className="text-sm font-semibold text-gray-900">3. Deploy</h3>
+              <h3 className="text-sm font-semibold text-gray-900">4. Deploy</h3>
               <p className="mt-1 text-sm text-gray-600">
                 Submitting the form triggers a deployment right away. On AWS the platform first writes your keys
                 into your own Secrets Manager; on Azure the deployment writes them into a Key Vault it creates in
@@ -216,7 +236,7 @@ export default function GettingStartedPage() {
             </div>
 
             <div id="access-chatbot" className="mt-4 scroll-mt-8">
-              <h3 className="text-sm font-semibold text-gray-900">4. Access Chatbot</h3>
+              <h3 className="text-sm font-semibold text-gray-900">5. Access Chatbot</h3>
               <p className="mt-1 text-sm text-gray-600">
                 Once the deployment succeeds, the tenant page shows your chatbot&apos;s URL, and it is an HTTPS
                 one on both clouds. Azure serves it from Container Apps directly. On AWS it is your own load

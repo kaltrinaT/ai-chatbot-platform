@@ -7,9 +7,6 @@ import {
   LayoutDashboard,
   MessageSquare,
   Activity,
-  FileText,
-  DollarSign,
-  Settings,
   BookOpen,
   LogOut,
   ChevronLeft,
@@ -59,11 +56,6 @@ const NAV_LINKS: { key: ActivePage; label: string; href: string; icon: LucideIco
   { key: "chatbots", label: "Chatbots", href: "/chatbots", icon: MessageSquare },
   { key: "activity", label: "Activity", href: "/activity", icon: Activity },
   { key: "guides", label: "Guides", href: "/guides", icon: BookOpen },
-];
-
-const COMING_SOON = [
-  { label: "Documents", icon: FileText },
-  { label: "Settings", icon: Settings },
 ];
 
 export default function DashboardSidebar({ active }: { active: ActivePage }) {
@@ -124,25 +116,6 @@ export default function DashboardSidebar({ active }: { active: ActivePage }) {
               <Icon className="h-4 w-4 shrink-0" />
               {!collapsed && label}
             </Link>
-          ))}
-          {COMING_SOON.map(({ label, icon: Icon }) => (
-            <span
-              key={label}
-              title={collapsed ? `${label} — not available yet` : "Not available yet"}
-              className={`flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-500 ${
-                collapsed ? "justify-center" : ""
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && (
-                <>
-                  <span className="flex-1">{label}</span>
-                  <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
-                    Soon
-                  </span>
-                </>
-              )}
-            </span>
           ))}
         </nav>
       </div>

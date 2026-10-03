@@ -14,7 +14,6 @@ import {
   Ban,
   FileText,
   Cloud,
-  Wrench,
   ShieldAlert,
   Rocket,
   ArrowRight,
@@ -25,13 +24,13 @@ import GuideHeader from "../GuideHeader";
 import SectionHeading from "../SectionHeading";
 
 const WORKFLOW_STEPS = [
-  { icon: User, title: "1. Select Chatbot", detail: "Choose the chatbot and target environment for deployment." },
+  { icon: User, title: "1. Create Chatbot", detail: "Pick AWS or Azure, then a name and a slug the form confirms is free." },
   {
     icon: ClipboardCheck,
-    title: "2. Review Prerequisites",
-    detail: "Validate cloud, network, IAM, storage, and other requirements.",
+    title: "2. Connect Your Cloud",
+    detail: "Run the one-click setup in your account, then Test connection to confirm the identity and state storage.",
   },
-  { icon: Send, title: "3. Submit Deployment", detail: "Provide configuration inputs and trigger the deployment." },
+  { icon: Send, title: "3. Submit Deployment", detail: "Choose the LLM and vector store, review the estimate, and deploy." },
   {
     icon: GitBranch,
     title: "4. GitHub Actions Workflow",
@@ -67,13 +66,19 @@ const STATUS_TONES: Record<string, string> = {
 
 const DURING_DEPLOYMENT_LEFT = [
   { title: "Validate configuration", detail: "Validate provided settings and dependencies." },
-  { title: "Prepare provider credentials", detail: "Assume roles (AWS) or federate to deployment identities (Azure) and validate access." },
   { title: "Dispatch workflow", detail: "Trigger the GitHub Actions workflow with deployment inputs." },
+  {
+    title: "Sign in to your cloud",
+    detail: "The run exchanges a GitHub token issued for this chatbot for short-lived access to its own role (AWS) or managed identity (Azure) — no stored credential.",
+  },
   { title: "Provision AWS or Azure resources", detail: "Create or update infrastructure using Terraform." },
 ];
 
 const DURING_DEPLOYMENT_RIGHT = [
-  { title: "Prepare frontend & backend containers", detail: "Build and configure container images and services." },
+  {
+    title: "Prepare frontend & backend containers",
+    detail: "Copy the platform's prebuilt chat UI and backend images into your own registry (ECR or ACR) and run them as services.",
+  },
   { title: "Configure secrets", detail: "Store and reference secrets securely in your environment." },
   { title: "Return chatbot endpoint", detail: "Register the endpoint and make the runtime available." },
 ];
@@ -87,7 +92,6 @@ const RESULT_ITEMS = [
 
 const NEXT_LINKS = [
   { icon: Cloud, label: "Cloud Prerequisites", href: "/guides/cloud-prerequisites" },
-  { icon: Wrench, label: "Troubleshooting", href: undefined },
   { icon: ShieldAlert, label: "Security & Isolation", href: "/guides/security-isolation" },
   { icon: Rocket, label: "Getting Started", href: "/guides/getting-started" },
 ];

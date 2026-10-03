@@ -293,8 +293,9 @@ export default function CloudPrerequisitesContent() {
         <section id="llm-api-keys">
           <h2 className="text-base font-semibold text-gray-900">LLM API Keys</h2>
           <p className="mt-1 text-sm text-gray-500">
-            Get an API key from whichever provider you plan to use — the platform never sees your usage beyond what it
-            takes to relay a chat request.
+            Get an API key from whichever provider you plan to use. It is stored in your own Secrets Manager or Key
+            Vault, and your chatbot calls the provider directly from your cloud — chat requests never pass through the
+            platform.
           </p>
           <div className="mt-4 overflow-x-auto rounded-lg border">
             <table className="w-full text-left text-sm">
