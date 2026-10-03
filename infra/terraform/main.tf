@@ -731,7 +731,9 @@ resource "aws_db_instance" "vectors" {
   vpc_security_group_ids = [aws_security_group.vectors[0].id]
   publicly_accessible    = false
 
-  backup_retention_period = 7
+  # AWS Free plan accounts reject longer retention (FreeTierRestrictionError),
+  # and a customer's account may well be on that plan.
+  backup_retention_period = 1
   skip_final_snapshot     = true
   apply_immediately       = true
 

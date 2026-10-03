@@ -338,7 +338,7 @@ VPC  10.20.0.0/16
 │       (AssumeRole) — never passed to GitHub Actions; only the ARN is
 │
 ├── RDS PostgreSQL 16: chatbot-{slug}-vectors     [vector_store = pgvector]
-│   ├── db.t4g.micro, 32 GB gp3, storage encrypted, 7-day backups
+│   ├── db.t4g.micro, 32 GB gp3, storage encrypted, 1-day backups
 │   ├── publicly_accessible = false, in the tenant's own subnet group
 │   ├── Security Group: vectors  (ingress 5432 from task-sg ONLY)
 │   └── Secrets Manager: {slug}/vector-db-url

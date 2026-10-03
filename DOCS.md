@@ -345,7 +345,7 @@ Selected per tenant by `vector_store`; exactly one of the following is created.
 **`pinecone`** — Pinecone serverless index `chatbot-{slug}` in the **customer's own** Pinecone project, created by Terraform (`pinecone_index.this`), dimension 384 / cosine, destroyed with the tenant (`deletion_protection = "disabled"`).
 
 **`pgvector`** — RDS PostgreSQL 16 `chatbot-{slug}-vectors` inside the tenant's VPC:
-- `db.t4g.micro`, 32 GB gp3, `storage_encrypted = true`, 7-day backups
+- `db.t4g.micro`, 32 GB gp3, `storage_encrypted = true`, 1-day backups (the most an AWS Free plan account allows)
 - `publicly_accessible = false`; security group admits port 5432 from the chatbot task SG only
 - Connection URL (with a Terraform-generated password) stored at `{slug}/vector-db-url` and injected as `DATABASE_URL`
 

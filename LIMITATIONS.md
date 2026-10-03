@@ -272,7 +272,7 @@ The third-party actions that handle each run's tokens are pinned to major-versio
 | pgvector database | RDS `db.t4g.micro`, single-AZ | Flexible Server `B1ms`, no high availability |
 | Region | One | One |
 
-On AWS, when the one backend task fails, the chatbot is down until ECS replaces it. Neither cloud keeps a copy in another region or can fail over. Backups exist: 7 days for the databases, and 30 days of document versions (AWS) or soft-deleted documents (Azure). Restoring from them is manual.
+On AWS, when the one backend task fails, the chatbot is down until ECS replaces it. Neither cloud keeps a copy in another region or can fail over. Backups exist: 1 day for the RDS database (the most an AWS Free plan account accepts), 7 days for the Azure one, and 30 days of document versions (AWS) or soft-deleted documents (Azure). Restoring from them is manual.
 
 **Disposition: Scope.** These are the cheapest sizes that work, which is why the fixed cost in #1 is as low as it is.
 
