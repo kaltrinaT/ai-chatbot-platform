@@ -13,7 +13,14 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:security": "vitest run --config vitest.security.config.mts",
+    "evaluate:security:e2e": "node scripts/evaluate-security-e2e.cjs",
+    "evaluate:security:mutants": "node scripts/evaluate-security-mutants.cjs",
+    "evaluate:security:concurrency": "node scripts/evaluate-postgres-concurrency.cjs",
+    "evaluate:rag-isolation": "node scripts/evaluate-rag-isolation.cjs",
+    "evaluate:deployments": "node scripts/evaluate-deployment-timings.cjs",
+    "evaluate:reproducibility": "node scripts/evaluate-reproducibility.cjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",
@@ -34,9 +41,11 @@
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1121.0",
     "@aws-sdk/s3-presigned-post": "^3.1121.0",
+    "@electric-sql/pglite": "0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^20",
+    "@types/pg": "8.18.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/ws": "^8.18.1",
@@ -45,6 +54,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "pg": "8.23.0",
     "tailwindcss": "^4",
     "tsx": "^4.22.2",
     "typescript": "^5",

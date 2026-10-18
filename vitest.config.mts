@@ -13,6 +13,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // Run by `npm run test:security` and `npm run evaluate:security:concurrency`
+    // instead (see vitest.security.config.mts and vitest.concurrency.config.mts).
+    exclude: ["src/security-e2e/**", "src/security-concurrency/**", "node_modules/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
