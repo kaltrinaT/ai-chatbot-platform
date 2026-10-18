@@ -1,0 +1,5 @@
+All employees must enable two-factor authentication (2FA) on their company email and internal tools within their first week of employment.
+
+Company laptops must have full-disk encryption enabled and are managed through the IT-issued MDM profile.
+
+The corporate VPN is required to access internal systems from outside the office network.

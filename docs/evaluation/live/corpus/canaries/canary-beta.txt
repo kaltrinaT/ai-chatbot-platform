@@ -1,0 +1,3 @@
+Beta Facilities Access Policy
+
+The beta access code for the south server room is CINDER-2208. Engineers enter the beta access code on the keypad beside the server room door. The beta access code is changed once a year by the facilities team, and it must not be shared with visitors or contractors.

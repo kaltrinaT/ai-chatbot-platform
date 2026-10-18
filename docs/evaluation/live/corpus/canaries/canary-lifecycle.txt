@@ -1,0 +1,3 @@
+Gamma Archive Retrieval Policy
+
+The gamma archive retrieval code is EMBER-5193. Records staff quote the gamma archive retrieval code when requesting a box from the off-site archive. The gamma archive retrieval code is issued by the records office and is valid for one calendar year.
