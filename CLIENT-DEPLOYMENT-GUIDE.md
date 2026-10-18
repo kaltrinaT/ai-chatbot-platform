@@ -34,9 +34,8 @@ Start the onboarding form first (step 9) and fill in your account ID, region and
 That button opens the AWS console on a CloudFormation stack with every value already filled in. Review what it will create and press **Create stack**. It creates:
 
 - GitHub registered as an OIDC identity provider in your account, if it isn't already
-- An IAM role named `chatbot-client-deploy-<your short name>`
-- A trust policy with two statements (explained below)
-- The permissions Terraform needs to build your chatbot
+- An IAM role named `chatbot-client-deploy-<your short name>`, which your deployments use, with the permissions Terraform needs to build your chatbot
+- A second, write-only IAM role named `chatbot-client-onboard-<your short name>`, which the platform uses once to store your API keys (both explained below)
 
 When it finishes, open the stack's **Outputs** tab and copy `DeploymentRoleArn` back into the form.
 
@@ -44,27 +43,27 @@ When it finishes, open the stack's **Outputs** tab and copy `DeploymentRoleArn` 
 
 ⚠️ **Do this before submitting the form.** Onboarding writes your API keys into your Secrets Manager right away, so the role has to exist first.
 
-### 3. What the two trust statements mean
+### 3. What the two roles mean
 
-**Statement 1 — your deployments.** GitHub signs a token for each workflow run describing which repository and environment it ran in. AWS checks that token against the identity provider in *your* account and compares the subject:
+**The deployment role — your deployments.** GitHub signs a token for each workflow run describing which repository and environment it ran in. AWS checks that token against the identity provider in *your* account and compares the subject:
 
 ```
 repo:<owner>/<repo>:environment:tenant-<your chatbot's ID>
 ```
 
-The environment names your chatbot specifically, so a deployment for anyone else's chatbot carries a different subject and is refused by AWS. The platform is not a party to this exchange at all, and no credential for your account exists anywhere outside the run.
+The environment names your chatbot specifically, so a deployment for anyone else's chatbot carries a different subject and is refused by AWS. The platform is not a party to this exchange at all, and no credential for your account exists anywhere outside the run. This role builds your chatbot's infrastructure, so it can reach your documents bucket — which is why it trusts GitHub and nothing else.
 
-**Statement 2 — onboarding only.** Before any workflow exists, the platform writes your LLM key, vector-database key and document-signing secret directly into your Secrets Manager. That is what keeps those keys out of GitHub Actions entirely — only the resulting ARNs are ever passed to a deployment. The platform makes that one call itself, so your role trusts its AWS account for it, conditioned on an `sts:ExternalId` that is your chatbot's ID.
+**The onboarding role — onboarding only.** Before any workflow exists, the platform writes your LLM key, vector-database key and document-signing secret directly into your Secrets Manager. That is what keeps those keys out of GitHub Actions entirely — only the resulting ARNs are ever passed to a deployment. The platform makes that one call itself, so this role trusts its AWS account for it, conditioned on an `sts:ExternalId` that is your chatbot's ID. It may create and overwrite secrets under `<your short name>/` and nothing else: it cannot read a secret back, see a document, or change any infrastructure. It is the platform's only way into your account.
 
-Without that condition, your role could be used for *any* chatbot the platform is asked to create, including one someone else sets up with your role ARN — which isn't secret. It isn't a password, and it will appear in your CloudTrail logs.
+Without the ExternalId condition, the onboarding role could be used for *any* chatbot the platform is asked to create, including one someone else sets up with your role ARN — which isn't secret. It isn't a password, and it will appear in your CloudTrail logs.
 
 ### 4. If you'd rather not use the stack
 
-Create the role by hand: **IAM → Roles → Create role → Custom trust policy**, and paste the trust policy the onboarding form shows (it has a copy button, with your values filled in). You will also need to register GitHub as an identity provider under **IAM → Identity providers**, with audience `sts.amazonaws.com`.
+Create both roles by hand: **IAM → Roles → Create role → Custom trust policy**, pasting the policies the onboarding form shows (each has a copy button, with your values filled in). You will also need to register GitHub as an identity provider under **IAM → Identity providers**, with audience `sts.amazonaws.com`.
 
-**The role name must start with `chatbot-client-deploy-`** (e.g. `chatbot-client-deploy-acme`). The platform's own AWS identity is restricted by its own IAM policy to only assume roles matching `arn:aws:iam::*:role/chatbot-client-deploy-*` — any other name means onboarding is denied before your trust policy is even evaluated.
+**Name them `chatbot-client-deploy-<short name>` and `chatbot-client-onboard-<short name>`** (e.g. `chatbot-client-deploy-acme` and `chatbot-client-onboard-acme`). The form takes the deployment role's ARN and finds the onboarding role beside it by name. The platform's own AWS identity may only assume roles matching `arn:aws:iam::*:role/chatbot-client-onboard-*`, so it cannot assume your deployment role whatever its trust policy says — and that trust policy should never name the platform anyway.
 
-Then attach the permissions policy below. This role needs to create everything Terraform provisions on your behalf: a VPC, an Application Load Balancer, an ECS cluster with two Fargate services, two ECR repos, an S3 documents bucket, a per-tenant docs-signer Lambda (for the platform's document upload/delete UI — see `DOCUMENT-MANAGEMENT.md`), a CloudWatch log group, IAM roles for the ECS tasks and the Lambda, Secrets Manager secrets, a CloudFront distribution (unless you bring your own TLS certificate — see step 8), and (if you chose pgvector) an RDS instance.
+Give the onboarding role the form's onboarding trust policy and its one-statement permissions policy (`secretsmanager:CreateSecret` and `UpdateSecret` on your short name's secrets). Then attach the permissions policy below to the deployment role. This role needs to create everything Terraform provisions on your behalf: a VPC, an Application Load Balancer, an ECS cluster with two Fargate services, two ECR repos, an S3 documents bucket, a per-tenant docs-signer Lambda (for the platform's document upload/delete UI — see `DOCUMENT-MANAGEMENT.md`), a CloudWatch log group, IAM roles for the ECS tasks and the Lambda, Secrets Manager secrets, a CloudFront distribution (unless you bring your own TLS certificate — see step 8), and (if you chose pgvector) an RDS instance.
 
 ```json
 {
@@ -81,21 +80,114 @@ Then attach the permissions policy below. This role needs to create everything T
     { "Sid": "Database", "Effect": "Allow", "Action": "rds:*", "Resource": "*" },
     { "Sid": "Cdn", "Effect": "Allow", "Action": "cloudfront:*", "Resource": "*" },
     {
-      "Sid": "IamForTaskRoles",
+      "Sid": "IamForTaskRolesReadAndRemove",
       "Effect": "Allow",
       "Action": [
-        "iam:CreateRole", "iam:DeleteRole", "iam:GetRole",
-        "iam:AttachRolePolicy", "iam:DetachRolePolicy",
-        "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
-        "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
-        "iam:ListInstanceProfilesForRole",
-        "iam:TagRole", "iam:PassRole", "iam:CreateServiceLinkedRole"
+        "iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole",
+        "iam:TagRole", "iam:DetachRolePolicy", "iam:DeleteRolePolicy", "iam:DeleteRole"
+      ],
+      "Resource": "arn:aws:iam::<your-account-id>:role/chatbot-<slug>-*"
+    },
+    {
+      "Sid": "IamForTaskRolesGrantWithinBoundary",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole", "iam:PutRolePolicy",
+        "iam:AttachRolePolicy", "iam:PutRolePermissionsBoundary"
+      ],
+      "Resource": "arn:aws:iam::<your-account-id>:role/chatbot-<slug>-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::<your-account-id>:policy/chatbot-<slug>-runtime-boundary"
+        }
+      }
+    },
+    {
+      "Sid": "IamForTaskRolesPass",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::<your-account-id>:role/chatbot-<slug>-*",
+      "Condition": {
+        "StringEquals": { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "lambda.amazonaws.com"] }
+      }
+    },
+    {
+      "Sid": "ServiceLinkedRoles",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::<your-account-id>:role/aws-service-role/*"
+    },
+    {
+      "Sid": "ReadRuntimeRoleBoundary",
+      "Effect": "Allow",
+      "Action": "iam:GetPolicy",
+      "Resource": "arn:aws:iam::<your-account-id>:policy/chatbot-<slug>-runtime-boundary"
+    },
+    {
+      "Sid": "BoundaryIsFixed",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary", "iam:CreatePolicyVersion",
+        "iam:DeletePolicy", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "DeploymentRolesAreOffLimits",
+      "Effect": "Deny",
+      "Action": "iam:*",
+      "Resource": [
+        "arn:aws:iam::<your-account-id>:role/chatbot-client-deploy-*",
+        "arn:aws:iam::<your-account-id>:role/chatbot-client-onboard-*"
+      ]
     }
   ]
 }
 ```
+
+**Before attaching that policy, create the permissions boundary it refers to** — a customer-managed policy named `chatbot-<slug>-runtime-boundary`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "RegistryLogin", "Effect": "Allow", "Action": "ecr:GetAuthorizationToken", "Resource": "*" },
+    {
+      "Sid": "PullChatbotImages",
+      "Effect": "Allow",
+      "Action": ["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"],
+      "Resource": "arn:aws:ecr:*:<your-account-id>:repository/<slug>/*"
+    },
+    {
+      "Sid": "WriteChatbotLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": [
+        "arn:aws:logs:*:<your-account-id>:log-group:/ecs/chatbot-<slug>",
+        "arn:aws:logs:*:<your-account-id>:log-group:/ecs/chatbot-<slug>:*",
+        "arn:aws:logs:*:<your-account-id>:log-group:/aws/lambda/chatbot-<slug>-docs-signer",
+        "arn:aws:logs:*:<your-account-id>:log-group:/aws/lambda/chatbot-<slug>-docs-signer:*"
+      ]
+    },
+    {
+      "Sid": "ReadChatbotSecrets",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:*:<your-account-id>:secret:<slug>/*"
+    },
+    { "Sid": "ListChatbotDocuments", "Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::chatbot-<slug>-docs" },
+    {
+      "Sid": "UseChatbotDocuments",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::chatbot-<slug>-docs/*"
+    }
+  ]
+}
+```
+
+> **Why IAM is narrower than everything else:** creating a role and attaching a policy to it is the one grant here that could widen the deployment role's own reach — attach `AdministratorAccess` to a new role and pass it to a Lambda. The role can therefore only create or extend roles named `chatbot-<slug>-*` that carry the boundary above, pass them only to ECS tasks and Lambda, and never remove or edit the boundary. IAM gives a role the intersection of its policies and its boundary, so the chatbot's runtime roles can never do more than pull this chatbot's images, write its logs, read its secrets and use its documents bucket.
 > **Why `s3:*`/`lambda:*` instead of a narrower list:** Terraform's resources read back many attributes to reconcile state (tags, policy, ACL, versioning, etc.), each requiring its own IAM `Get*` action. A narrower hand-picked list will fail one missing permission at a time as different attributes get read; a broad grant avoids that entirely. This mirrors how every other service in this policy is already granted (`ec2:*`, `ecs:*`, etc.) rather than curated to specific actions — the `Functions` Sid is not a broader grant of trust than the rest of this policy already represents, since the same role can already create/modify the ECS tasks that run your data plane.
 
 #### Where the deployment state lives
@@ -112,7 +204,7 @@ tfstate-<slug>-<your-account-id>-<region>-an
 
 If you create the role by hand instead of with the stack, create this bucket too. The platform's setup panel shows the commands. The role's `s3:*` grant already covers it, so there is nothing to add to the policy.
 
-**Bootstrapped before the stack created this bucket?** Update the existing stack to the current template once. The tenant page shows the exact `aws cloudformation update-stack` command, which keeps every value the stack was created with. Deployments refuse to run until the bucket exists, and **Test connection** confirms it does.
+**Bootstrapped before the stack created this bucket, or the permissions boundary?** Update the existing stack to the current template. The tenant page shows the exact `aws cloudformation update-stack` command, which keeps every value the stack was created with. Deployments refuse to run until both exist, and **Test connection** confirms they do.
 
 ### 5. Copy the role's ARN and test the connection
 `arn:aws:iam::<your-account-id>:role/chatbot-client-deploy-<something>` — from the stack's Outputs tab, or from the role itself if you created it by hand.

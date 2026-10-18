@@ -10,8 +10,8 @@ This document explains how the AI Chatbot Platform handles client credentials, w
 
 | Field | Stored | Format | Used for |
 |---|---|---|---|
-| `deploymentRoleArn` | Yes | Plaintext | Onboarding's STS AssumeRole; deploys, teardowns and checks federate into the same role through GitHub OIDC. Refused at onboarding if another tenant already uses it |
-| `sts:ExternalId` | Derived (the tenant's ID) | Plaintext, not a secret | Sent on onboarding's AssumeRole; the client's trust policy conditions on it so the role serves one tenant only |
+| `deploymentRoleArn` | Yes | Plaintext | Deploys, teardowns and checks federate into this role through GitHub OIDC. The platform never assumes it: onboarding assumes the onboarding role beside it, `chatbot-client-onboard-<slug>`, whose ARN is derived from this one. Refused at onboarding if another tenant already uses it |
+| `sts:ExternalId` | Derived (the tenant's ID) | Plaintext, not a secret | Sent on onboarding's AssumeRole; the onboarding role's trust policy conditions on it so the role serves one tenant only |
 | `awsAccountId` | Yes | Plaintext | Workflow inputs (not a secret — public identifier) |
 | `awsRegion` | Yes | Plaintext | Workflow inputs |
 | `llmApiKey` | Yes | AES-256-GCM encrypted | Written to the client's Secrets Manager at onboarding; only its ARN (`llmSecretArn`) reaches a workflow |
@@ -44,7 +44,7 @@ All secret values are encrypted using AES-256-GCM before being written to the da
 - **Algorithm:** AES-256-GCM
 - **Key length:** 256 bits (32 bytes), supplied via `PLATFORM_ENCRYPTION_KEY` environment variable
 - **IV:** 12-byte random value generated per encryption call
-- **Authentication:** GCM auth tag is stored alongside the ciphertext — tampered ciphertext will fail to decrypt
+- **Authentication:** GCM auth tag is stored alongside the ciphertext — tampered ciphertext will fail to decrypt. Decryption requires the full 16-byte tag, a 12-byte IV and exactly three segments ([#17](#17-truncated-authentication-tags-were-accepted--resolved))
 
 The stored format is `iv_hex:auth_tag_hex:ciphertext_hex`. No raw secret value is ever written to the database.
 
@@ -72,18 +72,20 @@ Figures: [before](docs/figures/fig-20-aws-credential-model-before.svg) · [after
 
 ### How it works
 
-The client's deployment role carries **two trust statements**, because two different callers need it and they prove themselves in different ways.
+The client's account holds **two roles**, because two different callers need it, they prove themselves in different ways, and they must be able to do very different things there.
 
-| Caller | Action | Proof | Used for |
-|---|---|---|---|
-| GitHub Actions | `sts:AssumeRoleWithWebIdentity` | An OIDC token GitHub signs, naming this tenant's environment | Every deploy, teardown and connection check |
-| The platform itself | `sts:AssumeRole` | The platform's AWS account, plus this tenant's `sts:ExternalId` | Onboarding only — writing the tenant's API keys into their Secrets Manager |
+| Caller | Role | Action | Proof | Used for |
+|---|---|---|---|---|
+| GitHub Actions | `chatbot-client-deploy-<slug>` | `sts:AssumeRoleWithWebIdentity` | An OIDC token GitHub signs, naming this tenant's environment | Every deploy, teardown and connection check |
+| The platform itself | `chatbot-client-onboard-<slug>` | `sts:AssumeRole` | The platform's AWS account, plus this tenant's `sts:ExternalId` | Onboarding only — writing the tenant's API keys into their Secrets Manager |
 
-**Deploys and teardowns** involve the platform's AWS account not at all. GitHub signs a token describing the workflow run, AWS validates it against the GitHub OIDC provider *in the client's own account*, and STS issues credentials that live only for the run. Nothing reusable exists in the platform database, in GitHub, or in the workflow's inputs.
+**Deploys and teardowns** involve the platform's AWS account not at all. GitHub signs a token describing the workflow run, AWS validates it against the GitHub OIDC provider *in the client's own account*, and STS issues credentials that live only for the run. Nothing reusable exists in the platform database, in GitHub, or in the workflow's inputs. The deployment role builds infrastructure, so it can reach the whole account, and it trusts GitHub and nothing else.
 
-**Onboarding** is the one thing GitHub cannot do. Before any workflow exists, the platform writes the tenant's LLM key, vector-database key and document-signing secret straight into the client's Secrets Manager, with 15-minute credentials used in memory and then discarded. This is what keeps those values out of GitHub Actions entirely — only the resulting ARNs are ever sent to a workflow, which is a property the Azure path cannot offer, since Azure has no secret store until Terraform creates one.
+**Onboarding** is the one thing GitHub cannot do. Before any workflow exists, the platform writes the tenant's LLM key, vector-database key and document-signing secret straight into the client's Secrets Manager, with 15-minute credentials used in memory and then discarded. This is what keeps those values out of GitHub Actions entirely — only the resulting ARNs are ever sent to a workflow, which is a property the Azure path cannot offer, since Azure has no secret store until Terraform creates one. It runs as the onboarding role, which may create and overwrite secrets under `<slug>/` and nothing else: it cannot read a secret back, see a document or change any infrastructure.
 
-Both statements are created by [`infra/bootstrap/aws/tenant-bootstrap.yaml`](infra/bootstrap/aws/tenant-bootstrap.yaml), which the client applies from a CloudFormation Quick Create link the wizard builds.
+**Why two roles.** Both trusts used to sit on the deployment role. Since the platform could assume it for onboarding, and the trust has no time bound, the platform could also read every document in every AWS tenant's account at any time — the opposite of the control-plane boundary in [`ARCHITECTURE.md`](ARCHITECTURE.md). The security evaluation found this (test S2, [`docs/evaluation/security`](docs/evaluation/security)); see [Known Limitation #14](#14-the-platform-could-read-every-aws-tenants-documents--resolved). With the trusts on separate roles, the one role the platform can assume holds no permission that reaches tenant data.
+
+Both roles are created by [`infra/bootstrap/aws/tenant-bootstrap.yaml`](infra/bootstrap/aws/tenant-bootstrap.yaml), which the client applies from a CloudFormation Quick Create link the wizard builds.
 
 ### Why clients retain control
 
@@ -111,7 +113,7 @@ GitHub offers no way to put an arbitrary per-run value into the claim, so the en
 
 ### Why the ExternalId still exists
 
-The onboarding statement is the only place the platform's account is trusted, and it is only safe because of `sts:ExternalId`.
+The onboarding role's trust is the only place the platform's account is trusted, and it is only safe because of `sts:ExternalId`.
 
 Trusting the platform's account alone is trust in the platform *as a whole*: the role cannot tell which tenant a request is being made for. Anyone who reaches the onboarding form and knows a role ARN — not a secret, and the required `chatbot-client-deploy-` prefix makes it guessable — could otherwise have the platform write into an account that is not theirs. This is the [confused deputy problem](https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html).
 
@@ -131,9 +133,11 @@ A federated call additionally records the token's subject, so the client can con
 
 This means clients do not need to trust the platform operator's claims — they can independently audit every action taken in their account.
 
-### Recommended trust policy
+### Recommended trust policies
 
-[`infra/bootstrap/aws/tenant-bootstrap.yaml`](infra/bootstrap/aws/tenant-bootstrap.yaml) creates exactly this, and the wizard also shows it filled in for a client who prefers to apply it by hand. Apply it **before** submitting the form, since onboarding writes the tenant's secrets immediately:
+[`infra/bootstrap/aws/tenant-bootstrap.yaml`](infra/bootstrap/aws/tenant-bootstrap.yaml) creates exactly these, and the wizard also shows them filled in for a client who prefers to apply them by hand. Apply them **before** submitting the form, since onboarding writes the tenant's secrets immediately.
+
+The deployment role, `chatbot-client-deploy-<slug>`, trusts GitHub and nothing else:
 
 ```json
 {
@@ -152,25 +156,43 @@ This means clients do not need to trust the platform operator's claims — they 
           "token.actions.githubusercontent.com:sub": "repo:OWNER/REPO:environment:tenant-TENANT_ID"
         }
       }
-    },
-    {
-      "Sid": "PlatformOnboarding",
-      "Effect": "Allow",
-      "Principal": {
-        "AWS": "arn:aws:iam::PLATFORM_ACCOUNT_ID:root"
-      },
-      "Action": "sts:AssumeRole",
-      "Condition": {
-        "StringEquals": {
-          "sts:ExternalId": "TENANT_ID_SHOWN_IN_THE_WIZARD"
-        }
-      }
     }
   ]
 }
 ```
 
-Each condition is what limits its statement to one chatbot. Without the subject condition the role would be assumable by any tenant's deployment; without the ExternalId condition it would be assumable for any tenant the platform is asked to create.
+The onboarding role, `chatbot-client-onboard-<slug>`, trusts the platform for this tenant only, and may write this tenant's secrets and nothing else:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PlatformOnboarding",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::PLATFORM_ACCOUNT_ID:root" },
+      "Action": "sts:AssumeRole",
+      "Condition": { "StringEquals": { "sts:ExternalId": "TENANT_ID_SHOWN_IN_THE_WIZARD" } }
+    }
+  ]
+}
+```
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WriteChatbotSecrets",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:CreateSecret", "secretsmanager:UpdateSecret"],
+      "Resource": "arn:aws:secretsmanager:*:CLIENT_ACCOUNT_ID:secret:SLUG/*"
+    }
+  ]
+}
+```
+
+Each condition is what limits its role to one chatbot. Without the subject condition the deployment role would be assumable by any tenant's deployment; without the ExternalId condition the onboarding role would be assumable for any tenant the platform is asked to create.
 
 **Tenants onboarded before this changed must re-run the bootstrap.** Their roles trust the platform account for deploys, which the deploy workflow no longer uses, so their next deploy fails to authenticate. Applying the bootstrap stack for an existing tenant — or adding the `GitHubActionsDeploy` statement by hand — fixes it, and the tenant page's **Test connection** button confirms it in seconds before anything is deployed.
 
@@ -180,17 +202,31 @@ Each condition is what limits its statement to one chatbot. Without the subject 
 
 Nothing about the result is stored. The check describes the client's cloud at one moment, and a stored "Connected ✓" would age into a claim the platform cannot stand behind after a role is deleted or a trust policy edited.
 
-### Required role name
+### Required role names
 
 The platform's own IAM identity (the principal shown above) is restricted by its own identity-based policy to only assume roles matching:
 
 ```
-arn:aws:iam::*:role/chatbot-client-deploy-*
+arn:aws:iam::*:role/chatbot-client-onboard-*
 ```
 
-The client's role name **must start with `chatbot-client-deploy-`** (e.g. `chatbot-client-deploy-acme`) or onboarding's `AssumeRole` will be denied before the trust policy is even evaluated, regardless of how the trust policy itself is configured. The bootstrap template names the role for them, from the chatbot's slug.
+So the platform cannot assume a client's deployment role even if a client's trust policy were to name the platform's account: IAM refuses on the platform's side before any trust policy is read. The two restrictions are independent, and either alone keeps the platform away from tenant data.
 
-This restriction now applies only to the onboarding path. Deploys federate directly and never pass through the platform's identity, so the prefix does not constrain them — but a role that breaks it cannot be onboarded in the first place.
+The deployment role **must be named `chatbot-client-deploy-<slug>`** and the onboarding role `chatbot-client-onboard-<slug>`. The form takes the deployment role's ARN and refuses one without that prefix; onboarding derives the onboarding role's ARN from it, in the same account under the same slug. The bootstrap template names both roles for the client.
+
+### What the deployment role can do
+
+The role holds per-service grants (`ec2:*`, `ecs:*`, `s3:*`, `secretsmanager:*` and the rest) across the client's account, because Terraform reads back many attributes of every resource it manages and a hand-picked action list fails one missing permission at a time. Those grants let it build and change infrastructure. They do not let it give anything more permissions than it holds.
+
+IAM is the exception, because it is the one grant that could: a role able to create a role, attach `AdministratorAccess` to it and pass it to a Lambda holds administrator access in all but name. The template closes that path with a **permissions boundary**, `chatbot-<slug>-runtime-boundary`, created by the client's bootstrap stack:
+
+- the role may create, extend or re-bound only roles named `chatbot-<slug>-*`, and only when they carry the boundary (`iam:PermissionsBoundary` condition);
+- it may pass those roles only to ECS tasks and Lambda (`iam:PassedToService`);
+- an explicit Deny stops it removing a boundary or rewriting the boundary policy, and keeps every `chatbot-client-deploy-*` and `chatbot-client-onboard-*` role, its own included, out of its reach. Widening the onboarding role would hand the platform what the split took away.
+
+IAM grants a role the intersection of its policies and its boundary, so whatever is attached to the chatbot's runtime roles, they can do no more than pull this chatbot's images, write its log groups, read secrets under `<slug>/`, and use the `chatbot-<slug>-docs` bucket. Terraform sets the boundary on all three roles it creates ([`infra/terraform/main.tf`](infra/terraform/main.tf)), and the deploy and the connection check both confirm the boundary exists before anything else runs. [`bootstrapLinks.test.ts`](src/lib/bootstrapLinks.test.ts) checks each of these properties against the template.
+
+What the boundary does not change: the role itself still reaches the whole account through its per-service grants, including reading the documents bucket and the tenant's secrets. That is a trust placed in the deploy pipeline (see Known Limitation #8), not in the platform application: the platform cannot assume this role, and the onboarding role it can assume reaches no tenant data. Test S2 of the security evaluation checks both against the template and the platform's deployed policy.
 
 ---
 
@@ -301,7 +337,7 @@ Credentials entered in the onboarding form are submitted over HTTPS to a Next.js
 
 **Then:** every call sent a per-tenant `ExternalId` (the tenant's ID), and clients conditioned their trust policy on it. A tenant created against someone else's role sent a different value and was refused by STS.
 
-**Now:** deploys and teardowns do not go through the platform's AWS account at all. They federate directly from GitHub into the client's account, on a subject that names the tenant's own environment (see [Why the subject names the tenant](#why-the-subject-names-the-tenant)), so there is no platform identity to confuse. The `ExternalId` survives on a second, narrower trust statement covering onboarding alone, which is the one operation GitHub cannot perform (see [Why the ExternalId still exists](#why-the-externalid-still-exists)).
+**Now:** deploys and teardowns do not go through the platform's AWS account at all. They federate directly from GitHub into the client's account, on a subject that names the tenant's own environment (see [Why the subject names the tenant](#why-the-subject-names-the-tenant)), so there is no platform identity to confuse. The `ExternalId` survives on the separate, write-only onboarding role, which covers onboarding alone, the one operation GitHub cannot perform (see [Why the ExternalId still exists](#why-the-externalid-still-exists)).
 
 Three limits worth stating:
 
@@ -373,9 +409,9 @@ With no stored cloud credentials, what authorizes a deploy into a customer's clo
 - GitHub environments are created on first use by any workflow that names them, so the per-tenant subject separates tenants from **each other and from operators of the platform UI**, not from people who control the repository.
 - `GITHUB_PAT` can dispatch those workflows.
 
-**Mitigations in place:** OIDC trust bound to one repository and one environment per tenant, on both clouds; the platform's own GitHub role cannot assume any customer role; the platform dispatches only from its own validated inputs; no credential exists to exfiltrate from a run.
+**Mitigations in place:** OIDC trust bound to one repository and one environment per tenant, on both clouds; the platform's own GitHub role cannot assume any customer role; the platform dispatches only from its own validated inputs; no credential exists to exfiltrate from a run; and a dispatch cannot make a run execute anything but the workflow's own steps (see [#15](#15-dispatch-inputs-were-expanded-into-shell-scripts--resolved)), so the right to dispatch stays narrower than the right to change a workflow.
 
-**Recommended:** protect the deploy branch (required reviews, no force pushes); pin third-party actions to commit SHAs, since `aws-actions/configure-aws-credentials` and `azure/login` handle the tokens; replace `GITHUB_PAT` with a GitHub App restricted to `actions: write` on this repository; keep the collaborator list to the operators who need it.
+**Recommended:** protect the deploy branch (required reviews, no force pushes); replace `GITHUB_PAT` with a GitHub App restricted to `actions: write` on this repository; keep the collaborator list to the operators who need it. Third-party actions are already pinned to commit SHAs, since `aws-actions/configure-aws-credentials` and `azure/login` handle the tokens; a version bump is a reviewed change to the SHA.
 
 The same applies to the Azure application secrets: the platform releases them to a run on the deploy workflow in the tenant's environment (see [Credentials in Transit](#github-actions-workflow-dispatch)), so whoever controls that workflow's source controls what the run does with them. The release checks the repository by name, not by its immutable `repository_id`. A deleted repository whose name was later re-registered by someone else would therefore pass that check. Pinning `repository_id` closes this.
 
@@ -480,6 +516,57 @@ The result is **cost abuse against the customer**, bounded only by their provide
 
 Customers should also set a spending limit with their LLM provider. The deployment guide should say so, whatever the platform enforces.
 
+### 14. ~~The platform could read every AWS tenant's documents~~ — resolved
+
+**Was:** one IAM role per AWS tenant carried both trusts: GitHub's, for deploys, and the platform's, for onboarding's secret writes. That role builds infrastructure, so it held `s3:*` across the customer's account, and nothing in the onboarding trust limited it in time. The platform's identity — an operator's `aws login` session, or the Vercel production deployment through its own OIDC trust — could therefore assume the role at any time after onboarding, with the tenant's ID as ExternalId (which the platform stores), and read every document. That contradicted the control-plane boundary in [`ARCHITECTURE.md`](ARCHITECTURE.md) and this document's own statement that the platform holds no credential for tenant data.
+
+**Found by:** the security evaluation's test S2, a static IAM evaluation of the deployed control-plane policy and the bootstrap template, with negative controls that rule out an over-permissive evaluator ([`docs/evaluation/security`](docs/evaluation/security), figure `fig-25-s2-access-chain-before`).
+
+**Now:** the trusts sit on separate roles. The deployment role trusts GitHub alone. A new onboarding role, `chatbot-client-onboard-<slug>`, trusts the platform for this tenant's ExternalId and may create and overwrite secrets under `<slug>/` and nothing else. The platform's own policy may assume only `chatbot-client-onboard-*` ([`infra/platform/control-plane`](infra/platform/control-plane)), so either change alone would close the path. S2 now passes, and the same evaluation confirms onboarding can still store the tenant's keys.
+
+**Rollout:** no AWS tenant was live when this changed, so no customer had to update a stack. The platform's control-plane policy and the published bootstrap template have to be applied for the change to take effect; until then the evaluation reports the deployed policy as differing from the source.
+
+### 15. ~~Dispatch inputs were expanded into shell scripts~~ — resolved
+
+**Was:** the six deploy, teardown and connection-check workflows wrote their `workflow_dispatch` inputs straight into `run:` scripts as `${{ inputs.* }}`, and the Azure workflows did the same with step outputs parsed from the `config` input. GitHub substitutes an expression into a script's source before bash parses it, so an input containing a quote and a command ran as code. Every one of these jobs holds `id-token: write` in the tenant's environment, so the injected code could mint the tenant's cloud token and, on Azure, claim its application secrets. Anyone able only to dispatch — `GITHUB_PAT`, or the `actions: write` GitHub App recommended under [#8](#8-the-deploy-repository-is-the-trust-anchor) — could thereby do what otherwise needs write access to the workflows.
+
+**Found by:** the security evaluation's test S9 and the zizmor workflow audit (92 high-confidence template-injection findings). The Azure step-output path was found by reading the workflow, since zizmor rates step outputs low-confidence.
+
+**Now:** every dispatch input and step output reaches a script through `env:` and is quoted there, so its value is data to the shell and never source; JSON sent to the platform is built with `jq`. Third-party actions are pinned to commit SHAs, and checkouts no longer leave the job token on disk. zizmor reports no findings, and [`deployPipeline.test.ts`](src/lib/deployPipeline.test.ts) fails if any workflow pastes an input or step output into a script again.
+
+### 16. ~~A dispatch input could rewrite another step's output~~ — resolved
+
+**Was:** quoting (#15) stops an input running as code, but not every way it can be misused. Steps write values derived from inputs to `$GITHUB_OUTPUT` as one `key=value` line each, so a line break inside a value starts a line of its own. The Azure workflows' *Parse tenant config* step does this for every config value, and `jq -r` turns an escaped `\n` into a real line break. A value such as `swedencentral\nazure_subscription_id=<another subscription>` therefore wrote a second `azure_subscription_id` line. GitHub keeps the later one, so every following step, including the Azure sign-in and Terraform, would use a subscription chosen by whoever supplied the value. On AWS, the image step writes the image URI, built from the chatbot version, the same way. The platform accepted line breaks in the Azure region, LLM model, chatbot version and S3 prefix fields.
+
+**Found by:** the attack-matrix input tests (61 of 142 cases failed against the committed validation). The override was then reproduced by running the staged workflow's own step in the SEC-E2E-04 harness ([`docs/evaluation/security-e2e`](docs/evaluation/security-e2e)).
+
+**Now:** three independent checks.
+- Tenant input validation ([`tenantInput.ts`](src/lib/tenantInput.ts)) holds every dispatched free-text field to the characters its cloud allows, which never include a line break or a shell metacharacter.
+- A *Refuse inputs containing line breaks* step in all four deploy and teardown workflows fails the run if any input contains one. This also covers a run dispatched outside the platform, and tenants created before the validation existed.
+- Both Azure config parsers refuse a config with a line break inside any value, before writing any output.
+
+SEC-E2E-04 runs these steps with hostile inputs, and mutation testing shows that removing either workflow check is caught.
+
+**Rollout:** the workflow checks protect real runs only once pushed to the deploy ref.
+
+### 17. ~~Truncated authentication tags were accepted~~ — resolved
+
+**Was:** `decryptSecret` passed whatever tag the stored blob carried to Node's AES-GCM decipher, which verifies only as many tag bytes as it is given. A blob carrying the first 4 bytes of a real tag still decrypted. Anyone able to write to the database could therefore forge a ciphertext with about 2³² attempts instead of 2¹²⁸, although reading the result still needs `PLATFORM_ENCRYPTION_KEY`. A fourth `:`-separated segment was also silently ignored.
+
+**Found by:** the attack-matrix tests for secret storage. The behaviour was confirmed directly; Node also emits deprecation warning DEP0182 for it.
+
+**Now:** decryption requires a 16-byte tag (`authTagLength: 16`), a 12-byte IV and exactly three segments. Every stored ciphertext was written by `encryptSecret` with a full tag, so nothing stored is affected.
+
+### 18. The status webhook accepts any chatbot address
+
+`POST /api/deployments/{id}/status` records `chatbotUrl` and `albDnsName` from the run's callback. `chatbotUrl` must only parse as a URL, of any scheme, and `albDnsName` may be any string. Neither is checked against the tenant, unlike `docsSignerUrl`, which must be the tenant's own function ([`docsSigner.ts`](src/lib/docsSigner.ts)). The platform later sends each reindex request to `{chatbotUrl}/api/index`, or to `http://{albDnsName}` when the chatbot URL is a CloudFront one ([`reindex.ts`](src/lib/reindex.ts)), and an operator sees up to 300 characters of the reply.
+
+Anyone holding `DEPLOY_WEBHOOK_SECRET` — a repository secret, so anyone who can change or add a workflow in the deploy repository — can therefore point a tenant at an address of their choosing. The platform would then send it requests from its own network position and show part of the answer: a server-side request forgery with partial read-back. The address is also shown on the tenant page as the chatbot's link; React refuses to render a `javascript:` URL there.
+
+**Found by:** reading the webhook while extending its tests during the attack-matrix work.
+
+**Planned mitigation:** check both values against the hosts a tenant can legitimately have — its load balancer (`*.elb.amazonaws.com`), CloudFront distribution (`*.cloudfront.net`), Container App (`*.azurecontainerapps.io`) or its configured custom domain — and accept `https` only, except plain `http` for the load balancer of a tenant without a certificate.
+
 ---
 
 ## Platform Operator Responsibilities
@@ -490,7 +577,7 @@ The following must be secured by the platform operator:
 |---|---|---|
 | `PLATFORM_ENCRYPTION_KEY` | Server environment variable | Stored LLM, Pinecone and docs-signer secrets become decryptable (no cloud credential is stored) |
 | `GITHUB_PAT` | Server environment variable | Attacker can trigger arbitrary workflow dispatches, and so deploy as any tenant (see [Known Limitation #8](#8-the-deploy-repository-is-the-trust-anchor)) |
-| Operator's AWS sign-in session (`aws login`) | AWS CLI login cache on the platform's machine, reached by the application through `AWS_PROFILE` | Attacker can assume every customer's `chatbot-client-deploy-*` role until the session expires |
+| Operator's AWS sign-in session (`aws login`) | AWS CLI login cache on the platform's machine, reached by the application through `AWS_PROFILE` | Attacker can assume every customer's onboarding role until the session expires, and so overwrite their chatbots' stored API keys. The role cannot read a secret or a document, or change infrastructure |
 | `DEPLOY_WEBHOOK_SECRET` (server) / `PLATFORM_WEBHOOK_SECRET` (GitHub Actions) | Server env + GitHub Actions secret | Attacker can report a false outcome for a deployment still in progress. They cannot reopen a finished deployment, and cannot redirect a tenant's docs-signer URL (see below) |
 
 These values must never be committed to source control, logged, or included in error responses.
@@ -510,18 +597,18 @@ That role trusts jobs of this repository running in any `tenant-*` environment. 
 
 **Nor any Azure credential.** Azure deploys sign in through the customer's federated credential, which trusts the run's own GitHub OIDC token for that tenant's environment. The application makes no Azure calls at all.
 
-**Neither does the application.** It assumes the `platform-control-plane` role defined in [`infra/platform/control-plane`](infra/platform/control-plane) from the operator's `aws login` session, and that role may do one thing: `sts:AssumeRole` into `chatbot-client-deploy-*` roles. Two independent checks keep a stored key from standing in for the session. `assumeTenantRole` refuses credentials without a session token before signing anything, and the role's trust policy admits only temporary credentials. On a host that signs its own OIDC token, `PLATFORM_AWS_ROLE_ARN` makes the application exchange that token for the same role instead, with no session and no human in the loop; the trust policy admits one named project environment, so a preview deployment of a branch cannot use it. `GITHUB_PAT` remains long-lived; it could become a GitHub App's short-lived installation tokens.
+**Neither does the application.** It assumes the `platform-control-plane` role defined in [`infra/platform/control-plane`](infra/platform/control-plane) from the operator's `aws login` session, and that role may do one thing: `sts:AssumeRole` into `chatbot-client-onboard-*` roles, which can write a tenant's secrets and nothing else. Two independent checks keep a stored key from standing in for the session. `assumeTenantRole` refuses credentials without a session token before signing anything, and the role's trust policy admits only temporary credentials. On a host that signs its own OIDC token, `PLATFORM_AWS_ROLE_ARN` makes the application exchange that token for the same role instead, with no session and no human in the loop; the trust policy admits one named project environment, so a preview deployment of a branch cannot use it. `GITHUB_PAT` remains long-lived; it could become a GitHub App's short-lived installation tokens.
 
 ---
 
 ## Client Security Checklist
 
 ### AWS
-- [ ] Create the role with the bootstrap stack the wizard links to, **before** submitting the form, and read what it creates on the review page. Built by hand instead, the role must be named `chatbot-client-deploy-<slug>` (see "Required role name" above) and carry both trust statements exactly as the wizard shows them: without the subject condition any tenant's deploy could assume it, and without the `sts:ExternalId` condition it could be assumed for any chatbot, not just yours
-- [ ] Use one role per chatbot; the platform refuses a role another chatbot already uses
+- [ ] Create the roles with the bootstrap stack the wizard links to, **before** submitting the form, and read what it creates on the review page. Built by hand instead, name them `chatbot-client-deploy-<slug>` and `chatbot-client-onboard-<slug>` (see "Required role names" above) and give them exactly the policies the wizard shows: without the subject condition any tenant's deploy could assume the deployment role, and without the `sts:ExternalId` condition the onboarding role could be assumed for any chatbot, not just yours. Never add the platform's account to the deployment role's trust
+- [ ] Use one pair of roles per chatbot; the platform refuses a role another chatbot already uses
 - [ ] Review the role's permission policy — no minimal policy is published yet; the role needs to create VPC/networking, ALB, ECS, ECR, S3, Lambda, Secrets Manager, CloudWatch Logs, CloudFront, IAM roles for the ECS tasks and the Lambda, and (if using pgvector) RDS resources, per [`infra/terraform/main.tf`](infra/terraform/main.tf)
 - [ ] Enable CloudTrail in the deployment region to independently audit all platform activity
-- [ ] After the tenant is deleted, delete the bootstrap stack (revokes the platform) and, once you no longer need it, the state bucket
+- [ ] After the tenant is deleted, delete the bootstrap stack (removes both roles, revoking the platform and the deploy pipeline) and, once you no longer need it, the state bucket
 
 ### Azure
 - [ ] Create the identity with the setup deployment the wizard links to, entering this chatbot's ID as **Chatbot Id** — not your Azure tenant ID. It creates the resource group, a user-assigned managed identity, its federated credential, Contributor and User Access Administrator **on that resource group only**, and the state storage. **Do not create a client secret**

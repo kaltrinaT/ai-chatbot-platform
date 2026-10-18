@@ -33,3 +33,11 @@ The deploy workflows reach the platform at the `PLATFORM_BASE_URL` repository se
 ## Tests
 
 `npm test` runs the Vitest suite. Much of it checks the infrastructure code as source — the workflows, Terraform and setup templates — for the security properties the documents claim.
+
+The security evaluations run locally, create no cloud resources and cost nothing. Their method and results are described in [`EVALUATION.md`](EVALUATION.md) §5:
+
+| Command | What it runs |
+|---|---|
+| `npm run evaluate:security:e2e` | Four end-to-end attack scenarios (SEC-E2E-01 to 04), each paired with controls |
+| `npm run evaluate:security:mutants` | Mutation testing: removes each security control in turn and checks a scenario catches it |
+| `npm run evaluate:security:concurrency` | The races repeated against PostgreSQL in Docker (needs Docker) |

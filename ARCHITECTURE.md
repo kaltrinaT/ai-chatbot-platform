@@ -363,10 +363,15 @@ CloudFormation stack: chatbot-bootstrap-{slug}   (created by the CUSTOMER,
 ├── IAM Role: chatbot-client-deploy-{slug}   (1-hour maximum session)
 │   ├── trust GitHubActionsDeploy: sts:AssumeRoleWithWebIdentity,
 │   │     sub = repo:{owner}/{repo}:environment:tenant-{id}, aud = sts.amazonaws.com
-│   │     — every deploy, teardown and connection check
-│   ├── trust PlatformOnboarding: sts:AssumeRole from the platform account,
-│   │     sts:ExternalId = {tenant id} — onboarding's secret writes only
+│   │     — every deploy, teardown and connection check; nothing else
 │   └── permissions: what Terraform needs to build everything above
+├── IAM Role: chatbot-client-onboard-{slug}  (1-hour maximum session)
+│   ├── trust PlatformOnboarding: sts:AssumeRole from the platform account,
+│   │     sts:ExternalId = {tenant id} — the platform's only way in
+│   └── permissions: CreateSecret / UpdateSecret on {slug}/* — no read,
+│         no S3, nothing else
+│   (Kept apart so the role the platform can assume reaches no tenant
+│    data; security evaluation test S2.)
 └── S3 Bucket: tfstate-{slug}-{account}-{region}-an
     ├── this chatbot's Terraform state (terraform.tfstate), in the customer's
     │   own account rather than the platform's
@@ -523,11 +528,13 @@ Form input (plaintext)
   AES-256-GCM encrypt ──────────────────────────► tenants.llmApiKeyEncrypted (DB)
        │
        ▼
-  STS AssumeRole (customer's deploymentRoleArn, ExternalId = tenant id —
-  their trust policy conditions on it, so the role serves one tenant only)
+  STS AssumeRole (customer's onboarding role, chatbot-client-onboard-{slug},
+  derived from deploymentRoleArn; ExternalId = tenant id — its trust policy
+  conditions on it, so the role serves one tenant only; it can write these
+  secrets and nothing else)
        │
        ▼
-  Secrets Manager PutSecretValue
+  Secrets Manager CreateSecret (UpdateSecret when onboarding is retried)
   → customer account: {slug}/llm-api-key
   → ARN stored in tenants.llmSecretArn (DB)
        │
@@ -610,7 +617,7 @@ randomBytes(32).toString("hex")
        ├── AES-256-GCM encrypt ──────► tenants.docsSignerSecretEncrypted (DB)
        │                                the platform's own durable copy
        │
-       ├── AWS   STS AssumeRole → Secrets Manager PutSecretValue
+       ├── AWS   STS AssumeRole (onboarding role) → Secrets Manager CreateSecret
        │         → {slug}/docs-signer-secret
        │         → ARN in tenants.docsSignerSecretArn; only the ARN travels
        │           through GitHub Actions afterwards, like llm-api-key

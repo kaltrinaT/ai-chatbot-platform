@@ -3,7 +3,9 @@
 > **Status: plan, not results.** This document defines *how* the platform is to
 > be evaluated and *what* will be measured. Every numeric cell in the tables
 > below is a placeholder (`—`) until the corresponding experiment has been run.
-> No figure in this document contains measured data yet.
+> No figure in this document contains measured data yet. The exception is the
+> evidence matrix (§1.1), which links each claim to results already archived
+> under `docs/evaluation/`.
 
 ---
 
@@ -25,6 +27,42 @@ That decomposes into three evaluable propositions:
 C3 is the proposition that distinguishes this work from an ordinary deployment
 script, and it is the one that must be demonstrated empirically rather than
 asserted. `SECURITY.md` states the boundaries; this document tests them.
+
+### 1.1 Evidence Matrix
+
+Every claim the thesis makes about the platform, the experiment that would
+support it, and the evidence that exists. A claim whose status is not
+**Done** is not reported as a result. Statuses reflect the archived reports
+in `docs/evaluation/` (automated and security: 2026-10-11; OIDC: database
+extraction 2026-10-09; deployment timings, RAG isolation and mutation testing:
+2026-10-18).
+
+| # | Claim | Experiment | Metric / evidence | Pass criterion | Status | Evidence so far |
+|---|---|---|---|---|---|---|
+| E1 | Deployment is automated | End-to-end deployment from the wizard to `T7` (§4) | Operator inputs, manual steps outside the platform, duration `T5 − T0` and `T7 − T0` | No manual step between Deploy and `T5`; inputs = the wizard's required fields | **Partial** | 3 OIDC deployments succeeded with no manual step (1 AWS 9.01 min; 2 Azure 8.65 and 19.81 min) — `docs/evaluation/oidc/REPORT.md`. Over all 105 archived runs, successful first deploys took a median 10.3 min (AWS pgvector, n = 10), 7.0 (AWS Pinecone, n = 2) and 14.1 (Azure pgvector, n = 2); GitHub's queue a median 6 s — `docs/evaluation/deployment-timing/REPORT.md`, §4. Required inputs 5 (AWS) / 7 (Azure) — §3. `T7` never measured; the one live tenant probed returned no HTTP response — `docs/evaluation/automated/REPORT.md` |
+| E2 | Provisioning is repeatable | Repeated fresh deployments of one cell with identical inputs | Success rate; resource inventory per run (types and counts) | Every run succeeds and creates an equivalent resource set | **To do** (history read; campaign ready) | The 105 runs span 44 configuration versions and none has five successes, so they do not qualify. Where two clean first deploys of one version exist, each pair planned an identical resource set (42 and 38 resources) — §4. Campaign: `docs/evaluation/live/RUNBOOK.md` |
+| E3 | Terraform is idempotent | Re-dispatch a deploy against an already-deployed tenant (§4, Idempotency) | `terraform plan` add / change / destroy counts | `0 to add, 0 to change, 0 to destroy` and the run succeeds | **Partial** | Of four historical redeploys at the same version as the deploy before them, three planned no change and one updated the docs-signer Lambda in place (at `55143b8+2eade1e`) — §4. The current version is untested |
+| E4 | Cleanup works | Teardown workflow, then inventory the account or subscription (§4, Destroy/onboard cycle) | Resources remaining after destroy, by type | Nothing remains except documented exceptions (Azure resource group left for the customer; soft-deleted Key Vault) | **To do** | No teardown has a post-destroy inventory. Every AWS teardown whose tenant's deploy log survived destroyed fewer resources than the deploy planned (3 of 42; 31–35 of 38–43), which an inventory has to explain — §4 |
+| E5 | No standing deployment credentials | Configuration inspection plus live OIDC sign-in | Credentials the platform holds per cloud; OIDC login step outcome; trust-policy decisions | 0 stored cloud credentials; every deploy signs in through OIDC; foreign subjects refused | **Done** (live half of S8 open) | 10/10 customer OIDC login steps succeeded, no client secret in any workflow — `docs/evaluation/oidc/REPORT.md`. S2, S7 PASS; S8 PASS (static) — `docs/evaluation/security/REPORT.md` |
+| E6 | Tenant boundaries hold | Cross-tenant negative tests: S1 (chatbot retrieval) and S10 (operator access) | Denied requests; canary leakage | Every cross-tenant request is refused or leaks nothing; each paired control succeeds | **Partial** (S10 Pass, S1 to do) | S10 **PASS** after the S10.5 fix: a connection check naming another operator's tenant is now refused (report regenerated 2026-10-17; the live Vercel copy carries the fix only once deployed). S1 not run (needs two tenants live at once) — `docs/evaluation/security/REPORT.md`. Its local stand-in SEC-RAG-01 **PASS**: the evaluated backend image, run as two tenants sharing one pgvector table, leaked nothing on 18 probes (answer, sources and the LLM's input) or 6 reindex checks, while the same probes caught a copy with the tenant filter removed — `docs/evaluation/rag-isolation/REPORT.md` |
+| E7 | RAG retrieves client knowledge | Fixed QA set over a fixed corpus (§7) | Expected-source rate: answers whose `sources` include the expected document | Defined before the run (rubric fixed in advance) | **To do** | — |
+| E8 | Answers are grounded | Same fixed QA set | Correctness and faithfulness scored against a pre-fixed rubric | Defined before the run | **To do** | — |
+| E9 | Unknown information is rejected | Unanswerable question set over the same corpus | Abstention rate; any fabricated answer counts as a failure | Defined before the run | **To do** | — |
+| E10 | Knowledge follows the document lifecycle | Canary test: ask before upload, after upload, after delete | Canary present in answer or `sources` at each stage | Absent → present → absent | **To do** | — |
+
+The rows that need a deployed chatbot (E1, E3, E4, E7–E10, S1, S4) are run by
+`scripts/evaluate-live.cjs`, one subcommand per row, in the order given in
+`docs/evaluation/live/RUNBOOK.md`. E7–E9 use the backend's own golden set and
+fixture corpus (`docs/evaluation/live/golden.json`, 19 cases) and are scored
+deterministically: expected source cited, expected facts present, abstention on
+unanswerable questions. Faithfulness and the three adversarial cases are scored
+by hand against the rubric recorded with the results.
+
+E7–E9 go beyond the original EA5 scope (§7), which deliberately avoided a
+RAG-quality study. They treat the deployed tenant as a black box, so they
+measure what the platform delivered to the customer, not the backend's
+internals. The construct threat in §10 applies: a weak result may be caused by
+the backend rather than the platform.
 
 Supporting propositions — that the deployed artefact functions equivalently
 across configurations (EA5) and that the onboarding interface is usable by its
@@ -207,6 +245,80 @@ once; Azure replicates into ACR between a targeted and a full apply. Stating the
 *before* running the campaign, and reporting whether they held, is stronger
 methodology than reporting the numbers alone.
 
+### Measured from the run history
+
+`scripts/evaluate-deployment-timings.cjs` archives every deploy and teardown run
+GitHub still holds: 105 runs, 143 attempts, June to October 2026. For each it
+keeps the jobs and steps, and what the job log said where the log survives
+(56 runs): Terraform's plan and the resources it touched, the vector store the
+run was given, and the error lines with credentials and account numbers removed.
+Runs are joined to the platform's deployments table where a row exists (34
+runs). The report is `docs/evaluation/deployment-timing/REPORT.md`; the archive,
+`runs.json`, only grows, so what was read from a log outlives GitHub's 90-day
+retention.
+
+Three choices keep the numbers honest:
+
+- **Runs of different code are not pooled.** A run's configuration version is
+  its workflow file and Terraform root at the commit it ran. The history holds
+  44 versions; anything pooled across them is labelled development history.
+- **Attempts are counted.** A run re-run from GitHub's interface keeps one id,
+  so final outcomes alone report 58 of 105 runs succeeding where 63 of 143
+  attempts did.
+- **Queue time starts with the attempt.** Measured from the run's creation,
+  re-runs show queues of up to 12.8 hours; measured correctly, GitHub's queue is
+  a median of 6 s and at most 13 s across all 143 attempts.
+
+Successful runs pooled across versions, as development history (median, with
+the interquartile range or, for n = 2, the range):
+
+| Operation | Cell | Succeeded | Run time (min) | Image replication | `terraform apply` |
+|---|---|---|---|---:|---:|
+| AWS first deploy | A2 pgvector | 10 of 21 runs | 10.3 (9.8–12.0) | 163 s | 442 s |
+| AWS first deploy | A1 Pinecone | 2 of 3 | 7.0 (6.9–7.0) | 169 s | 214 s |
+| Azure first deploy | B2 pgvector | 2 of 6 | 14.1 (8.5–19.7) | 58 s | 528 s, plus a 90 s wait |
+| AWS redeploy | A1, A2 | 7 of 7 | 1.9 (1.7–2.5) | 73 s | 1 s |
+| AWS teardown that removed a deployment | A1, A2 | 9 of 9 | 3.1 (0.4–3.3) | — | 158 s |
+| Azure teardown that removed a deployment | B2 | 2 of 3 | 14.9 (4.7–25.2) | — | 829 s |
+
+No B1 (Azure with Pinecone) run exists. The expectation stated above held where
+there is data: the managed database adds about four minutes to an AWS first
+deploy's apply (442 s against 214 s), and Azure's apply is the longest stage of
+any cell. A first deploy's time is almost all Terraform; a redeploy's is almost
+all image replication. `T5 − T0` and GitHub's run time agree to within seconds:
+the platform's record matches GitHub's conclusion in all 34 joined runs, the run
+is created about 1 s after Deploy, and the success callback is a step of the job,
+so `T5` lands about 2 s before the job ends.
+
+**Repeatability is not established by this history, but where it can be read it
+holds.** No version has five successful runs. Where two fresh deploys of one
+version both started from nothing, they planned the same resource set: 42
+resources twice at `23e1bfc+392f766`, 38 twice at `55143b8+2eade1e` (Pinecone).
+Of the four redeploys that ran the same version as the deploy before them,
+three planned no change. The fourth updated the docs-signer Lambda in place
+(`aws_lambda_function.docs_signer`, at `55143b8+2eade1e`), so that version was
+not idempotent; whether the current one is, the campaign below will show. The
+other three redeploys followed a code change, so their plans test nothing.
+
+**Teardowns removed less than the deploys created.** In every AWS teardown whose
+tenant's deploy log also survived, Terraform destroyed fewer resources than the
+deploy had planned to add: 3 of 42 on 31 August, 31–35 of 38–43 on 13 September.
+The teardown workflows at those commits run a full `terraform destroy`, with no
+`-target` and no `state rm`, so the difference is unexplained until an inventory
+is run (E4).
+
+Of the 47 runs that failed, 24 can no longer be classified because their logs
+expired. Of the rest: 11 configuration or platform defects, 6 credential or
+permission errors, 4 quota or limit errors, 1 account restriction (the AWS
+account could not create CloudFront until verified) and 1 cancelled.
+
+The controlled measurement is a **repeatability campaign**: ten redeploys of one
+tenant with version, inputs and image held fixed, recorded by
+`node scripts/evaluate-deployment-timings.cjs watch`, which archives each run as
+it finishes, checks the tenant's input fingerprint and polls `/api/health`
+throughout. Protocol and pass criteria: `docs/evaluation/live/RUNBOOK.md`,
+*Repeatability campaign*.
+
 ### Reliability sub-studies
 
 **Failure taxonomy.** Every non-succeeded run is classified from
@@ -258,7 +370,7 @@ test: `RUN_LOOKUP_GRACE_MS` (60 s) and `STALE_DEPLOYMENT_MS` (75 min: the longes
 `SECURITY.md` empirically verifiable?
 
 This is the axis that carries the most weight. `SECURITY.md` already documents
-a threat model, a credential inventory and six known limitations. The
+a threat model, a credential inventory and eighteen known limitations. The
 evaluation's job is to convert its *claims* into *executable pass/fail tests*.
 
 ### Test suite
@@ -319,6 +431,191 @@ Coverage is reported specifically for the modules on the credential path —
 of which already has a co-located test file. Whole-repo coverage percentage is
 a weak metric; coverage of the code that handles secrets is not.
 
+As of 18 October 2026 the configured scope stands at 98.06% of lines and
+93.49% of branches (909 tests). It was 91.28% and 89.22% in the 11 October
+snapshot in `docs/evaluation/automated`. The gain came from testing what
+was previously untested: the tenant-secrets route (0% → 100%) and
+`verifyConnection.ts` (16.66% → 100%).
+
+### Attack-matrix unit tests
+
+Instead of adding unrelated tests, each security property already under test
+was extended with adversarial variations. All of them run in `npm test`.
+
+| Property | Variations added | Where |
+|---|---|---|
+| Workflow injection | Command separator, `$( )`, backticks, pipe, line break, carriage return, NUL and oversized values, each appended to an otherwise valid value of every dispatched field, on both clouds | `src/lib/tenantInput.test.ts` |
+| GitHub OIDC | Expired and not-yet-valid tokens; lookalike, trailing-slash, `http` and Enterprise-style issuers; prefix-sharing audiences; repository near misses (case, fork, suffix, path); subject near misses (case, suffix, truncation, branch, pull request, fork); wrongly typed claims; two runs racing for one claim | `src/lib/deploymentSecrets.test.ts` |
+| Webhooks | Duplicate and concurrent terminal callbacks; ten malformed payloads (array, `null`, form-encoded, `__proto__`, wrong types); every backwards state transition; the secret in the wrong header, case or place | `src/app/api/deployments/[id]/status/route.test.ts` |
+| Secret storage | Truncated authentication tags, IVs of other lengths, a fourth blob segment, spliced ciphertexts, a flipped tag bit; key rotation; erasure of every encrypted column, read from the schema so a new one cannot be missed; no OAuth token stored at sign-in | `src/lib/crypto.test.ts`, `src/lib/tenantErasure.test.ts`, `src/auth.test.ts` |
+| Proxy perimeter | Paths that only resemble the two unauthenticated callback routes | `src/auth.test.ts` |
+
+Each table was first run against the code as committed. The workflow-injection
+table failed 61 of its 142 cases there, and the secret-storage table 7 of 21.
+Both led to the fixes listed under *Findings* below.
+
+### Local end-to-end scenarios (SEC-E2E-01 to 04)
+
+Four scenarios follow an attack end to end through the platform's own code
+path, stopping only where it would reach a cloud. Each pairs refused attacks
+with a control — the same operation by its legitimate owner, which must
+succeed — so a system that refused everything would fail. No cloud resource
+is created and nothing is sent to GitHub.
+
+| Scenario | Claim | Real application execution | Static policy analysis | Simulated cloud interaction |
+|---|---|:---:|:---:|:---:|
+| SEC-E2E-01 Cross-tenant authorization | An operator can act on their own tenants only; webhooks change a deployment only forward and only once | ● | | |
+| SEC-E2E-02 Document-access denial | Neither the control plane nor the docs-signer can read or list documents | | ● | ○ |
+| SEC-E2E-03 Cloud identity isolation | Tenant A's run cannot sign in to, or obtain the secrets of, tenant B | ● | ● | ● |
+| SEC-E2E-04 Workflow integrity | Dispatch inputs cannot run commands or rewrite another step's output | ● | | ○ |
+
+● primary method · ○ supporting element. *Real application execution* means
+the platform's code runs unmodified: server actions, API routes and SQL against
+PostgreSQL (PGlite, migrated with the production migrations), or the committed
+workflow scripts in bash with GitHub's flags and `$GITHUB_OUTPUT` semantics.
+*Static policy analysis* evaluates the CloudFormation, ARM and Terraform
+definitions with the IAM model shared with `scripts/evaluate-security.cjs`
+(`scripts/lib/security-model.cjs`). *Simulated cloud interaction* covers STS
+and Entra ID decisions, a local key standing in for GitHub's token signer, and
+cloud command-line tools replaced by stubs that record their arguments.
+
+Result (18 October 2026): all four pass — 151 of 151 attacks refused, 26 of
+26 controls succeeded, 164 tests. The runner searches the evidence for every
+fixture secret and eight credential patterns, and withholds and fails any
+record that contains one; none did. Figure 5.1
+(`docs/figures/thesis/fig-5-1-security-evidence-boundary`) shows the same
+method table as a grid.
+
+These are integration and simulation tests, not tests of a live cloud. The
+corresponding live evidence is S5 (forged requests to the deployed platform)
+and the recorded OIDC deployments.
+
+### Security mutation testing
+
+A passing test shows little unless it would fail if its control were removed.
+29 mutants were written by hand, each removing or weakening one control in the
+real source, template or workflow: an ownership condition, the one-active
+deployment index, a trust condition, an ExternalId, a policy action, a secrets
+release check, the workflow guards. A runner applies each mutant, runs the
+scenario meant to catch it, and restores the file, which it verifies byte for
+byte.
+
+Hand-written rather than generated mutants: a generic tool mutates arithmetic
+and literals, and its score would not say whether these claims are tested.
+
+| | Result |
+|---|---|
+| Mutants that must be killed | **26 / 26 killed** |
+| Layered mutants expected to survive | 3 / 3 survived |
+| Unexpected outcomes | none |
+
+The three survivors are evidence of defence in depth, not of blind spots. Each
+removes one of two independent controls; its paired mutant removes both and
+was killed:
+
+| Survives (one layer removed) | Still stopped by | Killed when both are removed |
+|---|---|---|
+| M08 — webhook's read check for a finished deployment | the conditional UPDATE | M10 |
+| M11 — docs-signer URL host check | a URL on record cannot be replaced | M12 |
+| M17 — platform may assume any `chatbot-client-*` role | the deployment role trusts GitHub only | M18 |
+
+### Concurrency under real PostgreSQL
+
+PGlite runs one statement at a time on one connection, so the races in
+SEC-E2E-01 and 03 interleave between statements but never inside one. They
+were repeated against PostgreSQL 16 in a local Docker container through a
+connection pool: 25 simultaneous requests per round, 20 rounds, READ COMMITTED.
+
+| Race | Rounds in which the guarantee broke |
+|---|---|
+| 25 redeploys of one tenant → exactly one deployment | 0 / 20 |
+| 25 terminal callbacks → exactly one applied | 0 / 20 |
+| 25 secrets claims → released to exactly one run | 0 / 20 |
+| 25 cross-tenant redeploys beside the owner's → none succeeds, the owner's does | 0 / 20 |
+
+Two measurements make the result more than an absence of failures:
+
+- **The requests overlapped.** Of 480 losing webhook callbacks, 479 passed the
+  route's read check and were refused only by the conditional UPDATE, after
+  waiting for the winner's row lock and re-checking its condition. Overlap
+  occurred in all 20 rounds.
+- **Negative control.** With the unique index dropped, the same redeploy race
+  started 25 deployments in every round. The index, not timing, is what
+  prevents duplicates.
+
+With zero failures in 20 rounds per race, the 95% upper bound on the per-round
+failure rate is about 15% (rule of three: 3/20). The bound is weak because the
+number of rounds is small; it tightens with `--rounds`. Each round is itself 25
+simultaneous attempts against one guarantee.
+
+### Targeted RAG cross-tenant privacy (SEC-RAG-01)
+
+S1 needs two tenants deployed at once, which the evaluation's free accounts do
+not allow, and it sees only what the model chose to say. SEC-RAG-01 runs the
+backend image every evaluated tenant ran (`d2885e23`) in local Docker as two
+tenants, `acme` and `acme-corp` (one slug extends the other, the hardest case
+for anything that scopes by prefix), and checks every question on three
+channels: the **answer**, the **sources** it cites, and the **prompt** the
+backend sent the LLM. The LLM is a local stub that records each request and
+answers by echoing its whole input, so a leak cannot hide behind a model's
+discretion. Object storage is a local S3 stub that records which bucket each
+tenant's credentials asked for.
+
+Isolation has two layers, and two layouts test them apart. In the platform's
+layout each tenant has its own vector store. In the shared layout both tenants
+sit in **one pgvector table**, so only the backend's own `WHERE tenant = …`
+filter separates them: the defence-in-depth layer, alone.
+
+| | Shared table | Separate databases |
+|---|---|---|
+| Controls: each tenant retrieves its own canary | 2 / 2 | 2 / 2 |
+| Probes: the peer's question, its canary sentence verbatim, `top_k` 10000, the peer's tenant named in the body, a prompt injection, a filter-injection string | 12 / 12 leak nothing | 6 / 6 (first three) |
+| A reindex naming the peer's tenant and bucket; one with a prefix that matches nothing; a deleted document's purge | peer's rows unchanged, own bucket only | same |
+| Negative control: the same probes against a copy whose query has the filter removed | **leak caught** on every channel | — |
+
+The result is a pass: with both tenants in one table, the tenant filter alone
+held against every probe, and the negative control shows the probes would have
+seen a leak. Three further results are within one tenant or latent, and are
+listed under *Findings*: vector ids that collide across tenants in a shared
+store, a caller-chosen reindex prefix that empties the tenant's own index, and
+backend images that carry the developer's local environment file.
+
+The test does not exercise Pinecone (cells A1 and B1), and its stand-ins are
+local: Postgres in Docker, a stub S3, a stub LLM.
+
+### Findings from these evaluations
+
+| Finding | Found by | Status |
+|---|---|---|
+| A line break in a tenant field (Azure region, LLM model, chatbot version, S3 prefix) added a line to `$GITHUB_OUTPUT`; in the Azure workflows it overrode `azure_subscription_id`, the subscription the run signs in to and deploys into | Attack matrix (61/142 failed); reproduced against the staged workflow by the SEC-E2E-04 harness | **Fixed** in three places: tenant input validation, a guard step in all four deploy and teardown workflows, and a check in both Azure config parsers. `SECURITY.md` #16 |
+| `decryptSecret` accepted an authentication tag truncated to 4 bytes, and ignored a fourth blob segment | Attack matrix (secret storage) | **Fixed**: a full 16-byte tag, a 12-byte IV and exactly three segments are required. `SECURITY.md` #17 |
+| The status webhook stores a `chatbotUrl` or `albDnsName` of any scheme and host; reindexing then sends a request there and returns part of the response | Reading the webhook while extending its tests | **Open**. `SECURITY.md` #18 |
+| A tenant ID that is not a UUID is refused by a database error rather than as *not found* | SEC-E2E-01 | Open, robustness only: the request is still refused and nothing is touched |
+| The backend image ships `/app/.env.local`, holding the developer's Vercel OIDC token (expired 13 September), and `/app/.vercel/`; the platform copies that image into every customer's registry | SEC-RAG-01, image provenance | **Open**: `ai-backend/.dockerignore` excludes `.env` only; the 17 October build carries the same files |
+| Vector ids (`<tenant>-<key>-<n>`) collide across tenants whose slugs extend one another, so in a shared store one tenant's reindex takes over the other's chunk | SEC-RAG-01, check I4 | Latent, integrity only: the row moves with its tenant column, and the platform never shares a store (docs-signer keys also start with a UUID) |
+| `/api/index` in the evaluated image takes `prefix` from the request body; a prefix that matches nothing purges the tenant's whole index | SEC-RAG-01, check I2 | Within one tenant; fixed in the backend working copy, not in any deployed image |
+| `top_k` on `/api/ask` has no upper bound | SEC-RAG-01, probe P3 | Open, within one tenant: one request pulls every chunk that clears the relevance gate into a single prompt |
+| AWS teardowns destroyed fewer resources than their deploys had created | Deployment-timing archive (§4) | Open until an E4 inventory explains it |
+| A same-version redeploy updated the docs-signer Lambda in place | Deployment-timing archive (§4) | Open: the redeploy campaign tests the current version |
+
+### Reproducing
+
+| Command | Runs | Evidence |
+|---|---|---|
+| `npm test` | Unit and attack-matrix tests | — |
+| `npm run test:coverage` | The same, with coverage | `coverage/` |
+| `npm run evaluate:security:e2e` | SEC-E2E-01 to 04 | `docs/evaluation/security-e2e/` |
+| `npm run evaluate:security:mutants` | Mutation testing, hand-written mutants (`-- --check` validates every anchor; `-- --generated` runs the generated mutants) | `docs/evaluation/security-mutation/` |
+| `npm run evaluate:security:concurrency` | PostgreSQL concurrency; needs Docker (`-- --parallel N --rounds N`) | `docs/evaluation/security-concurrency/` |
+| `npm run evaluate:rag-isolation` | SEC-RAG-01; needs Docker and the evaluated backend image (`-- --image <ref>` tests another build) | `docs/evaluation/rag-isolation/` |
+| `npm run evaluate:deployments -- extract` then `-- report` | Deployment timings from GitHub's run history; needs `GITHUB_PAT`, and `DATABASE_URL` for the join (`-- watch` records a campaign) | `docs/evaluation/deployment-timing/` |
+| `npm run evaluate:reproducibility` | Everything above that needs no credential, in a fresh clone with a stripped environment, compared with the archived evidence | `docs/evaluation/reproducibility/` |
+| `node scripts/thesis-figures/fig-5-1-security-evidence-boundary.cjs` | Figure 5.1, from the SEC-E2E results | `docs/figures/thesis/` |
+
+All run locally at no cost; the deployment-timing extraction only reads
+GitHub's API. On Windows SEC-E2E-04 takes about four minutes, almost all of it
+bash start-up; on Linux it takes seconds.
+
 ### Residual risk register
 
 The Known Limitations in `SECURITY.md` are re-presented as a risk table
@@ -338,6 +635,11 @@ deploy repository and GitHub as token issuer (Limitation #8).
 A before/after credential inventory makes the change measurable: count, per
 cloud, the values the platform holds that grant access to a customer account
 (before: AWS 0, Azure 1 per tenant; after: 0 and 0).
+
+The register also carries what the evaluation itself found (see *Findings*
+above): two vulnerabilities mitigated during the evaluation (`SECURITY.md` #16
+and #17) and one still open (#18). An evaluation that found real defects and
+reports one unresolved is more credible than one in which everything passes.
 
 ---
 
@@ -515,6 +817,15 @@ partial at best.
 
 Do this before starting the campaign, not after.
 
+**Status (18 October 2026).** Fix 1 is met without a schema change:
+`scripts/evaluate-deployment-timings.cjs` archives every run's jobs and steps
+from GitHub, which keeps them for as long as the run exists, and reads each log
+once before its 90-day retention ends (`watch` does so the moment a campaign run
+finishes). Fix 2 is met for every run whose log was read (53 of 105 runs), since
+the archive records the vector store the run was given, from its log; for the
+rest it falls back to the tenant's current row. Fix 3 is
+`node scripts/evaluate-live.cjs readiness`.
+
 ---
 
 ## 10. Threats to Validity
@@ -533,6 +844,35 @@ worth more than a defensive posture.
 - Failure classification (§4) and answer grounding (§7) are scored by the
   author. Rubrics are fixed in advance and raw data is tabulated in appendices,
   but no second rater is available.
+- The local security scenarios (§5) simulate cloud decisions. The IAM model
+  covers only the policy constructs the templates use, and throws on any other
+  rather than skipping it. It does not model SCPs, permission boundaries or
+  session policies, and Entra ID's matching is modelled as exact comparison of
+  issuer, subject and audience. Mutation testing shows the tests depend on each
+  modelled control. It cannot show the model agrees with AWS; validating it
+  against `iam:SimulateCustomPolicy` would.
+- SEC-E2E-04 runs the workflow scripts in Git Bash on Windows, with cloud CLIs
+  stubbed, not on a GitHub-hosted Ubuntu runner. The harness reproduces the
+  runner's bash flags and `$GITHUB_OUTPUT` rules and refuses any expression it
+  does not model, but a runner-specific difference could escape it.
+- The attack cases and the mutants were written by the same author as the code
+  they test. Mutation testing bounds this — every listed control is shown to be
+  tested — but it cannot reveal a control that is missing from both the code
+  and the list. The generated mutants remove the author's choice of mutants,
+  not of operators: they only weaken guards, query conditions and validators,
+  so a missing check or a wrong constant is outside their reach.
+- SEC-RAG-01 runs the deployed backend image against local stand-ins (Postgres
+  in Docker, a stub S3, a stub LLM), and separate databases on one server stand
+  in for separate database instances. It shows the absence of the leaks it
+  probes for, in pgvector only.
+- The deployment-timing history is the author's development: tenants were
+  created to test changes, so failures concentrate where the code was changing,
+  and a version's few runs were often minutes apart on one account. It describes
+  what happened, not a sampled population; the campaign is the controlled
+  measurement.
+- The reproducibility run removes the author's environment, not the machine:
+  it reuses the local npm cache (integrity-checked against the lockfile) and
+  Docker images from the local cache, pinned by id in its report.
 
 **External.**
 - One region per cloud; latency and quota behaviour differ elsewhere.
@@ -555,6 +895,10 @@ worth more than a defensive posture.
   significance testing between cells is reported only where the effect is large
   relative to variance; cloud-provider queue latency is outside the author's
   control and inflates variance in P1 and P2.
+- The concurrency evaluation's zero failures in 20 rounds bound the per-round
+  failure rate at about 15% (95%, rule of three), not at zero. The overlap
+  measurement and the negative control carry more of the argument than the
+  round count.
 
 ---
 
@@ -580,6 +924,7 @@ data collection above is known to be sufficient to produce them.
 | 13 | Cost scaling with tenant count | line, linear | EA4 |
 | 14 | `/api/ask` latency distribution | box plot, 4 cells | EA5 |
 | 15 | SUS score with published-corpus reference bands | bar + reference line | EA6 |
+| 16 | Evidence type of the local security scenarios (drawn as Fig. 5.1) | grid: scenario × system part | `docs/evaluation/security-e2e/results.json` |
 
 Figures 5, 6, 10 and 12 are the load-bearing ones — they correspond directly to
 C2, C3 and the cost claim.
@@ -611,7 +956,14 @@ needs 48 hours of elapsed time, and participants need scheduling. Both should be
 | Document | Relevance |
 |---|---|
 | `ARCHITECTURE.md` | System design; the claims EA3 tests |
-| `SECURITY.md` | Threat model, credential inventory, six known limitations |
+| `SECURITY.md` | Threat model, credential inventory, eighteen known limitations |
 | `DOCS.md` | Reference for routes, schema, workflows, cost model |
 | `CHATBOT-LOGIC.md` | Backend scope boundary constraining EA5 |
 | `CLIENT-DEPLOYMENT-GUIDE.md` | Operator-facing material used in EA6 |
+| `docs/evaluation/security/` | S1–S10 results, scanner output |
+| `docs/evaluation/security-e2e/` | SEC-E2E-01 to 04: every attack and control observed |
+| `docs/evaluation/security-mutation/` | Mutation testing of the security tests and harness, hand-written and generated |
+| `docs/evaluation/security-concurrency/` | Concurrency under real PostgreSQL |
+| `docs/evaluation/rag-isolation/` | SEC-RAG-01: cross-tenant retrieval against the deployed backend image |
+| `docs/evaluation/deployment-timing/` | Every deploy and teardown run, its stages and plans; repeatability campaigns |
+| `docs/evaluation/reproducibility/` | The clean reproducibility run and its comparison with the archive |

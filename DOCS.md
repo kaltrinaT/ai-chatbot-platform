@@ -201,9 +201,10 @@ An unfinished onboarding wizard: `ownerUserId`, `name`, `step`, `data` (jsonb). 
 3. Encrypt LLM API key — and the Pinecone key, if any — for DB storage
 
 4a. AWS path:
-    → AssumeRole into customer account (15-min session), sending the tenant's
-      sts:ExternalId — their trust policy conditions on it, so the role can only
-      be assumed for this tenant (see src/lib/awsTrust.ts)
+    → AssumeRole into the customer's onboarding role, chatbot-client-onboard-{slug}
+      (15-min session), sending the tenant's sts:ExternalId — its trust policy
+      conditions on it, so the role can only be assumed for this tenant, and it
+      can write this tenant's secrets and nothing else (see src/lib/awsTrust.ts)
     → Write LLM secret to customer's Secrets Manager: {slug}/llm-api-key
     → If Pinecone: also write {slug}/pinecone-api-key
     → Generate and write {slug}/docs-signer-secret, keeping an encrypted copy
@@ -459,7 +460,7 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 
 **AWS:**
 1. Received from form
-2. Platform calls `assumeTenantRole` → assumes customer's IAM role, sending the tenant's `sts:ExternalId`
+2. Platform calls `assumeTenantRole` → assumes the customer's write-only onboarding role, sending the tenant's `sts:ExternalId`
 3. `writeTenantSecret` stores key in customer's Secrets Manager as `{slug}/llm-api-key` (and `{slug}/pinecone-api-key` for Pinecone tenants)
 4. ARN stored in `tenants.llmSecretArn`
 5. ECS execution role reads it at task startup — key never touches platform disk after onboarding
@@ -472,7 +473,7 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 5. The container reads it from that Container App secret; Key Vault holds a durable copy the customer can see and rotate
 
 ### Cloud access
-- **AWS:** no credential is stored. The customer's setup stack creates a role that trusts GitHub's OIDC token for subject `repo:{owner}/{repo}:environment:tenant-{tenant id}`, used by every deploy, teardown and connection check, and the platform's account for onboarding only, conditioned on `sts:ExternalId` = the tenant ID ([`src/lib/awsTrust.ts`](src/lib/awsTrust.ts)). The platform's own AWS identity comes from the operator's `aws login` session, or from `PLATFORM_AWS_ROLE_ARN` on a host that signs its own OIDC token.
+- **AWS:** no credential is stored. The customer's setup stack creates two roles. The deployment role trusts GitHub's OIDC token for subject `repo:{owner}/{repo}:environment:tenant-{tenant id}`, used by every deploy, teardown and connection check, and nothing else. The onboarding role trusts the platform's account, conditioned on `sts:ExternalId` = the tenant ID, and may only create and update that tenant's secrets ([`src/lib/awsTrust.ts`](src/lib/awsTrust.ts)). The platform's own AWS identity comes from the operator's `aws login` session, or from `PLATFORM_AWS_ROLE_ARN` on a host that signs its own OIDC token.
 - **Azure:** no credential is received, stored or transmitted. The customer's setup deployment creates a managed identity with a federated credential trusting the same subject, built in [`src/lib/azureFederation.ts`](src/lib/azureFederation.ts) and [`src/lib/bootstrapLinks.ts`](src/lib/bootstrapLinks.ts).
 - The customer revokes the platform by deleting the setup stack (AWS), or the federated credential or resource group (Azure)
 
@@ -547,7 +548,7 @@ GitHub-side settings, which live in the repository rather than this file: the se
 | LLM secret store | Secrets Manager (pre-created during onboarding) | Key Vault (created by Terraform during deploy) |
 | LLM key flow | Written by platform → ARN stored → injected by ECS execution role | Encrypted in DB → passed to Terraform → written to Key Vault |
 | Docs storage | S3 bucket `chatbot-{slug}-docs` | Blob container `documents` in Storage Account |
-| Auth model | Deploys: GitHub OIDC federation into the customer's role, per-tenant environment subject. Onboarding only: STS AssumeRole with a per-tenant `sts:ExternalId`. Nothing stored | Workload identity federation, per-tenant GitHub environment subject; nothing stored |
+| Auth model | Deploys: GitHub OIDC federation into the customer's deployment role, per-tenant environment subject. Onboarding only: STS AssumeRole into a separate write-only role, with a per-tenant `sts:ExternalId`. Nothing stored | Workload identity federation, per-tenant GitHub environment subject; nothing stored |
 | Network | Public subnets, ALB, public IPs | Container Apps managed networking |
 | Terraform state | Customer's own bucket `tfstate-{slug}-{account}-{region}-an`, key `terraform.tfstate`, S3 lock file | Customer's own storage account `cbtf{slug}`, container `tfstate`, Entra ID only, blob lease |
 | Slug max length | 21 chars (the frontend target group name, `chatbot-{slug}-ui`, is capped at 32) | 18 chars (Key Vault name constraint) |
@@ -583,7 +584,7 @@ src/
     schema.ts                            # All table definitions and relations
   lib/
     aws.ts                               # Platform AWS identity, assumeTenantRole, writeTenantSecret
-    awsTrust.ts                          # Per-tenant ExternalId and the trust policy the wizard shows
+    awsTrust.ts                          # Per-tenant ExternalId, both roles' policies the wizard shows
     azure.ts                             # generateDocsSignerSecret (no Azure API calls)
     azureFederation.ts, githubOidc.ts    # The per-tenant OIDC subject both clouds trust
     bootstrapLinks.ts                    # One-click setup links and commands, both clouds
