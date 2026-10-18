@@ -64,12 +64,72 @@ describe("crypto", () => {
     expect(() => decryptSecret(encrypted)).toThrow();
   });
 
-  it("throws on a blob whose segments are non-hex text (passes the format check, fails at decode)", () => {
+  it("throws on a blob whose segments are non-hex text", () => {
     // Non-hex characters make Buffer.from(..., "hex") decode to 0 bytes
-    // rather than throwing, so this fails downstream — in createDecipheriv,
-    // as an invalid IV length — not at the "Invalid encrypted blob format"
-    // check, since all three colon-delimited segments are non-empty strings.
-    expect(() => decryptSecret("not-hex:not-hex:not-hex")).toThrow(/Invalid initialization vector/);
+    // rather than throwing, so it is the IV and tag length check that
+    // refuses this, before any decryption is attempted.
+    expect(() => decryptSecret("not-hex:not-hex:not-hex")).toThrow(/Invalid encrypted blob format/);
+  });
+
+  // Attack matrix — invalid ciphertext. Each variation starts from a real
+  // blob, so a refusal is the change's doing and not a broken fixture.
+  describe("a blob altered by someone with write access to the database", () => {
+    const parts = () => encryptSecret("sk-live-customer-key").split(":");
+
+    it.each([4, 8, 12, 15])("refuses the real tag truncated to %i bytes", (bytes) => {
+      const [iv, tag, ct] = parts();
+      expect(() => decryptSecret(`${iv}:${tag.slice(0, bytes * 2)}:${ct}`)).toThrow(
+        /Invalid encrypted blob format/,
+      );
+    });
+
+    it("refuses an IV of another length, even a prefix of the real one", () => {
+      const [iv, tag, ct] = parts();
+      expect(() => decryptSecret(`${iv.slice(0, 16)}:${tag}:${ct}`)).toThrow(/Invalid encrypted blob format/);
+      expect(() => decryptSecret(`${iv}00:${tag}:${ct}`)).toThrow(/Invalid encrypted blob format/);
+    });
+
+    it("refuses a blob with a fourth segment rather than ignoring it", () => {
+      const [iv, tag, ct] = parts();
+      expect(() => decryptSecret(`${iv}:${tag}:${ct}:${ct}`)).toThrow(/Invalid encrypted blob format/);
+    });
+
+    it("refuses one tenant's ciphertext spliced under another's IV and tag", () => {
+      const [ivA, tagA] = parts();
+      const [, , ctB] = encryptSecret("sk-other-tenant-key").split(":");
+      expect(() => decryptSecret(`${ivA}:${tagA}:${ctB}`)).toThrow();
+    });
+
+    it("refuses a flipped bit in the tag", () => {
+      const [iv, tag, ct] = parts();
+      const flipped = (parseInt(tag[0], 16) ^ 1).toString(16) + tag.slice(1);
+      expect(() => decryptSecret(`${iv}:${flipped}:${ct}`)).toThrow();
+    });
+
+    it("control: the unaltered blob still decrypts", () => {
+      const [iv, tag, ct] = parts();
+      expect(decryptSecret(`${iv}:${tag}:${ct}`)).toBe("sk-live-customer-key");
+    });
+  });
+
+  // Attack matrix — secret rotation. The platform has one key and no
+  // re-encryption step, so rotating PLATFORM_ENCRYPTION_KEY must make the old
+  // ciphertexts fail loudly rather than decrypt to something else.
+  describe("after PLATFORM_ENCRYPTION_KEY is rotated", () => {
+    it("refuses every blob written under the old key, and accepts new ones", () => {
+      const before = [encryptSecret("llm"), encryptSecret("pinecone"), encryptSecret("signer")];
+      process.env.PLATFORM_ENCRYPTION_KEY = "f".repeat(64);
+
+      for (const blob of before) expect(() => decryptSecret(blob)).toThrow();
+      expect(decryptSecret(encryptSecret("after"))).toBe("after");
+    });
+
+    it("refuses to fall back to the old key when the new one is malformed", () => {
+      const blob = encryptSecret("llm");
+      process.env.PLATFORM_ENCRYPTION_KEY = "f".repeat(63);
+
+      expect(() => decryptSecret(blob)).toThrow(/must be 32 bytes/);
+    });
   });
 
   it("rejects an empty-string plaintext because the empty ciphertext hex fails the blob-format check", () => {

@@ -84,6 +84,34 @@ on:
         default: ""
         description: "ARN of the customer's Pinecone key secret; empty for pgvector"
 
+# Dispatch inputs reach the scripts below only as these variables, never as
+# ${{ inputs.* }} inside a run: script. GitHub pastes an expression into the
+# script's source before bash parses it, so an input carrying a quote and a
+# command would run as code in a job that can mint this tenant's AWS
+# credentials. A variable's value is only ever data. Step outputs derived from
+# inputs follow the same rule through each step's own env:. The IN_ prefix
+# keeps these apart from variables the AWS CLI reads itself, such as
+# AWS_REGION, which the credentials steps rewrite partway through the job.
+env:
+  IN_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+  IN_TENANT_SLUG: ${{ inputs.tenant_slug }}
+  IN_AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+  IN_AWS_REGION: ${{ inputs.aws_region }}
+  IN_CHATBOT_VERSION: ${{ inputs.chatbot_version }}
+  IN_YOUR_ECR_IMAGE: ${{ inputs.your_ecr_image }}
+  IN_YOUR_FRONTEND_ECR_IMAGE: ${{ inputs.your_frontend_ecr_image }}
+  IN_S3_DOCS_PREFIX: ${{ inputs.s3_docs_prefix }}
+  IN_LLM_PROVIDER: ${{ inputs.llm_provider }}
+  IN_LLM_SECRET_ARN: ${{ inputs.llm_secret_arn }}
+  IN_LLM_MODEL: ${{ inputs.llm_model }}
+  IN_RETRIEVAL_MIN_SCORE: ${{ inputs.retrieval_min_score }}
+  IN_VECTOR_STORE: ${{ inputs.vector_store }}
+  IN_PINECONE_SECRET_ARN: ${{ inputs.pinecone_secret_arn }}
+  IN_DOMAIN: ${{ inputs.domain }}
+  IN_ACM_CERTIFICATE_ARN: ${{ inputs.acm_certificate_arn }}
+  IN_ENABLE_CDN: ${{ inputs.enable_cdn }}
+  IN_DOCS_SIGNER_SECRET_ARN: ${{ inputs.docs_signer_secret_arn }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -156,14 +184,31 @@ jobs:
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'running' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
             exit 1
           fi
           echo "Platform acknowledged the run-started callback."
 
-      - uses: actions/checkout@v4
+      # Dispatch inputs reach later steps as lines of $GITHUB_OUTPUT (the
+      # `echo "key=$value"` lines below). A line break inside one would start a
+      # second line there and set an output of the dispatcher's choosing,
+      # overriding one written earlier. The platform refuses such values when a
+      # tenant is created (src/lib/tenantInput.ts); this refuses them for a run
+      # dispatched any other way, or for a tenant created before that check.
+      - name: Refuse inputs containing line breaks
+        run: |
+          for name in $(compgen -e | grep '^IN_' || true); do
+            case "${!name}" in
+              *$'\n'*|*$'\r'*) echo "::error title=Invalid dispatch input::$name contains a line break."; exit 1 ;;
+            esac
+          done
+
+      # No later step pushes, so the job token is not left in .git/config.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # ─────────────────────────────────────────────────────────────
       # 1. Pull source image from the PLATFORM's ECR
@@ -175,7 +220,7 @@ jobs:
       # infra/platform/github-oidc). The customer's role is reached by a
       # separate sign-in in the next credentials step.
       - name: Configure AWS credentials (platform role via OIDC — for source ECR read)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
           role-session-name: platform-deploy-${{ github.run_id }}
@@ -189,12 +234,12 @@ jobs:
       # platform's images live in. deploy-tenant-azure.yml derives it the same way.
       - name: Pull source images (backend + frontend)
         run: |
-          SOURCE_REGISTRY=$(echo "${{ inputs.your_ecr_image }}" | cut -d/ -f1)
+          SOURCE_REGISTRY=$(echo "$IN_YOUR_ECR_IMAGE" | cut -d/ -f1)
           SOURCE_REGION=$(echo "$SOURCE_REGISTRY" | cut -d. -f4)
           aws ecr get-login-password --region "$SOURCE_REGION" \
             | docker login --username AWS --password-stdin "$SOURCE_REGISTRY"
-          docker pull "${{ inputs.your_ecr_image }}"
-          docker pull "${{ inputs.your_frontend_ecr_image }}"
+          docker pull "$IN_YOUR_ECR_IMAGE"
+          docker pull "$IN_YOUR_FRONTEND_ECR_IMAGE"
 
       # ─────────────────────────────────────────────────────────────
       # 2. Assume client deployment role, push image to client ECR
@@ -215,13 +260,28 @@ jobs:
       # role-duration-seconds stays at 3600 because the role's
       # MaxSessionDuration is one hour (see the bootstrap template).
       - name: Configure AWS credentials (client — tenant role via OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           aws-region: ${{ inputs.aws_region }}
           role-to-assume: ${{ inputs.deployment_role_arn }}
           role-session-name: deploy-${{ inputs.tenant_slug }}-${{ github.run_id }}
           role-duration-seconds: 3600
           unset-current-credentials: true
+
+      # Every role Terraform creates must carry the permissions boundary the
+      # bootstrap stack defines, and the deployment role is refused any role
+      # without it. A stack created before the boundary existed would fail the
+      # apply at its first CreateRole with an AccessDenied that names no cause,
+      # so check here, before anything is copied or created. Read-only.
+      - name: Find the runtime-role permissions boundary (update the bootstrap stack if this fails)
+        env:
+          BOUNDARY_ARN: arn:aws:iam::${{ inputs.aws_account_id }}:policy/chatbot-${{ inputs.tenant_slug }}-runtime-boundary
+        run: |
+          if ! err="$(aws iam get-policy --policy-arn "$BOUNDARY_ARN" 2>&1 >/dev/null)"; then
+            echo "::error title=Bootstrap stack out of date::$BOUNDARY_ARN was not found or is not readable. The tenant's bootstrap stack creates it: update the stack to the current template (the tenant page shows the command), then run this again. IAM said: $err"
+            exit 1
+          fi
+          echo "Permissions boundary $BOUNDARY_ARN exists."
 
       # Pushes are retried: a registry's network blips on its own (see the same
       # step in deploy-tenant-azure.yml), and a push is idempotent.
@@ -236,30 +296,30 @@ jobs:
             done
             return 1
           }
-          CLIENT_REGISTRY="${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com"
-          aws ecr get-login-password --region ${{ inputs.aws_region }} \
+          CLIENT_REGISTRY="${IN_AWS_ACCOUNT_ID}.dkr.ecr.${IN_AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password --region "$IN_AWS_REGION" \
             | docker login --username AWS --password-stdin "$CLIENT_REGISTRY"
 
           # Backend
-          BACKEND_REPO="${{ inputs.tenant_slug }}/chatbot"
+          BACKEND_REPO="${IN_TENANT_SLUG}/chatbot"
           aws ecr describe-repositories --repository-names "$BACKEND_REPO" \
-            --region ${{ inputs.aws_region }} \
+            --region "$IN_AWS_REGION" \
             || aws ecr create-repository --repository-name "$BACKEND_REPO" \
-                 --region ${{ inputs.aws_region }} \
+                 --region "$IN_AWS_REGION" \
                  --image-scanning-configuration scanOnPush=true
-          BACKEND_URI="$CLIENT_REGISTRY/$BACKEND_REPO:${{ inputs.chatbot_version }}"
-          docker tag "${{ inputs.your_ecr_image }}" "$BACKEND_URI"
+          BACKEND_URI="$CLIENT_REGISTRY/$BACKEND_REPO:${IN_CHATBOT_VERSION}"
+          docker tag "$IN_YOUR_ECR_IMAGE" "$BACKEND_URI"
           push "$BACKEND_URI"
 
           # Frontend (chat UI)
-          FRONTEND_REPO="${{ inputs.tenant_slug }}/chatbot-frontend"
+          FRONTEND_REPO="${IN_TENANT_SLUG}/chatbot-frontend"
           aws ecr describe-repositories --repository-names "$FRONTEND_REPO" \
-            --region ${{ inputs.aws_region }} \
+            --region "$IN_AWS_REGION" \
             || aws ecr create-repository --repository-name "$FRONTEND_REPO" \
-                 --region ${{ inputs.aws_region }} \
+                 --region "$IN_AWS_REGION" \
                  --image-scanning-configuration scanOnPush=true
-          FRONTEND_URI="$CLIENT_REGISTRY/$FRONTEND_REPO:${{ inputs.chatbot_version }}"
-          docker tag "${{ inputs.your_frontend_ecr_image }}" "$FRONTEND_URI"
+          FRONTEND_URI="$CLIENT_REGISTRY/$FRONTEND_REPO:${IN_CHATBOT_VERSION}"
+          docker tag "$IN_YOUR_FRONTEND_ECR_IMAGE" "$FRONTEND_URI"
           push "$FRONTEND_URI"
 
           echo "uri=$BACKEND_URI" >> "$GITHUB_OUTPUT"
@@ -276,7 +336,7 @@ jobs:
       # 1.11 or later: S3-native state locking (use_lockfile) is stable from
       # 1.11. Pinned exactly, to the version the configuration is validated
       # against.
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: 1.15.3
 
@@ -300,7 +360,7 @@ jobs:
         if: inputs.vector_store == 'pinecone'
         run: |
           key="$(aws secretsmanager get-secret-value \
-            --secret-id "${{ inputs.pinecone_secret_arn }}" \
+            --secret-id "$IN_PINECONE_SECRET_ARN" \
             --query SecretString --output text)"
           echo "::add-mask::$key"
           echo "key=$key" >> "$GITHUB_OUTPUT"
@@ -321,25 +381,28 @@ jobs:
           # means no Pinecone resources are actually created and this value
           # is never used for anything real.
           TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key || 'unused' }}
+          IMAGE_URI: ${{ steps.client_image.outputs.uri }}
+          FRONTEND_URI: ${{ steps.client_image.outputs.frontend_uri }}
+          EXTRA_CORS_ORIGIN: ${{ vars.EXTRA_CORS_ORIGIN }}
         run: |
           terraform apply -auto-approve \
-            -var "tenant_slug=${{ inputs.tenant_slug }}" \
-            -var "aws_region=${{ inputs.aws_region }}" \
-            -var "image_uri=${{ steps.client_image.outputs.uri }}" \
-            -var "frontend_image_uri=${{ steps.client_image.outputs.frontend_uri }}" \
-            -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
-            -var "llm_provider=${{ inputs.llm_provider }}" \
-            -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
-            -var "llm_model=${{ inputs.llm_model }}" \
-            -var "retrieval_min_score=${{ inputs.retrieval_min_score }}" \
-            -var "vector_store=${{ inputs.vector_store }}" \
-            -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
-            -var "domain=${{ inputs.domain }}" \
-            -var "acm_certificate_arn=${{ inputs.acm_certificate_arn }}" \
-            -var "enable_cdn=${{ inputs.enable_cdn }}" \
-            -var "docs_signer_secret_arn=${{ inputs.docs_signer_secret_arn }}" \
+            -var "tenant_slug=${IN_TENANT_SLUG}" \
+            -var "aws_region=${IN_AWS_REGION}" \
+            -var "image_uri=${IMAGE_URI}" \
+            -var "frontend_image_uri=${FRONTEND_URI}" \
+            -var "s3_docs_prefix=${IN_S3_DOCS_PREFIX}" \
+            -var "llm_provider=${IN_LLM_PROVIDER}" \
+            -var "llm_secret_arn=${IN_LLM_SECRET_ARN}" \
+            -var "llm_model=${IN_LLM_MODEL}" \
+            -var "retrieval_min_score=${IN_RETRIEVAL_MIN_SCORE}" \
+            -var "vector_store=${IN_VECTOR_STORE}" \
+            -var "pinecone_secret_arn=${IN_PINECONE_SECRET_ARN}" \
+            -var "domain=${IN_DOMAIN}" \
+            -var "acm_certificate_arn=${IN_ACM_CERTIFICATE_ARN}" \
+            -var "enable_cdn=${IN_ENABLE_CDN}" \
+            -var "docs_signer_secret_arn=${IN_DOCS_SIGNER_SECRET_ARN}" \
             -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
-            -var "extra_cors_origin=${{ vars.EXTRA_CORS_ORIGIN }}"
+            -var "extra_cors_origin=${EXTRA_CORS_ORIGIN}"
 
       # The one piece of tenant infrastructure Terraform cannot express here.
       #
@@ -367,14 +430,14 @@ jobs:
           aws lambda remove-permission \
             --function-name "$FN" \
             --statement-id "$SID" \
-            --region "${{ inputs.aws_region }}" 2>/dev/null || true
+            --region "$IN_AWS_REGION" 2>/dev/null || true
           aws lambda add-permission \
             --function-name "$FN" \
             --statement-id "$SID" \
             --action lambda:InvokeFunction \
             --principal '*' \
             --invoked-via-function-url \
-            --region "${{ inputs.aws_region }}" > /dev/null
+            --region "$IN_AWS_REGION" > /dev/null
           echo "Granted lambda:InvokeFunction via function URL on $FN."
 
       - name: Read Terraform outputs
@@ -389,17 +452,22 @@ jobs:
       # if PLATFORM_BASE_URL is unreachable or the POST is otherwise lost,
       # the platform's self-heal reconciliation recovers these from this
       # artifact instead of losing them until the next redeploy.
+      #
+      # jq writes the JSON, quoting every value, so an output containing a
+      # quote stays one string instead of reshaping what the platform reads.
       - name: Upload deployment outputs
         if: success()
+        env:
+          CHATBOT_URL: ${{ steps.tf.outputs.chatbot_url }}
+          ALB_DNS_NAME: ${{ steps.tf.outputs.alb_dns_name }}
+          DOCS_SIGNER_URL: ${{ steps.tf.outputs.docs_signer_url }}
         run: |
-          cat > outputs.json <<EOF
-          {
-            "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
-            "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
-            "docsSignerUrl": "${{ steps.tf.outputs.docs_signer_url }}"
-          }
-          EOF
-      - uses: actions/upload-artifact@v4
+          jq -n \
+            --arg chatbotUrl "$CHATBOT_URL" \
+            --arg albDnsName "$ALB_DNS_NAME" \
+            --arg docsSignerUrl "$DOCS_SIGNER_URL" \
+            '$ARGS.named' > outputs.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: success()
         with:
           name: deployment-outputs-${{ inputs.deployment_id }}
@@ -416,24 +484,19 @@ jobs:
       # callback into an actively wrong status. The annotation surfaces it at
       # the top of the run instead, and the tenant page's poller repairs the
       # row from the run's real conclusion regardless.
+      # The same outputs as the artifact, plus the run's identity.
       - name: Notify platform — success
         if: success()
         run: |
-          cat > /tmp/callback.json <<EOF
-          {
-            "status": "succeeded",
-            "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
-            "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
-            "docsSignerUrl": "${{ steps.tf.outputs.docs_signer_url }}",
-            "githubRunId": "${{ github.run_id }}",
-            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          }
-          EOF
+          jq \
+            --arg githubRunId "${{ github.run_id }}" \
+            --arg githubRunUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{status: "succeeded"} + . + $ARGS.named' outputs.json > /tmp/callback.json
           code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'succeeded' to PLATFORM_BASE_URL — the deploy worked but the platform was not told. $(head -c 300 /tmp/callback.out)"
           else
@@ -455,7 +518,7 @@ jobs:
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'failed' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
           fi

@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const KEY_LENGTH = 32;
+const TAG_LENGTH = 16;
 
 function getKey(): Buffer {
   const raw = process.env.PLATFORM_ENCRYPTION_KEY;
@@ -31,12 +32,21 @@ export function encryptSecret(plaintext: string): string {
 
 export function decryptSecret(blob: string): string {
   const key = getKey();
-  const [ivHex, tagHex, ctHex] = blob.split(":");
-  if (!ivHex || !tagHex || !ctHex) {
+  const parts = blob.split(":");
+  const [ivHex, tagHex, ctHex] = parts;
+  if (parts.length !== 3 || !ivHex || !tagHex || !ctHex) {
     throw new Error("Invalid encrypted blob format.");
   }
-  const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, "hex"));
-  decipher.setAuthTag(Buffer.from(tagHex, "hex"));
+  const iv = Buffer.from(ivHex, "hex");
+  const tag = Buffer.from(tagHex, "hex");
+  // GCM checks only as many tag bytes as it is given, so a blob carrying the
+  // first 4 bytes of a real tag would still decrypt — and a forger would need
+  // 2^32 guesses instead of 2^128. encryptSecret always writes the full tag.
+  if (iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH) {
+    throw new Error("Invalid encrypted blob format.");
+  }
+  const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
+  decipher.setAuthTag(tag);
   const plaintext = Buffer.concat([
     decipher.update(Buffer.from(ctHex, "hex")),
     decipher.final(),

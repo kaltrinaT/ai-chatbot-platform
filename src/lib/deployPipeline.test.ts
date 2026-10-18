@@ -25,6 +25,7 @@ type Job = {
 };
 type Workflow = {
   on: { workflow_dispatch: { inputs: Record<string, { required?: boolean }> } };
+  env?: Record<string, string>;
   jobs: Record<string, Job>;
 };
 
@@ -200,6 +201,25 @@ describe.each(TENANT_WORKFLOWS)("%s — bound to one tenant", (file) => {
 // All four share one group name, so a deploy and a teardown of the same tenant
 // queue behind each other on either cloud, and a running apply is never
 // cancelled halfway.
+// GitHub pastes an expression into a run: script's source before bash parses
+// it, so a dispatch input there, or a step output derived from one, is code
+// injection for anyone able to dispatch the workflow, in a job that can mint
+// the tenant's cloud token. Such values reach a script through env: instead,
+// where they are only ever data.
+describe.each(TENANT_WORKFLOWS)("%s — no dispatch value pasted into a script", (file) => {
+  const { job } = workflow(file);
+
+  it("expands no input or step output inside a run: script", () => {
+    const pasted = job.steps.flatMap((step) =>
+      [...((step as Step & { run?: string }).run ?? "").matchAll(/\$\{\{\s*([^}]*?)\s*\}\}/g)]
+        .map((m) => m[1])
+        .filter((expr) => /\binputs\.|\bsteps\.[\w-]+\.outputs\./.test(expr))
+        .map((expr) => `${step.name}: ${expr}`),
+    );
+    expect(pasted).toEqual([]);
+  });
+});
+
 describe.each(WORKFLOWS)("%s — one run per tenant at a time", (file) => {
   it("joins the tenant's shared concurrency group without cancelling a running apply", () => {
     expect(workflow(file).job.concurrency).toEqual({
@@ -350,6 +370,42 @@ describe("verify-tenant-aws.yml — finds the state bucket", () => {
   });
 });
 
+// Every role a deploy creates must carry the bootstrap stack's permissions
+// boundary (RuntimeRoleBoundary in infra/bootstrap/aws/tenant-bootstrap.yaml).
+// A stack that predates it fails the first CreateRole with an AccessDenied
+// naming no cause, so both the check and the deploy look for it by name first.
+describe.each([
+  ["deploy-tenant.yml", "${{ inputs.aws_account_id }}"],
+  ["verify-tenant-aws.yml", "${{ steps.identity.outputs.account }}"],
+])("%s — finds the runtime-role permissions boundary", (file, account) => {
+  const { job } = workflow(file);
+  const index = job.steps.findIndex((s) => s.name?.startsWith("Find the runtime-role permissions boundary"));
+  const step = job.steps[index] as Step & { run?: string };
+
+  it("asks IAM for the boundary Terraform attaches, by its exact ARN", () => {
+    expect(step?.env?.BOUNDARY_ARN).toBe(
+      `arn:aws:iam::${account}:policy/chatbot-\${{ inputs.tenant_slug }}-runtime-boundary`,
+    );
+    expect(step.run).toContain('aws iam get-policy --policy-arn "$BOUNDARY_ARN"');
+  });
+
+  it("runs signed in as the customer's role", () => {
+    const signIn = job.steps.findIndex((s) => s.with?.["role-to-assume"] === "${{ inputs.deployment_role_arn }}");
+    expect(signIn).toBeGreaterThanOrEqual(0);
+    expect(index).toBeGreaterThan(signIn);
+  });
+});
+
+describe("deploy-tenant.yml — checks the boundary before changing anything", () => {
+  it("runs the check before images are copied or Terraform runs", () => {
+    const names = workflow("deploy-tenant.yml").job.steps.map((s) => s.name ?? s.uses ?? "");
+    const check = names.findIndex((n) => n.startsWith("Find the runtime-role permissions boundary"));
+
+    expect(check).toBeLessThan(names.indexOf("Replicate images to client ECR"));
+    expect(check).toBeLessThan(names.indexOf("Terraform apply"));
+  });
+});
+
 describe("drizzle/0015 — one active deployment per tenant", () => {
   it("adds the partial unique index and does nothing else", () => {
     const statements = source("drizzle/0015_one_active_deployment_per_tenant.sql")
@@ -475,7 +531,8 @@ describe.each(["deploy-tenant-azure.yml", "destroy-tenant-azure.yml"])(
 
     it("asks the platform with a token minted for the platform's own audience", () => {
       expect(fetchStep?.env?.AUDIENCE).toBe(PLATFORM_SECRETS_AUDIENCE);
-      expect(fetchStep?.run).toContain("/api/deployments/${{ inputs.deployment_id }}/secrets");
+      expect(parsed.env?.IN_DEPLOYMENT_ID).toBe("${{ inputs.deployment_id }}");
+      expect(fetchStep?.run).toContain("/api/deployments/${IN_DEPLOYMENT_ID}/secrets");
     });
 
     // $GITHUB_ENV would hand the values to every later step, third-party

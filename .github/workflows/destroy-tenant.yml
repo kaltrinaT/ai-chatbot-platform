@@ -60,6 +60,24 @@ on:
         type: string
         default: ""
 
+# Dispatch inputs reach the scripts below only as these variables, never as
+# ${{ inputs.* }} inside a run: script — see deploy-tenant.yml for why. The
+# IN_ prefix keeps them apart from variables the AWS CLI reads itself.
+env:
+  IN_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+  IN_TENANT_SLUG: ${{ inputs.tenant_slug }}
+  IN_AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+  IN_AWS_REGION: ${{ inputs.aws_region }}
+  IN_CHATBOT_VERSION: ${{ inputs.chatbot_version }}
+  IN_S3_DOCS_PREFIX: ${{ inputs.s3_docs_prefix }}
+  IN_LLM_PROVIDER: ${{ inputs.llm_provider }}
+  IN_LLM_SECRET_ARN: ${{ inputs.llm_secret_arn }}
+  IN_LLM_MODEL: ${{ inputs.llm_model }}
+  IN_VECTOR_STORE: ${{ inputs.vector_store }}
+  IN_PINECONE_SECRET_ARN: ${{ inputs.pinecone_secret_arn }}
+  IN_DOMAIN: ${{ inputs.domain }}
+  IN_DOCS_SIGNER_SECRET_ARN: ${{ inputs.docs_signer_secret_arn }}
+
 jobs:
   destroy:
     runs-on: ubuntu-latest
@@ -113,13 +131,30 @@ jobs:
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'running' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      # Dispatch inputs reach later steps as lines of $GITHUB_OUTPUT (the
+      # `echo "key=$value"` lines below). A line break inside one would start a
+      # second line there and set an output of the dispatcher's choosing,
+      # overriding one written earlier. The platform refuses such values when a
+      # tenant is created (src/lib/tenantInput.ts); this refuses them for a run
+      # dispatched any other way, or for a tenant created before that check.
+      - name: Refuse inputs containing line breaks
+        run: |
+          for name in $(compgen -e | grep '^IN_' || true); do
+            case "${!name}" in
+              *$'\n'*|*$'\r'*) echo "::error title=Invalid dispatch input::$name contains a line break."; exit 1 ;;
+            esac
+          done
+
+      # No later step pushes, so the job token is not left in .git/config.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # Teardown now touches the platform's AWS account not at all. It used to
       # assume a platform role purely to chain into the customer's; with the
@@ -128,7 +163,7 @@ jobs:
       # symmetry. The Terraform state is in the customer's own account, in the
       # bucket their bootstrap stack creates, and is reached as their role.
       - name: Configure AWS credentials (client — tenant role via OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           aws-region: ${{ inputs.aws_region }}
           role-to-assume: ${{ inputs.deployment_role_arn }}
@@ -136,7 +171,7 @@ jobs:
           role-duration-seconds: 3600
 
       # Same version as deploy-tenant.yml, for the same reason.
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: 1.15.3
 
@@ -157,7 +192,7 @@ jobs:
         if: inputs.vector_store == 'pinecone'
         run: |
           key="$(aws secretsmanager get-secret-value \
-            --secret-id "${{ inputs.pinecone_secret_arn }}" \
+            --secret-id "$IN_PINECONE_SECRET_ARN" \
             --query SecretString --output text)"
           echo "::add-mask::$key"
           echo "key=$key" >> "$GITHUB_OUTPUT"
@@ -192,20 +227,20 @@ jobs:
         env:
           TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key || 'unused' }}
         run: |
-          CLIENT_REGISTRY="${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com"
+          CLIENT_REGISTRY="${IN_AWS_ACCOUNT_ID}.dkr.ecr.${IN_AWS_REGION}.amazonaws.com"
           terraform destroy -auto-approve \
-            -var "tenant_slug=${{ inputs.tenant_slug }}" \
-            -var "aws_region=${{ inputs.aws_region }}" \
-            -var "image_uri=$CLIENT_REGISTRY/${{ inputs.tenant_slug }}/chatbot:${{ inputs.chatbot_version }}" \
-            -var "frontend_image_uri=$CLIENT_REGISTRY/${{ inputs.tenant_slug }}/chatbot-frontend:${{ inputs.chatbot_version }}" \
-            -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
-            -var "llm_provider=${{ inputs.llm_provider }}" \
-            -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
-            -var "llm_model=${{ inputs.llm_model }}" \
-            -var "vector_store=${{ inputs.vector_store }}" \
-            -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
-            -var "domain=${{ inputs.domain }}" \
-            -var "docs_signer_secret_arn=${{ inputs.docs_signer_secret_arn }}" \
+            -var "tenant_slug=${IN_TENANT_SLUG}" \
+            -var "aws_region=${IN_AWS_REGION}" \
+            -var "image_uri=$CLIENT_REGISTRY/${IN_TENANT_SLUG}/chatbot:${IN_CHATBOT_VERSION}" \
+            -var "frontend_image_uri=$CLIENT_REGISTRY/${IN_TENANT_SLUG}/chatbot-frontend:${IN_CHATBOT_VERSION}" \
+            -var "s3_docs_prefix=${IN_S3_DOCS_PREFIX}" \
+            -var "llm_provider=${IN_LLM_PROVIDER}" \
+            -var "llm_secret_arn=${IN_LLM_SECRET_ARN}" \
+            -var "llm_model=${IN_LLM_MODEL}" \
+            -var "vector_store=${IN_VECTOR_STORE}" \
+            -var "pinecone_secret_arn=${IN_PINECONE_SECRET_ARN}" \
+            -var "domain=${IN_DOMAIN}" \
+            -var "docs_signer_secret_arn=${IN_DOCS_SIGNER_SECRET_ARN}" \
             -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
 
       # Created imperatively by deploy-tenant.yml, not Terraform-managed —
@@ -213,10 +248,10 @@ jobs:
       # that never got this far in a deploy won't have them.
       - name: Delete ECR repositories
         run: |
-          aws ecr delete-repository --region ${{ inputs.aws_region }} \
-            --repository-name "${{ inputs.tenant_slug }}/chatbot" --force || true
-          aws ecr delete-repository --region ${{ inputs.aws_region }} \
-            --repository-name "${{ inputs.tenant_slug }}/chatbot-frontend" --force || true
+          aws ecr delete-repository --region "$IN_AWS_REGION" \
+            --repository-name "${IN_TENANT_SLUG}/chatbot" --force || true
+          aws ecr delete-repository --region "$IN_AWS_REGION" \
+            --repository-name "${IN_TENANT_SLUG}/chatbot-frontend" --force || true
 
       # Written directly by the platform (writeTenantSecret), not Terraform
       # resources — vector-db-url IS Terraform-managed and already gone via
@@ -224,15 +259,15 @@ jobs:
       # for vector_store = pinecone.
       - name: Delete platform-written secrets
         run: |
-          aws secretsmanager delete-secret --region ${{ inputs.aws_region }} \
-            --secret-id "${{ inputs.tenant_slug }}/llm-api-key" \
+          aws secretsmanager delete-secret --region "$IN_AWS_REGION" \
+            --secret-id "${IN_TENANT_SLUG}/llm-api-key" \
             --force-delete-without-recovery || true
-          aws secretsmanager delete-secret --region ${{ inputs.aws_region }} \
-            --secret-id "${{ inputs.tenant_slug }}/docs-signer-secret" \
+          aws secretsmanager delete-secret --region "$IN_AWS_REGION" \
+            --secret-id "${IN_TENANT_SLUG}/docs-signer-secret" \
             --force-delete-without-recovery || true
-          if [ "${{ inputs.vector_store }}" = "pinecone" ]; then
-            aws secretsmanager delete-secret --region ${{ inputs.aws_region }} \
-              --secret-id "${{ inputs.tenant_slug }}/pinecone-api-key" \
+          if [ "$IN_VECTOR_STORE" = "pinecone" ]; then
+            aws secretsmanager delete-secret --region "$IN_AWS_REGION" \
+              --secret-id "${IN_TENANT_SLUG}/pinecone-api-key" \
               --force-delete-without-recovery || true
           fi
 
@@ -247,9 +282,9 @@ jobs:
           {
             echo "### Chatbot infrastructure removed"
             echo ""
-            echo "Still in AWS account \`${{ inputs.aws_account_id }}\`, and yours to remove:"
+            echo "Still in AWS account \`${IN_AWS_ACCOUNT_ID}\`, and yours to remove:"
             echo ""
-            echo "- The bootstrap stack \`chatbot-bootstrap-${{ inputs.tenant_slug }}\`. Deleting it revokes this platform's access to the account."
+            echo "- The bootstrap stack \`chatbot-bootstrap-${IN_TENANT_SLUG}\`. Deleting it revokes this platform's access to the account."
             echo "- The Terraform state bucket \`$STATE_BUCKET\`, which the stack keeps on purpose. Empty and delete it once you no longer need the state."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -267,7 +302,7 @@ jobs:
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'succeeded' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
           fi
@@ -287,7 +322,7 @@ jobs:
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'failed' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
           fi

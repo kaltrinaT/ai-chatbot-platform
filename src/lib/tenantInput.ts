@@ -11,8 +11,19 @@
  * is trustworthy; the shared copy only moves the complaint earlier.
  */
 import { z } from "zod";
+import { AWS_DEPLOY_ROLE_PREFIX } from "@/lib/awsTrust";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Every field below that reaches a deploy is written by the workflows onto a
+// line of $GITHUB_OUTPUT (`echo "key=$value"`). A line break inside a value
+// starts a new line there, which sets an output of the attacker's choosing and
+// overrides one written before it — the run's subscription ID, say. Free-text
+// fields are therefore held to the characters their cloud allows, which never
+// include a line break or a shell metacharacter.
+const IMAGE_TAG_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
+const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
+const AZURE_REGION_RE = /^[a-z][a-z0-9]{1,39}$/;
 
 // ── Shared fields ─────────────────────────────────────────────────────
 const SharedInput = z.object({
@@ -36,9 +47,13 @@ const SharedInput = z.object({
       /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
       "Lowercase letters, numbers, and hyphens only; cannot start or end with a hyphen"
     ),
-  chatbotVersion: z.string().min(1).default("latest"),
+  chatbotVersion: z
+    .string()
+    .regex(IMAGE_TAG_RE, "Must be an image tag: letters, numbers, '.', '_' and '-', up to 128 characters")
+    .default("latest"),
   domain: z
     .string()
+    .max(253, "Must be 253 characters or fewer")
     .refine(
       (v) => v === "" || /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/.test(v),
       "Must be a valid hostname (e.g. chat.example.com) — no https:// or trailing slash"
@@ -48,7 +63,10 @@ const SharedInput = z.object({
     message: "Select a provider",
   }),
   llmApiKey: z.string().min(10, "API key looks too short"),
-  llmModel: z.string().optional(),
+  llmModel: z
+    .string()
+    .regex(MODEL_ID_RE, "Must be a model ID, such as gpt-4o-mini or meta-llama/llama-3.3-70b-instruct:free")
+    .optional(),
   vectorStore: z.enum(["pinecone", "pgvector"]).default("pinecone"),
   // Required only for vectorStore = "pinecone"; enforced by the refine below.
   pineconeApiKey: z.string().optional(),
@@ -72,10 +90,22 @@ const AwsInput = SharedInput.extend({
     .regex(/^[a-z]{2}-[a-z]+-[0-9]$/, "Must be a valid AWS region (e.g. us-east-1)"),
   deploymentRoleArn: z
     .string()
-    .regex(/^arn:aws:iam::\d{12}:role\/.+$/, "Must be a valid IAM role ARN"),
+    // IAM's own character set for role paths and names.
+    .regex(/^arn:aws:iam::\d{12}:role\/[\w+=,.@/-]{1,512}$/, "Must be a valid IAM role ARN")
+    // Onboarding derives the customer's onboarding role from this name, and
+    // that is the only role the platform may assume (see awsTrust.ts).
+    .refine(
+      (v) => v.includes(`:role/${AWS_DEPLOY_ROLE_PREFIX}`),
+      `The role name must start with ${AWS_DEPLOY_ROLE_PREFIX}, as the setup stack names it`,
+    ),
   s3DocsPrefix: z
     .string()
     .refine((v) => !v.startsWith("/"), "Must not start with a leading slash")
+    // S3's characters that are safe in a key without encoding.
+    .refine(
+      (v) => /^[A-Za-z0-9!_.*'()/-]{0,256}$/.test(v),
+      "Letters, numbers, '/' and !_.*'()- only, up to 256 characters",
+    )
     .optional(),
   // Optional, but it is the only thing that gets a tenant TLS: without it the
   // ALB listens on port 80 only and every question and answer crosses the
@@ -83,7 +113,7 @@ const AwsInput = SharedInput.extend({
   acmCertificateArn: z
     .string()
     .refine(
-      (v) => v === "" || /^arn:aws:acm:[a-z0-9-]+:\d{12}:certificate\/.+$/.test(v),
+      (v) => v === "" || /^arn:aws:acm:[a-z0-9-]+:\d{12}:certificate\/[A-Za-z0-9-]{1,128}$/.test(v),
       "Must be a valid ACM certificate ARN (arn:aws:acm:REGION:ACCOUNT:certificate/ID)",
     )
     .optional(),
@@ -106,7 +136,10 @@ const AzureInput = SharedInput.extend({
   azureSubscriptionId: azureUuid("Subscription ID"),
   azureTenantId: azureUuid("Azure AD Tenant ID"),
   azureClientId: azureUuid("Client ID"),
-  azureRegion: z.string().min(1, "Required"),
+  azureRegion: z
+    .string()
+    .min(1, "Required")
+    .regex(AZURE_REGION_RE, "Must be a region name as Azure lists it, e.g. swedencentral"),
 });
 
 // The Pinecone key is the customer's own, so it is mandatory when they pick

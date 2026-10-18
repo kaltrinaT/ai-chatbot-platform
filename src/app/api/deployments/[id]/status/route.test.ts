@@ -41,6 +41,9 @@ import { db } from "@/db";
 import { deployments, tenants } from "@/db/schema";
 import { POST } from "./route";
 
+// db is the mock above; this view of it exposes the vi.fn() properties.
+const mockedDb = db as unknown as Record<"update", ReturnType<typeof vi.fn>>;
+
 const SECRET = "s3cr3t-webhook-value";
 
 function makeRequest(opts: { headers?: Record<string, string>; body?: unknown; rawBody?: string }) {
@@ -60,7 +63,7 @@ function callRoute(opts: Parameters<typeof makeRequest>[0]) {
 /** Each db.update() call gets its own fresh `.set` mock (see updateSetWhereChain);
  *  this reads back the arguments a specific call (0-indexed) passed to `.set()`. */
 function setArgsForUpdateCall(callIndex: number) {
-  return db.update.mock.results[callIndex].value.set.mock.calls[0][0];
+  return mockedDb.update.mock.results[callIndex].value.set.mock.calls[0][0];
 }
 
 describe("POST /api/deployments/[id]/status", () => {
@@ -154,7 +157,7 @@ describe("POST /api/deployments/[id]/status", () => {
 
     it("targets the deployments table for the first update", async () => {
       await callRoute({ body: { status: "running" } });
-      expect(db.update.mock.calls[0][0]).toBe(deployments);
+      expect(mockedDb.update.mock.calls[0][0]).toBe(deployments);
     });
   });
 
@@ -280,7 +283,7 @@ describe("POST /api/deployments/[id]/status", () => {
 
       expect(res.status).toBe(200);
       expect(db.update).toHaveBeenCalledTimes(2);
-      expect(db.update.mock.calls[1][0]).toBe(tenants);
+      expect(mockedDb.update.mock.calls[1][0]).toBe(tenants);
       expect(setArgsForUpdateCall(1)).toMatchObject({ chatbotUrl: "https://chat.acme.com" });
     });
 
@@ -332,7 +335,7 @@ describe("POST /api/deployments/[id]/status", () => {
       await callRoute({ body: { status: "succeeded" } });
 
       expect(db.update).toHaveBeenCalledTimes(2);
-      expect(db.update.mock.calls[1][0]).toBe(tenants);
+      expect(mockedDb.update.mock.calls[1][0]).toBe(tenants);
       expect(setArgsForUpdateCall(1)).toMatchObject({ deletedAt: expect.any(Date) });
       expect(setArgsForUpdateCall(1)).not.toHaveProperty("chatbotUrl");
     });
@@ -381,6 +384,112 @@ describe("POST /api/deployments/[id]/status", () => {
         body: { status: "failed", chatbotUrl: "https://chat.acme.com", errorMessage: "boom" },
       });
       expect(db.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // Attack matrix — webhooks. Whoever holds the shared secret, or captured
+  // one real callback, tries to make a deployment say something it did not do.
+  describe("attack matrix", () => {
+    describe("a duplicate callback", () => {
+      it("is applied once: the replay of a finished deploy's success is refused", async () => {
+        const body = { status: "succeeded", chatbotUrl: "https://chat.acme.com" };
+
+        expect((await callRoute({ body })).status).toBe(200);
+        const writes = mockedDb.update.mock.calls.length;
+
+        lookupReturns({ ...runningDeployment, status: "succeeded" });
+        expect((await callRoute({ body })).status).toBe(409);
+        expect(mockedDb.update.mock.calls.length).toBe(writes);
+      });
+
+      it("cannot soft-delete a tenant a second time by replaying a teardown's success", async () => {
+        lookupReturns({ ...runningDeployment, kind: "destroy", status: "succeeded" });
+
+        const res = await callRoute({ body: { status: "succeeded" } });
+
+        expect(res.status).toBe(409);
+        expect(db.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("concurrent callbacks", () => {
+      // Both read the deployment as running; the guarded UPDATE lets one win.
+      it("finish the deployment once, and update the tenant once", async () => {
+        dbUpdateReturning
+          .mockResolvedValueOnce([{ id: "dep-1", tenantId: "tenant-1", kind: "deploy" }])
+          .mockResolvedValueOnce([]);
+
+        const statuses = (
+          await Promise.all([
+            callRoute({ body: { status: "succeeded", chatbotUrl: "https://chat.acme.com" } }),
+            callRoute({ body: { status: "failed", errorMessage: "late" } }),
+          ])
+        ).map((r) => r.status);
+
+        expect(statuses.sort()).toEqual([200, 409]);
+        const tenantWrites = mockedDb.update.mock.calls.filter(([table]) => table === tenants);
+        expect(tenantWrites).toHaveLength(1);
+      });
+    });
+
+    describe("a malformed payload", () => {
+      it.each([
+        ["a JSON array", "[]"],
+        ["JSON null", "null"],
+        ["a JSON string", '"succeeded"'],
+        ["an empty body", ""],
+        ["a form-encoded body", "status=succeeded"],
+        ["the status as a number", '{"status":1}'],
+        ["the status upper-cased", '{"status":"SUCCEEDED"}'],
+        ["the status padded", '{"status":" succeeded"}'],
+        ["the status hidden in __proto__", '{"__proto__":{"status":"succeeded"}}'],
+        ["a URL field of the wrong type", '{"status":"succeeded","chatbotUrl":["https://chat.acme.com"]}'],
+      ])("is refused with 400: %s", async (_label, rawBody) => {
+        const res = await callRoute({ rawBody });
+
+        expect(res.status).toBe(400);
+        expect(db.select).not.toHaveBeenCalled();
+        expect(db.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("an invalid state transition", () => {
+      it.each([
+        ["failed", "succeeded"],
+        ["cancelled", "succeeded"],
+        ["succeeded", "failed"],
+        ["succeeded", "cancelled"],
+      ])("%s → %s is refused", async (from, to) => {
+        lookupReturns({ ...runningDeployment, status: from });
+
+        const res = await callRoute({ body: { status: to } });
+
+        expect(res.status).toBe(409);
+        expect(db.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("the secret presented some other way", () => {
+      it.each([
+        ["with its case changed", { "x-webhook-secret": SECRET.toUpperCase() }],
+        ["as a bearer token", { authorization: `Bearer ${SECRET}` }],
+        ["under another header name", { "x-webhook-token": SECRET }],
+        ["twice, comma-joined", { "x-webhook-secret": `${SECRET}, ${SECRET}` }],
+      ])("is refused %s", async (_label, headers) => {
+        const res = await callRoute({ headers, body: { status: "running" } });
+        expect(res.status).toBe(401);
+      });
+
+      it("is refused in the query string", async () => {
+        const req = new Request(`http://localhost/api/deployments/dep-1/status?x-webhook-secret=${SECRET}`, {
+          method: "POST",
+          body: JSON.stringify({ status: "running" }),
+        });
+
+        const res = await POST(req, { params: Promise.resolve({ id: "dep-1" }) });
+
+        expect(res.status).toBe(401);
+      });
     });
   });
 });

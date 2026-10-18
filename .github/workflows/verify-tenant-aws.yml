@@ -57,7 +57,7 @@ jobs:
       # that does not match, a role that was never created — this is where the
       # run stops, and its name is the only thing the customer sees.
       - name: Assume the tenant's deployment role
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           aws-region: ${{ inputs.aws_region }}
           role-to-assume: ${{ inputs.deployment_role_arn }}
@@ -67,8 +67,14 @@ jobs:
       # Confirms the credentials are real rather than merely issued, and
       # prints the account they belong to — which is how a customer notices
       # they bootstrapped the wrong AWS account.
+      #
+      # Inputs reach this script only through env:, never as ${{ inputs.* }}
+      # inside it — see deploy-tenant.yml for why.
       - name: Confirm the role works and report the account
         id: identity
+        env:
+          ROLE_ARN: ${{ inputs.deployment_role_arn }}
+          DEPLOY_ENVIRONMENT: tenant-${{ inputs.tenant_id }}
         run: |
           account="$(aws sts get-caller-identity --query Account --output text)"
           arn="$(aws sts get-caller-identity --query Arn --output text)"
@@ -81,8 +87,8 @@ jobs:
             echo "| | |"
             echo "|---|---|"
             echo "| Account | \`$account\` |"
-            echo "| Role | \`${{ inputs.deployment_role_arn }}\` |"
-            echo "| Environment | \`tenant-${{ inputs.tenant_id }}\` |"
+            echo "| Role | \`$ROLE_ARN\` |"
+            echo "| Environment | \`$DEPLOY_ENVIRONMENT\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Deploys keep this chatbot's deployment state in a bucket the bootstrap
@@ -95,8 +101,21 @@ jobs:
         env:
           ACCOUNT: ${{ steps.identity.outputs.account }}
           BUCKET: tfstate-${{ inputs.tenant_slug }}-${{ steps.identity.outputs.account }}-${{ inputs.aws_region }}-an
+          TENANT_REGION: ${{ inputs.aws_region }}
         run: |
           aws s3api head-bucket --bucket "$BUCKET" --expected-bucket-owner "$ACCOUNT" \
-            --region "${{ inputs.aws_region }}" > /dev/null
+            --region "$TENANT_REGION" > /dev/null
           echo "State bucket $BUCKET exists in account $ACCOUNT."
           echo "| State bucket | \`$BUCKET\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      # The same check the deploy makes before it creates anything: every role
+      # a deploy creates must carry this boundary, so a stack created before it
+      # existed passes everything above and then fails the first deploy.
+      # Read-only.
+      - name: Find the runtime-role permissions boundary (update the bootstrap stack if this fails)
+        env:
+          BOUNDARY_ARN: arn:aws:iam::${{ steps.identity.outputs.account }}:policy/chatbot-${{ inputs.tenant_slug }}-runtime-boundary
+        run: |
+          aws iam get-policy --policy-arn "$BOUNDARY_ARN" > /dev/null
+          echo "Permissions boundary $BOUNDARY_ARN exists."
+          echo "| Permissions boundary | \`$BOUNDARY_ARN\` |" >> "$GITHUB_STEP_SUMMARY"

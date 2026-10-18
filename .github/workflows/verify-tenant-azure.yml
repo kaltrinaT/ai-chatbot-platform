@@ -50,7 +50,7 @@ jobs:
       # was never added, one added with a different subject, or one added to
       # the wrong identity. The step name is what the customer is shown.
       - name: Exchange the GitHub token for an Azure token
-        uses: azure/login@v2
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ inputs.azure_client_id }}
           tenant-id: ${{ inputs.azure_tenant_id }}
@@ -93,17 +93,24 @@ jobs:
           echo "State storage account $account is present and readable by the deployment identity."
           echo "| State storage | \`$account\` |" >> "$GITHUB_STEP_SUMMARY"
 
+      # Inputs reach this script only through env:, never as ${{ inputs.* }}
+      # inside it — see deploy-tenant-azure.yml for why.
       - name: Report the subscription
+        env:
+          SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          CLIENT_ID: ${{ inputs.azure_client_id }}
+          RESOURCE_GROUP: chatbot-${{ inputs.tenant_slug }}
+          DEPLOY_ENVIRONMENT: tenant-${{ inputs.tenant_id }}
         run: |
           name="$(az account show --query name --output tsv)"
-          echo "Signed in to subscription $name (${{ inputs.azure_subscription_id }})"
+          echo "Signed in to subscription $name ($SUBSCRIPTION_ID)"
           {
             echo "### Azure connection verified"
             echo ""
             echo "| | |"
             echo "|---|---|"
             echo "| Subscription | \`$name\` |"
-            echo "| Identity | \`${{ inputs.azure_client_id }}\` |"
-            echo "| Resource group | \`chatbot-${{ inputs.tenant_slug }}\` |"
-            echo "| Environment | \`tenant-${{ inputs.tenant_id }}\` |"
+            echo "| Identity | \`$CLIENT_ID\` |"
+            echo "| Resource group | \`$RESOURCE_GROUP\` |"
+            echo "| Environment | \`$DEPLOY_ENVIRONMENT\` |"
           } >> "$GITHUB_STEP_SUMMARY"

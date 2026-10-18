@@ -11,14 +11,18 @@
  * way to see what it was waiting on. Starting and polling separately lets the
  * page show the run's link the moment there is one.
  *
- * Neither action touches the database. The check is about the customer's
- * cloud, not about anything the platform stores — which is also what lets the
- * wizard run it before the tenant row exists. See verifyConnection.ts.
+ * The check is about the customer's cloud, not about anything the platform
+ * stores — which is what lets the wizard run it before the tenant row exists.
+ * The one database read is the ownership check in startCheck. See
+ * verifyConnection.ts.
  */
 
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
+import { db } from "@/db";
+import { tenants } from "@/db/schema";
 import {
   pollConnectionCheck,
   startConnectionCheck,
@@ -106,6 +110,19 @@ export async function startCheck(
   if ("missing" in target) {
     const names = target.missing.map((f) => FIELD_LABELS[f] ?? f).join(", ");
     return { error: `Fill in the ${names} before testing the connection.` };
+  }
+
+  // The check runs in the tenant's GitHub environment, which the customer's
+  // cloud trusts, and tenant IDs are visible in the public repository's
+  // Actions runs. So an ID that belongs to another operator is refused —
+  // deleted tenants included, since their cloud trust may outlive the row.
+  // An ID with no row is a chatbot still in the wizard and may be checked.
+  const [owner] = await db
+    .select({ ownerUserId: tenants.ownerUserId })
+    .from(tenants)
+    .where(eq(tenants.id, target.tenantId));
+  if (owner && owner.ownerUserId !== session.user.id) {
+    return { error: "Tenant not found." };
   }
 
   // Server-generated so it cannot be chosen by whoever submits the form: it

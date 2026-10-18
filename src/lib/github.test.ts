@@ -12,6 +12,7 @@ const listJobsForWorkflowRun = vi.fn();
 const listWorkflowRuns = vi.fn();
 const listWorkflowRunArtifacts = vi.fn();
 const downloadArtifact = vi.fn();
+const listAnnotations = vi.fn();
 
 vi.mock("@octokit/rest", () => ({
   // A regular function (not an arrow function) so `new Octokit(...)` in the
@@ -26,6 +27,7 @@ vi.mock("@octokit/rest", () => ({
         listWorkflowRunArtifacts,
         downloadArtifact,
       },
+      checks: { listAnnotations },
     };
   }),
 }));
@@ -46,6 +48,7 @@ describe("github", () => {
     listWorkflowRuns.mockReset();
     listWorkflowRunArtifacts.mockReset();
     downloadArtifact.mockReset();
+    listAnnotations.mockReset();
     vi.mocked(Octokit).mockClear();
     process.env = { ...originalEnv };
     process.env.CHATBOT_REPO_OWNER = "acme";
@@ -434,6 +437,41 @@ describe("github", () => {
 
       const { fetchDeploymentOutputsArtifact } = await import("./github");
       await expect(fetchDeploymentOutputsArtifact(123)).rejects.toThrow();
+    });
+  });
+
+  describe("fetchFailureAnnotations", () => {
+    it("collects the failure-level messages of the run's failed jobs only", async () => {
+      listJobsForWorkflowRun.mockResolvedValue({
+        data: {
+          jobs: [
+            { id: 1, conclusion: "success" },
+            { id: 2, conclusion: "failure" },
+          ],
+        },
+      });
+      listAnnotations.mockResolvedValue({
+        data: [
+          { annotation_level: "failure", message: "AADSTS70025: no federated credential" },
+          { annotation_level: "warning", message: "Node 16 is deprecated" },
+          { annotation_level: "failure", message: "" },
+        ],
+      });
+
+      const { fetchFailureAnnotations } = await import("./github");
+      const messages = await fetchFailureAnnotations(123);
+
+      expect(messages).toEqual(["AADSTS70025: no federated credential"]);
+      expect(listAnnotations).toHaveBeenCalledTimes(1);
+      expect(listAnnotations).toHaveBeenCalledWith(expect.objectContaining({ check_run_id: 2 }));
+    });
+
+    it("returns nothing when no job failed", async () => {
+      listJobsForWorkflowRun.mockResolvedValue({ data: { jobs: [{ id: 1, conclusion: "success" }] } });
+
+      const { fetchFailureAnnotations } = await import("./github");
+      expect(await fetchFailureAnnotations(123)).toEqual([]);
+      expect(listAnnotations).not.toHaveBeenCalled();
     });
   });
 });

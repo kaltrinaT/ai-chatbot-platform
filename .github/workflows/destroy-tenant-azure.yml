@@ -27,6 +27,10 @@ on:
 
 env:
   TF_DIR: infra/terraform/azure
+  # Dispatch inputs reach the scripts below only as these variables, never as
+  # ${{ inputs.* }} inside a run: script — see deploy-tenant-azure.yml for why.
+  IN_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+  IN_TENANT_SLUG: ${{ inputs.tenant_slug }}
 
 jobs:
   destroy:
@@ -70,11 +74,25 @@ jobs:
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'running' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
             exit 1
           fi
+
+      # Dispatch inputs reach later steps as lines of $GITHUB_OUTPUT (the
+      # `echo "key=$value"` lines below). A line break inside one would start a
+      # second line there and set an output of the dispatcher's choosing,
+      # overriding one written earlier. The platform refuses such values when a
+      # tenant is created (src/lib/tenantInput.ts); this refuses them for a run
+      # dispatched any other way, or for a tenant created before that check.
+      - name: Refuse inputs containing line breaks
+        run: |
+          for name in $(compgen -e | grep '^IN_' || true); do
+            case "${!name}" in
+              *$'\n'*|*$'\r'*) echo "::error title=Invalid dispatch input::$name contains a line break."; exit 1 ;;
+            esac
+          done
 
       # Destroying pinecone_index.this calls Pinecone's API, which Azure
       # credentials do not cover, so a teardown needs the customer's Pinecone
@@ -94,7 +112,7 @@ jobs:
           out="$RUNNER_TEMP/tenant-secrets.json"
           code=$(curl -sS --max-time 15 -o "$out" -w '%{http_code}' -X POST \
             -H "authorization: Bearer ${token}" \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/secrets") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/secrets") || code=000
           if [ "$code" != "200" ]; then
             reason=$(jq -r '.error // empty' "$out" 2>/dev/null | head -c 300 || true)
             rm -f "$out"
@@ -116,6 +134,10 @@ jobs:
           CONFIG_JSON: ${{ inputs.config }}
         run: |
           echo "$CONFIG_JSON" | jq -e 'has("azure_subscription_id") and has("azure_tenant_id") and has("azure_client_id")' > /dev/null
+          # jq -r turns an escaped \n inside a value into a real line break, which
+          # would add a line of its own to $GITHUB_OUTPUT below.
+          echo "$CONFIG_JSON" | jq -e '[.. | strings | test("[\\r\\n]")] | any | not' > /dev/null \
+            || { echo "::error title=Invalid tenant config::A value in the tenant config contains a line break."; exit 1; }
           {
             echo "azure_subscription_id=$(echo "$CONFIG_JSON" | jq -r '.azure_subscription_id')"
             echo "azure_tenant_id=$(echo "$CONFIG_JSON" | jq -r '.azure_tenant_id')"
@@ -127,8 +149,11 @@ jobs:
             echo "vector_store=$(echo "$CONFIG_JSON" | jq -r '.vector_store // "pinecone"')"
           } >> "$GITHUB_OUTPUT"
 
+      # No later step pushes, so the job token is not left in .git/config.
       - name: Checkout platform repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # No client secret: azure/login exchanges this job's GitHub OIDC token
       # for an Entra access token on the customer's identity. It fails here,
@@ -136,7 +161,7 @@ jobs:
       # federated credential — in which case the infrastructure has to be
       # removed from the portal, which is the customer's prerogative.
       - name: Azure login (customer subscription, federated credential)
-        uses: azure/login@v2
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ steps.cfg.outputs.azure_client_id }}
           tenant-id: ${{ steps.cfg.outputs.azure_tenant_id }}
@@ -144,7 +169,7 @@ jobs:
 
       # Same version as deploy-tenant-azure.yml.
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: 1.15.3
 
@@ -185,19 +210,27 @@ jobs:
           # Neither is used by a destroy.
           TF_VAR_llm_api_key: unused
           TF_VAR_docs_signer_secret: unused
+          CFG_AZURE_SUBSCRIPTION_ID: ${{ steps.cfg.outputs.azure_subscription_id }}
+          CFG_AZURE_TENANT_ID: ${{ steps.cfg.outputs.azure_tenant_id }}
+          CFG_AZURE_CLIENT_ID: ${{ steps.cfg.outputs.azure_client_id }}
+          CFG_AZURE_REGION: ${{ steps.cfg.outputs.azure_region }}
+          CFG_LLM_PROVIDER: ${{ steps.cfg.outputs.llm_provider }}
+          CFG_LLM_MODEL: ${{ steps.cfg.outputs.llm_model }}
+          CFG_DOMAIN: ${{ steps.cfg.outputs.domain }}
+          CFG_VECTOR_STORE: ${{ steps.cfg.outputs.vector_store }}
         run: |
           source "$RUNNER_TEMP/tenant-secrets.env"
           rm -f "$RUNNER_TEMP/tenant-secrets.env"
           terraform destroy -auto-approve \
-            -var="tenant_slug=${{ inputs.tenant_slug }}" \
-            -var="azure_subscription_id=${{ steps.cfg.outputs.azure_subscription_id }}" \
-            -var="azure_tenant_id=${{ steps.cfg.outputs.azure_tenant_id }}" \
-            -var="azure_client_id=${{ steps.cfg.outputs.azure_client_id }}" \
-            -var="azure_region=${{ steps.cfg.outputs.azure_region }}" \
-            -var="llm_provider=${{ steps.cfg.outputs.llm_provider }}" \
-            -var="llm_model=${{ steps.cfg.outputs.llm_model }}" \
-            -var="domain=${{ steps.cfg.outputs.domain }}" \
-            -var="vector_store=${{ steps.cfg.outputs.vector_store }}" \
+            -var="tenant_slug=${IN_TENANT_SLUG}" \
+            -var="azure_subscription_id=${CFG_AZURE_SUBSCRIPTION_ID}" \
+            -var="azure_tenant_id=${CFG_AZURE_TENANT_ID}" \
+            -var="azure_client_id=${CFG_AZURE_CLIENT_ID}" \
+            -var="azure_region=${CFG_AZURE_REGION}" \
+            -var="llm_provider=${CFG_LLM_PROVIDER}" \
+            -var="llm_model=${CFG_LLM_MODEL}" \
+            -var="domain=${CFG_DOMAIN}" \
+            -var="vector_store=${CFG_VECTOR_STORE}" \
             -var="image_uri=placeholder" \
             -var="frontend_image_uri=placeholder" \
             -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
@@ -215,7 +248,7 @@ jobs:
           {
             echo "### Chatbot infrastructure removed"
             echo ""
-            echo "The resource group \`chatbot-${{ inputs.tenant_slug }}\` is now empty apart from"
+            echo "The resource group \`chatbot-${IN_TENANT_SLUG}\` is now empty apart from"
             echo "what the setup created: the deployment identity, and the storage account"
             echo "that keeps this chatbot's Terraform state."
             echo ""
@@ -237,7 +270,7 @@ jobs:
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'succeeded' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
           fi
@@ -257,7 +290,7 @@ jobs:
             -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
             -H "content-type: application/json" \
             --data @/tmp/callback.json \
-            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${IN_DEPLOYMENT_ID}/status") || code=000
           if [ "$code" != "200" ]; then
             echo "::error title=Platform callback failed::HTTP $code posting 'failed' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
           fi

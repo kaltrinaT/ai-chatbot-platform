@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
-import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
+import { SignJWT, createLocalJWKSet, exportJWK, exportSPKI, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { selectJoinChain, updateSetWhereChain } from "@/test/db-chains";
 
 const { dbSelectWhere, dbUpdateReturning, decryptSecret, getChatbotRepo } = vi.hoisted(() => ({
@@ -41,10 +41,12 @@ const deployDeployment = { id: DEPLOYMENT_ID, tenantId: TENANT_ID, kind: "deploy
 let keys: JWTVerifyGetKey;
 let signingKey: CryptoKey;
 let foreignKey: CryptoKey;
+let publicPem: string;
 
 beforeAll(async () => {
-  const pair = await generateKeyPair("RS256");
+  const pair = await generateKeyPair("RS256", { extractable: true });
   signingKey = pair.privateKey;
+  publicPem = await exportSPKI(pair.publicKey);
   keys = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: "gh", alg: "RS256" }] });
   foreignKey = (await generateKeyPair("RS256")).privateKey;
 });
@@ -119,6 +121,29 @@ describe("releaseDeploymentSecrets", () => {
       expect((await refusal(await token({}, { key: foreignKey }))).status).toBe(401);
     });
 
+    // The two classic JWT forgeries. Both carry claims a real run's token
+    // would, so only the algorithm check can refuse them.
+    it("is refused unsigned (alg: none)", async () => {
+      const [, claims] = (await token()).split(".");
+      const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+
+      expect((await refusal(`${header}.${claims}.`)).status).toBe(401);
+      expect(decryptSecret).not.toHaveBeenCalled();
+    });
+
+    it("is refused when HMAC-signed with GitHub's public key (algorithm confusion)", async () => {
+      const forged = await new SignJWT({ sub: SUBJECT, repository: REPO, workflow_ref: DEPLOY_WORKFLOW_REF, run_id: "4242" })
+        .setProtectedHeader({ alg: "HS256", kid: "gh" })
+        .setIssuer(GITHUB_OIDC_ISSUER)
+        .setAudience(PLATFORM_SECRETS_AUDIENCE)
+        .setIssuedAt()
+        .setExpirationTime("5m")
+        .sign(new TextEncoder().encode(publicPem));
+
+      expect((await refusal(forged)).status).toBe(401);
+      expect(decryptSecret).not.toHaveBeenCalled();
+    });
+
     // A token minted to sign in to Azure or AWS must not work here, and the
     // other way round.
     it.each(["api://AzureADTokenExchange", "sts.amazonaws.com"])(
@@ -138,6 +163,76 @@ describe("releaseDeploymentSecrets", () => {
 
     it("is not a JWT at all", async () => {
       expect((await refusal("not-a-token")).status).toBe(401);
+    });
+  });
+
+  // Attack matrix — GitHub OIDC. Near misses of each claim the platform
+  // checks: each would pass a comparison that was a prefix, case-insensitive
+  // or pattern match, and none may pass an exact one.
+  describe("a near-miss token", () => {
+    async function signed(build: (jwt: SignJWT) => SignJWT) {
+      const jwt = new SignJWT({ sub: SUBJECT, repository: REPO, workflow_ref: DEPLOY_WORKFLOW_REF, run_id: "4242" })
+        .setProtectedHeader({ alg: "RS256", kid: "gh" })
+        .setIssuer(GITHUB_OIDC_ISSUER)
+        .setAudience(PLATFORM_SECRETS_AUDIENCE)
+        .setIssuedAt();
+      return build(jwt).sign(signingKey);
+    }
+
+    it("is refused once expired", async () => {
+      const expired = await signed((jwt) => jwt.setIssuedAt(Math.floor(Date.now() / 1000) - 600).setExpirationTime("-5m"));
+      expect((await refusal(expired)).status).toBe(401);
+    });
+
+    it("is refused before it becomes valid", async () => {
+      const early = await signed((jwt) => jwt.setNotBefore("10m").setExpirationTime("20m"));
+      expect((await refusal(early)).status).toBe(401);
+    });
+
+    it.each([
+      ["a lookalike host", "https://token.actions.githubusercontent.com.attacker.example"],
+      ["a trailing slash", `${GITHUB_OIDC_ISSUER}/`],
+      ["plain http", GITHUB_OIDC_ISSUER.replace("https:", "http:")],
+      ["GitHub Enterprise's issuer form", `${GITHUB_OIDC_ISSUER}/acme`],
+    ])("is refused from %s as issuer", async (_label, issuer) => {
+      expect((await refusal(await token({}, { issuer }))).status).toBe(401);
+    });
+
+    it.each([
+      ["an audience it shares a prefix with", `${PLATFORM_SECRETS_AUDIENCE}-admin`],
+      ["no audience the platform names", "https://github.com/acme"],
+    ])("is refused for %s", async (_label, audience) => {
+      expect((await refusal(await token({}, { audience }))).status).toBe(401);
+    });
+
+    it.each([
+      ["the owner's case changed", "ACME/platform"],
+      ["a fork with a suffix", "acme/platform-fork"],
+      ["another owner, same name", "mallory/platform"],
+      ["a path appended", "acme/platform/extra"],
+    ])("is refused from a repository with %s", async (_label, repository) => {
+      const err = await refusal(await token({ repository }));
+      expect(err.status).toBe(403);
+      expect(db.select).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["the environment's case changed", `repo:${REPO}:environment:TENANT-${TENANT_ID}`],
+      ["a suffix on the environment", `repo:${REPO}:environment:tenant-${TENANT_ID}-staging`],
+      ["the tenant ID truncated", `repo:${REPO}:environment:tenant-${TENANT_ID.slice(0, -1)}`],
+      ["the deploy branch, no environment", `repo:${REPO}:ref:refs/heads/main`],
+      ["a pull request", `repo:${REPO}:pull_request`],
+      ["the right environment in a fork", `repo:mallory/platform:environment:tenant-${TENANT_ID}`],
+    ])("is refused with a subject naming %s", async (_label, sub) => {
+      const err = await refusal(await token({ sub }));
+      expect(err.status).toBe(403);
+      expect(db.update).not.toHaveBeenCalled();
+      expect(decryptSecret).not.toHaveBeenCalled();
+    });
+
+    it("is refused when a claim has the wrong type", async () => {
+      expect((await refusal(await token({ run_id: 4242 }))).status).toBe(401);
+      expect((await refusal(await token({ sub: [SUBJECT] }))).status).toBe(401);
     });
   });
 
@@ -210,6 +305,23 @@ describe("releaseDeploymentSecrets", () => {
 
       expect(err.status).toBe(409);
       expect(decryptSecret).not.toHaveBeenCalled();
+    });
+
+    // Two runs racing for one deployment both pass every claim check; the
+    // conditional UPDATE is what lets only one of them through. The mock
+    // stands in for Postgres matching the row once.
+    it("releases to only one of two runs racing for the same deployment", async () => {
+      dbUpdateReturning.mockResolvedValueOnce([{ id: DEPLOYMENT_ID }]).mockResolvedValueOnce([]);
+
+      const results = await Promise.allSettled([
+        release(await token({ run_id: "4242" })),
+        release(await token({ run_id: "4343" })),
+      ]);
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toMatchObject({ status: 409 });
     });
 
     it("records the claim and the run in one update", async () => {
