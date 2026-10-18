@@ -17,7 +17,7 @@ export default async function IssuesPage() {
 
   return (
     <DashboardShell active="dashboard">
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="mx-auto max-w-page px-6 py-8">
         <Link href="/" className="text-sm text-gray-500 hover:underline">
           &larr; Back to dashboard
         </Link>

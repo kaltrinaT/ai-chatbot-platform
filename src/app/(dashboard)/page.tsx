@@ -43,7 +43,7 @@ export default async function DashboardPage() {
 
   return (
     <DashboardShell active="dashboard">
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="mx-auto max-w-page px-6 py-8">
         <header className="mb-6 flex items-center justify-between gap-6">
           <div>
             <h1 className="text-2xl font-semibold">

@@ -355,7 +355,7 @@ export default async function TenantDetailPage({
 
   return (
     <DashboardShell active="chatbots">
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="mx-auto max-w-page px-6 py-8">
         <div className="text-sm text-gray-500">
           <Link href="/chatbots" className="hover:underline">
             All Chatbots
