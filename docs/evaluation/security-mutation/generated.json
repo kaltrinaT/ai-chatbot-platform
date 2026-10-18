@@ -1,0 +1,5420 @@
+{
+  "generated": "2026-10-18T05:29:31.633Z",
+  "commit": "61de49007640",
+  "dirty": true,
+  "node": "v24.16.0",
+  "baseline": {
+    "passed": 992,
+    "total": 992
+  },
+  "minutes": 12.9,
+  "sources": [
+    "src/lib/crypto.ts",
+    "src/lib/deploymentSecrets.ts",
+    "src/lib/githubOidc.ts",
+    "src/lib/docsSigner.ts",
+    "src/lib/awsTrust.ts",
+    "src/lib/azureFederation.ts",
+    "src/lib/tenantInput.ts",
+    "src/lib/tenantErasure.ts",
+    "src/lib/operators.ts",
+    "src/lib/reconcile.ts",
+    "src/lib/deploy.ts",
+    "src/app/api/deployments/[id]/status/route.ts",
+    "src/app/api/deployments/[id]/secrets/route.ts",
+    "src/app/api/deployments/[id]/progress/route.ts",
+    "src/app/tenants/[id]/actions.ts",
+    "src/app/tenants/[id]/documents/actions.ts",
+    "src/app/tenants/connectionActions.ts",
+    "src/app/tenants/new/actions.ts",
+    "src/auth.ts"
+  ],
+  "score": {
+    "killed": 153,
+    "of": 203
+  },
+  "errors": [],
+  "mutants": [
+    {
+      "id": "G001",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!raw)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 372,
+      "killingTests": [
+        "crypto > throws when PLATFORM_ENCRYPTION_KEY is not set"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 10,
+      "operator": "guard",
+      "scope": "getKey",
+      "before": "!raw",
+      "after": "false",
+      "fingerprint": "1f79ad64212e"
+    },
+    {
+      "id": "G002",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (key.length !== KEY_LENGTH)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 372,
+      "killingTests": [
+        "crypto > throws when PLATFORM_ENCRYPTION_KEY is the wrong length"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 16,
+      "operator": "guard",
+      "scope": "getKey",
+      "before": "key.length !== KEY_LENGTH",
+      "after": "false",
+      "fingerprint": "d97ddf90cd78"
+    },
+    {
+      "id": "G003",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (parts.length !== 3 || !ivHex || !tagHex || !ctHex)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 372,
+      "killingTests": [
+        "crypto > throws on a malformed blob missing parts"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 37,
+      "operator": "guard",
+      "scope": "decryptSecret",
+      "before": "parts.length !== 3 || !ivHex || !tagHex || !ctHex",
+      "after": "false",
+      "fingerprint": "fb149f07caa3"
+    },
+    {
+      "id": "G004",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: parts.length !== 3",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 372,
+      "killingTests": [
+        "crypto > a blob altered by someone with write access to the database > refuses a blob with a fourth segment rather than ignoring it"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 37,
+      "operator": "guard-term",
+      "scope": "decryptSecret",
+      "before": "parts.length !== 3 || !ivHex || !tagHex || !ctHex",
+      "after": "!ivHex || !tagHex || !ctHex",
+      "fingerprint": "3b583c0cf402"
+    },
+    {
+      "id": "G005",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: !ivHex",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 445,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 37,
+      "operator": "guard-term",
+      "scope": "decryptSecret",
+      "before": "parts.length !== 3 || !ivHex || !tagHex || !ctHex",
+      "after": "parts.length !== 3 || !tagHex || !ctHex",
+      "fingerprint": "b9bed667172d"
+    },
+    {
+      "id": "G006",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: !tagHex",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 445,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 37,
+      "operator": "guard-term",
+      "scope": "decryptSecret",
+      "before": "parts.length !== 3 || !ivHex || !tagHex || !ctHex",
+      "after": "parts.length !== 3 || !ivHex || !ctHex",
+      "fingerprint": "3933f88108fc"
+    },
+    {
+      "id": "G007",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: !ctHex",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 372,
+      "killingTests": [
+        "crypto > rejects an empty-string plaintext because the empty ciphertext hex fails the blob-format check"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 37,
+      "operator": "guard-term",
+      "scope": "decryptSecret",
+      "before": "parts.length !== 3 || !ivHex || !tagHex || !ctHex",
+      "after": "parts.length !== 3 || !ivHex || !tagHex",
+      "fingerprint": "28b353b36ff9"
+    },
+    {
+      "id": "G008",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 372,
+      "killingTests": [
+        "crypto > throws on a blob whose segments are non-hex text"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 45,
+      "operator": "guard",
+      "scope": "decryptSecret",
+      "before": "iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH",
+      "after": "false",
+      "fingerprint": "5431a7f4e109"
+    },
+    {
+      "id": "G009",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: iv.length !== IV_LENGTH",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 372,
+      "killingTests": [
+        "crypto > a blob altered by someone with write access to the database > refuses an IV of another length, even a prefix of the real one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 45,
+      "operator": "guard-term",
+      "scope": "decryptSecret",
+      "before": "iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH",
+      "after": "tag.length !== TAG_LENGTH",
+      "fingerprint": "37f47392440c"
+    },
+    {
+      "id": "G010",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: tag.length !== TAG_LENGTH",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 372,
+      "killingTests": [
+        "crypto > a blob altered by someone with write access to the database > refuses the real tag truncated to 4 bytes"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ],
+      "file": "src/lib/crypto.ts",
+      "line": 45,
+      "operator": "guard-term",
+      "scope": "decryptSecret",
+      "before": "iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH",
+      "after": "iv.length !== IV_LENGTH",
+      "fingerprint": "c3894cc186f5"
+    },
+    {
+      "id": "G011",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (typeof sub !== \"string\" || typeof repository !== \"string\" || typeof workflow_ref !== \"string\" || typeof run_id !== \"string\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > the token > must carry the claims that identify a run"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 89,
+      "operator": "guard",
+      "scope": "verifyRunToken",
+      "before": "typeof sub !== \"string\" || typeof repository !== \"string\" || typeof workflow_ref !== \"string\" || typeof run_id !== \"string\"",
+      "after": "false",
+      "fingerprint": "442bc6858324"
+    },
+    {
+      "id": "G012",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: typeof sub !== \"string\"",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > a near-miss token > is refused when a claim has the wrong type"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 89,
+      "operator": "guard-term",
+      "scope": "verifyRunToken",
+      "before": "typeof sub !== \"string\" || typeof repository !== \"string\" || typeof workflow_ref !== \"string\" || typeof run_id !== \"string\"",
+      "after": "typeof repository !== \"string\" || typeof workflow_ref !== \"string\" || typeof run_id !== \"string\"",
+      "fingerprint": "30016b37f12b"
+    },
+    {
+      "id": "G013",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: typeof repository !== \"string\"",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 97,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 89,
+      "operator": "guard-term",
+      "scope": "verifyRunToken",
+      "before": "typeof sub !== \"string\" || typeof repository !== \"string\" || typeof workflow_ref !== \"string\" || typeof run_id !== \"string\"",
+      "after": "typeof sub !== \"string\" || typeof workflow_ref !== \"string\" || typeof run_id !== \"string\"",
+      "fingerprint": "e038eb0d8444"
+    },
+    {
+      "id": "G014",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: typeof workflow_ref !== \"string\"",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > the token > must carry the claims that identify a run"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 89,
+      "operator": "guard-term",
+      "scope": "verifyRunToken",
+      "before": "typeof sub !== \"string\" || typeof repository !== \"string\" || typeof workflow_ref !== \"string\" || typeof run_id !== \"string\"",
+      "after": "typeof sub !== \"string\" || typeof repository !== \"string\" || typeof run_id !== \"string\"",
+      "fingerprint": "029d695af40f"
+    },
+    {
+      "id": "G015",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: typeof run_id !== \"string\"",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > a near-miss token > is refused when a claim has the wrong type"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 89,
+      "operator": "guard-term",
+      "scope": "verifyRunToken",
+      "before": "typeof sub !== \"string\" || typeof repository !== \"string\" || typeof workflow_ref !== \"string\" || typeof run_id !== \"string\"",
+      "after": "typeof sub !== \"string\" || typeof repository !== \"string\" || typeof workflow_ref !== \"string\"",
+      "fingerprint": "1b81d85992fe"
+    },
+    {
+      "id": "G016",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (claims.repository !== `${repo.owner}/${repo.repo}`)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > a near-miss token > is refused from a repository with the owner's case changed"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 116,
+      "operator": "guard",
+      "scope": "releaseDeploymentSecrets",
+      "before": "claims.repository !== `${repo.owner}/${repo.repo}`",
+      "after": "false",
+      "fingerprint": "7d0be2ce28f6"
+    },
+    {
+      "id": "G017",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!row)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > the deployment > must exist"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 125,
+      "operator": "guard",
+      "scope": "releaseDeploymentSecrets",
+      "before": "!row",
+      "after": "false",
+      "fingerprint": "a89dca57d90f"
+    },
+    {
+      "id": "G018",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (tenant.cloudProvider !== \"azure\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > the deployment > must be an Azure one — AWS keys never leave the customer's account"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 128,
+      "operator": "guard",
+      "scope": "releaseDeploymentSecrets",
+      "before": "tenant.cloudProvider !== \"azure\"",
+      "after": "false",
+      "fingerprint": "3171e4cc7d82"
+    },
+    {
+      "id": "G019",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (claims.sub !== tenantDeploySubject(repo, tenant.id))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > a near-miss token > is refused with a subject naming the environment's case changed"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 135,
+      "operator": "guard",
+      "scope": "releaseDeploymentSecrets",
+      "before": "claims.sub !== tenantDeploySubject(repo, tenant.id)",
+      "after": "false",
+      "fingerprint": "1ab471807c2f"
+    },
+    {
+      "id": "G020",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (claims.workflow_ref !== workflowRef(repo, workflow, deployRef()))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > who is asking > refuses the verify workflow even in the right environment"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 140,
+      "operator": "guard",
+      "scope": "releaseDeploymentSecrets",
+      "before": "claims.workflow_ref !== workflowRef(repo, workflow, deployRef())",
+      "after": "false",
+      "fingerprint": "20993460a7c1"
+    },
+    {
+      "id": "G021",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(deployments.id, deploymentId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 97,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 153,
+      "operator": "conjunct",
+      "scope": "[claimed]",
+      "before": "and( eq(deployments.id, deploymentId), isNull(deployments.secretsClaimedAt), inArray(deployments.status, [...ACTIVE_STATUSES]), or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id)), )",
+      "after": "and(isNull(deployments.secretsClaimedAt), inArray(deployments.status, [...ACTIVE_STATUSES]), or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id)))",
+      "fingerprint": "5edc7044e697"
+    },
+    {
+      "id": "G022",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: isNull(deployments.secretsClaimedAt)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 97,
+      "killingTests": [
+        "SEC-E2E-03 · the platform releases a tenant's secrets to that tenant's run only > refuses a second run after the first has claimed, and a replay by the first"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 153,
+      "operator": "conjunct",
+      "scope": "[claimed]",
+      "before": "and( eq(deployments.id, deploymentId), isNull(deployments.secretsClaimedAt), inArray(deployments.status, [...ACTIVE_STATUSES]), or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id)), )",
+      "after": "and(eq(deployments.id, deploymentId), inArray(deployments.status, [...ACTIVE_STATUSES]), or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id)))",
+      "fingerprint": "e573169be879"
+    },
+    {
+      "id": "G023",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: inArray(deployments.status, [...ACTIVE_STATUSES])",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 97,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 153,
+      "operator": "conjunct",
+      "scope": "[claimed]",
+      "before": "and( eq(deployments.id, deploymentId), isNull(deployments.secretsClaimedAt), inArray(deployments.status, [...ACTIVE_STATUSES]), or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id)), )",
+      "after": "and(eq(deployments.id, deploymentId), isNull(deployments.secretsClaimedAt), or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id)))",
+      "fingerprint": "1d433681cc71"
+    },
+    {
+      "id": "G024",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 97,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 153,
+      "operator": "conjunct",
+      "scope": "[claimed]",
+      "before": "and( eq(deployments.id, deploymentId), isNull(deployments.secretsClaimedAt), inArray(deployments.status, [...ACTIVE_STATUSES]), or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id)), )",
+      "after": "and(eq(deployments.id, deploymentId), isNull(deployments.secretsClaimedAt), inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "fingerprint": "f88a7013c8e8"
+    },
+    {
+      "id": "G025",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!claimed)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > the deployment > releases nothing when the claim matches no row"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 161,
+      "operator": "guard",
+      "scope": "releaseDeploymentSecrets",
+      "before": "!claimed",
+      "after": "false",
+      "fingerprint": "f1fb4b36814a"
+    },
+    {
+      "id": "G026",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (deployment.kind === \"destroy\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 46,
+      "killingTests": [
+        "releaseDeploymentSecrets > gives a teardown run only the Pinecone key"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ],
+      "file": "src/lib/deploymentSecrets.ts",
+      "line": 171,
+      "operator": "guard",
+      "scope": "releaseDeploymentSecrets",
+      "before": "deployment.kind === \"destroy\"",
+      "after": "false",
+      "fingerprint": "b6fd6123b5f4"
+    },
+    {
+      "id": "G027",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (parsed.protocol !== \"https:\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "docsSignerUrlProblem > refuses http://abc.lambda-url.us-east-1.on.aws/ for an AWS tenant in us-east-1"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 34,
+      "operator": "guard",
+      "scope": "docsSignerUrlProblem",
+      "before": "parsed.protocol !== \"https:\"",
+      "after": "false",
+      "fingerprint": "345176030b60"
+    },
+    {
+      "id": "G028",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "docsSignerUrlProblem > refuses https://user:pw@abc.lambda-url.us-east-1.on.aws/ for an AWS tenant in us-east-1"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 35,
+      "operator": "guard",
+      "scope": "docsSignerUrlProblem",
+      "before": "parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash",
+      "after": "false",
+      "fingerprint": "81266dfd2d8f"
+    },
+    {
+      "id": "G029",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: parsed.username",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 400,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 35,
+      "operator": "guard-term",
+      "scope": "docsSignerUrlProblem",
+      "before": "parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash",
+      "after": "parsed.password || parsed.port || parsed.search || parsed.hash",
+      "fingerprint": "6cd0d09e5afe"
+    },
+    {
+      "id": "G030",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: parsed.password",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 400,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 35,
+      "operator": "guard-term",
+      "scope": "docsSignerUrlProblem",
+      "before": "parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash",
+      "after": "parsed.username || parsed.port || parsed.search || parsed.hash",
+      "fingerprint": "1f2ab5be63cc"
+    },
+    {
+      "id": "G031",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: parsed.port",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "docsSignerUrlProblem > refuses https://abc.lambda-url.us-east-1.on.aws:8443/ for an AWS tenant in us-east-1"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 35,
+      "operator": "guard-term",
+      "scope": "docsSignerUrlProblem",
+      "before": "parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash",
+      "after": "parsed.username || parsed.password || parsed.search || parsed.hash",
+      "fingerprint": "8092524305ec"
+    },
+    {
+      "id": "G032",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: parsed.search",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > docsSignerUrl > refuses a query string for an AWS tenant, before writing anything"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 35,
+      "operator": "guard-term",
+      "scope": "docsSignerUrlProblem",
+      "before": "parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash",
+      "after": "parsed.username || parsed.password || parsed.port || parsed.hash",
+      "fingerprint": "de963a320e46"
+    },
+    {
+      "id": "G033",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: parsed.hash",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 400,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 35,
+      "operator": "guard-term",
+      "scope": "docsSignerUrlProblem",
+      "before": "parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash",
+      "after": "parsed.username || parsed.password || parsed.port || parsed.search",
+      "fingerprint": "cf43571a7070"
+    },
+    {
+      "id": "G034",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (tenant.cloudProvider === \"azure\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "docsSignerUrlProblem > accepts the URL Terraform builds (1)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 39,
+      "operator": "guard",
+      "scope": "docsSignerUrlProblem",
+      "before": "tenant.cloudProvider === \"azure\"",
+      "after": "false",
+      "fingerprint": "4a0a1a918517"
+    },
+    {
+      "id": "G035",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant.awsRegion)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 400,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 44,
+      "operator": "guard",
+      "scope": "docsSignerUrlProblem",
+      "before": "!tenant.awsRegion",
+      "after": "false",
+      "fingerprint": "b1fc380a49cd"
+    },
+    {
+      "id": "G036",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!lambdaUrlHost.test(parsed.hostname) || parsed.pathname !== \"/\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "docsSignerUrlProblem > refuses https://attacker.example/ for an AWS tenant in us-east-1"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 47,
+      "operator": "guard",
+      "scope": "docsSignerUrlProblem",
+      "before": "!lambdaUrlHost.test(parsed.hostname) || parsed.pathname !== \"/\"",
+      "after": "false",
+      "fingerprint": "3a7183dde519"
+    },
+    {
+      "id": "G037",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: !lambdaUrlHost.test(parsed.hostname)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 293,
+      "killingTests": [
+        "docsSignerUrlProblem > refuses https://attacker.example/ for an AWS tenant in us-east-1"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 47,
+      "operator": "guard-term",
+      "scope": "docsSignerUrlProblem",
+      "before": "!lambdaUrlHost.test(parsed.hostname) || parsed.pathname !== \"/\"",
+      "after": "parsed.pathname !== \"/\"",
+      "fingerprint": "b8fdc5240c8a"
+    },
+    {
+      "id": "G038",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: parsed.pathname !== \"/\"",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "docsSignerUrlProblem > refuses https://abc.lambda-url.us-east-1.on.aws/elsewhere for an AWS tenant in us-east-1"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 47,
+      "operator": "guard-term",
+      "scope": "docsSignerUrlProblem",
+      "before": "!lambdaUrlHost.test(parsed.hostname) || parsed.pathname !== \"/\"",
+      "after": "!lambdaUrlHost.test(parsed.hostname)",
+      "fingerprint": "2531f61c78b8"
+    },
+    {
+      "id": "G039",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (problem)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > self-healing on a completed run > docsSignerUrl recovered from the artifact > drops a foreign one but still recovers the rest"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 66,
+      "operator": "guard",
+      "scope": "acceptDocsSignerUrl",
+      "before": "problem",
+      "after": "false",
+      "fingerprint": "4246633f32d5"
+    },
+    {
+      "id": "G040",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (tenant.docsSignerUrl && tenant.docsSignerUrl !== url)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "acceptDocsSignerUrl > refuses to replace the recorded URL, even with a well-formed one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 67,
+      "operator": "guard",
+      "scope": "acceptDocsSignerUrl",
+      "before": "tenant.docsSignerUrl && tenant.docsSignerUrl !== url",
+      "after": "false",
+      "fingerprint": "79dd78ec0a7d"
+    },
+    {
+      "id": "G041",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (typeof error === \"string\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "requestUploadUrl > surfaces the signer's own reason for a 400, unwrapped from its JSON body"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 101,
+      "operator": "guard",
+      "scope": "(module)",
+      "before": "typeof error === \"string\"",
+      "after": "false",
+      "fingerprint": "c9be1d6b2249"
+    },
+    {
+      "id": "G042",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant.docsSignerUrl || !tenant.docsSignerSecretEncrypted)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "callDocsSigner > throws without calling fetch when the tenant has no docsSignerUrl"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 136,
+      "operator": "guard",
+      "scope": "callDocsSigner",
+      "before": "!tenant.docsSignerUrl || !tenant.docsSignerSecretEncrypted",
+      "after": "false",
+      "fingerprint": "d9d5a3b64cee"
+    },
+    {
+      "id": "G043",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: !tenant.docsSignerUrl",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "callDocsSigner > throws without calling fetch when the tenant has no docsSignerUrl"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 136,
+      "operator": "guard-term",
+      "scope": "callDocsSigner",
+      "before": "!tenant.docsSignerUrl || !tenant.docsSignerSecretEncrypted",
+      "after": "!tenant.docsSignerSecretEncrypted",
+      "fingerprint": "f8b173e48c8e"
+    },
+    {
+      "id": "G044",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: !tenant.docsSignerSecretEncrypted",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "callDocsSigner > throws without calling fetch when the tenant has no docsSignerSecretEncrypted"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 136,
+      "operator": "guard-term",
+      "scope": "callDocsSigner",
+      "before": "!tenant.docsSignerUrl || !tenant.docsSignerSecretEncrypted",
+      "after": "!tenant.docsSignerUrl",
+      "fingerprint": "33c8bdc30be7"
+    },
+    {
+      "id": "G045",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (problem)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "callDocsSigner > never sends the secret to a URL that is not the tenant's signer"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 144,
+      "operator": "guard",
+      "scope": "callDocsSigner",
+      "before": "problem",
+      "after": "false",
+      "fingerprint": "9fe2d3bf30ac"
+    },
+    {
+      "id": "G046",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!res.ok)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 327,
+      "killingTests": [
+        "callDocsSigner > throws with the status code and body text when the response is not ok"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ],
+      "file": "src/lib/docsSigner.ts",
+      "line": 160,
+      "operator": "guard",
+      "scope": "callDocsSigner",
+      "before": "!res.ok",
+      "after": "false",
+      "fingerprint": "104f4db5c667"
+    },
+    {
+      "id": "G047",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!match)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 352,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/awsTrust.ts"
+      ],
+      "file": "src/lib/awsTrust.ts",
+      "line": 91,
+      "operator": "guard",
+      "scope": "awsOnboardingRoleArn",
+      "before": "!match",
+      "after": "false",
+      "fingerprint": "77cde7cd033b"
+    },
+    {
+      "id": "G048",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(UUID_RE, \"The tenant ID was lost. Reload the page and start )",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > requires a platform tenant ID on both clouds, and rejects one that is not a UUID"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 35,
+      "operator": "validator",
+      "scope": "tenantId",
+      "before": "z.string().regex(UUID_RE, \"The tenant ID was lost. Reload the page and start again.\")",
+      "after": "z.string()",
+      "fingerprint": "2b40fae1ae84"
+    },
+    {
+      "id": "G049",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .max(100)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 277,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 37,
+      "operator": "validator",
+      "scope": "name",
+      "before": "z.string().min(1, \"Required\").max(100)",
+      "after": "z.string().min(1, \"Required\")",
+      "fingerprint": "cefa8a2900b8"
+    },
+    {
+      "id": "G050",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .min(1, \"Required\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 277,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 37,
+      "operator": "validator",
+      "scope": "name",
+      "before": "z.string().min(1, \"Required\")",
+      "after": "z.string()",
+      "fingerprint": "23c37f5a4f0b"
+    },
+    {
+      "id": "G051",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, \"Lowercase letters, numbers,)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > slug on aws > refuses command substitution"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 38,
+      "operator": "validator",
+      "scope": "slug",
+      "before": "z .string() .min(3, \"Must be at least 3 characters\") // Every cloud resource is named after this, and the shortest ceiling wins. // On AWS the frontend's target group is chatbot-<slug>-ui and AWS caps // that name at 32 characters, so the slug cannot exceed 21. Azure's Key // Vault is tighter still, and is checked per cloud below. .max(21, \"Must be 21 characters or fewer, since cloud resource names are built from it\") .regex( /^[a-z0-9][a-z0-9-]*[a-z0-9]$/, \"Lowercase letters, numbers, and hyphens only; cannot start or end with a hyphen\" )",
+      "after": "z .string() .min(3, \"Must be at least 3 characters\") // Every cloud resource is named after this, and the shortest ceiling wins. // On AWS the frontend's target group is chatbot-<slug>-ui and AWS caps // that name at 32 characters, so the slug cannot exceed 21. Azure's Key // Vault is tighter still, and is checked per cloud below. .max(21, \"Must be 21 characters or fewer, since cloud resource names are built from it\")",
+      "fingerprint": "b24404c01f73"
+    },
+    {
+      "id": "G052",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .max(21, \"Must be 21 characters or fewer, since cloud resource na)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > rejects an AWS slug longer than the names AWS builds from it"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 38,
+      "operator": "validator",
+      "scope": "slug",
+      "before": "z .string() .min(3, \"Must be at least 3 characters\") // Every cloud resource is named after this, and the shortest ceiling wins. // On AWS the frontend's target group is chatbot-<slug>-ui and AWS caps // that name at 32 characters, so the slug cannot exceed 21. Azure's Key // Vault is tighter still, and is checked per cloud below. .max(21, \"Must be 21 characters or fewer, since cloud resource names are built from it\")",
+      "after": "z .string() .min(3, \"Must be at least 3 characters\")",
+      "fingerprint": "554acd81435c"
+    },
+    {
+      "id": "G053",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .min(3, \"Must be at least 3 characters\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > reports only the fields asked about"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 38,
+      "operator": "validator",
+      "scope": "slug",
+      "before": "z .string() .min(3, \"Must be at least 3 characters\")",
+      "after": "z .string()",
+      "fingerprint": "abbe598519c3"
+    },
+    {
+      "id": "G054",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(IMAGE_TAG_RE, \"Must be an image tag: letters, numbers, '.', )",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 50,
+      "operator": "validator",
+      "scope": "chatbotVersion",
+      "before": "z .string() .regex(IMAGE_TAG_RE, \"Must be an image tag: letters, numbers, '.', '_' and '-', up to 128 characters\")",
+      "after": "z .string()",
+      "fingerprint": "d1c8d2065d2f"
+    },
+    {
+      "id": "G055",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => v === \"\" || /^([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$/.test(v)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > domain on aws > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 54,
+      "operator": "validator",
+      "scope": "domain",
+      "before": "z .string() .max(253, \"Must be 253 characters or fewer\") .refine( (v) => v === \"\" || /^([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$/.test(v), \"Must be a valid hostname (e.g. chat.example.com) — no https:// or trailing slash\" )",
+      "after": "z .string() .max(253, \"Must be 253 characters or fewer\")",
+      "fingerprint": "df6d459c5fd1"
+    },
+    {
+      "id": "G056",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .max(253, \"Must be 253 characters or fewer\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > domain on aws > refuses an oversized value"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 54,
+      "operator": "validator",
+      "scope": "domain",
+      "before": "z .string() .max(253, \"Must be 253 characters or fewer\")",
+      "after": "z .string()",
+      "fingerprint": "c968ab150711"
+    },
+    {
+      "id": "G057",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .min(10, \"API key looks too short\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "createTenantAndDeploy > shared field validation > rejects an llmApiKey that is too short"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 65,
+      "operator": "validator",
+      "scope": "llmApiKey",
+      "before": "z.string().min(10, \"API key looks too short\")",
+      "after": "z.string()",
+      "fingerprint": "afb96a65fbcb"
+    },
+    {
+      "id": "G058",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(MODEL_ID_RE, \"Must be a model ID, such as gpt-4o-mini or met)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > llmModel on aws > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 66,
+      "operator": "validator",
+      "scope": "llmModel",
+      "before": "z .string() .regex(MODEL_ID_RE, \"Must be a model ID, such as gpt-4o-mini or meta-llama/llama-3.3-70b-instruct:free\")",
+      "after": "z .string()",
+      "fingerprint": "7364d9085948"
+    },
+    {
+      "id": "G059",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(/^\\d{12}$/, \"Must be exactly 12 digits\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > awsAccountId on aws > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 87,
+      "operator": "validator",
+      "scope": "awsAccountId",
+      "before": "z.string().regex(/^\\d{12}$/, \"Must be exactly 12 digits\")",
+      "after": "z.string()",
+      "fingerprint": "258026fc8f8e"
+    },
+    {
+      "id": "G060",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(/^[a-z]{2}-[a-z]+-[0-9]$/, \"Must be a valid AWS region (e.g.)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > awsRegion on aws > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 88,
+      "operator": "validator",
+      "scope": "awsRegion",
+      "before": "z .string() .regex(/^[a-z]{2}-[a-z]+-[0-9]$/, \"Must be a valid AWS region (e.g. us-east-1)\")",
+      "after": "z .string()",
+      "fingerprint": "8daa07580155"
+    },
+    {
+      "id": "G061",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => v.includes(`:role/${AWS_DEPLOY_ROLE_PREFIX}`), `The r)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 277,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 91,
+      "operator": "validator",
+      "scope": "deploymentRoleArn",
+      "before": "z .string() // IAM's own character set for role paths and names. .regex(/^arn:aws:iam::\\d{12}:role\\/[\\w+=,.@/-]{1,512}$/, \"Must be a valid IAM role ARN\") // Onboarding derives the customer's onboarding role from this name, and // that is the only role the platform may assume (see awsTrust.ts). .refine( (v) => v.includes(`:role/${AWS_DEPLOY_ROLE_PREFIX}`), `The role name must start with ${AWS_DEPLOY_ROLE_PREFIX}, as the setup stack names it`, )",
+      "after": "z .string() // IAM's own character set for role paths and names. .regex(/^arn:aws:iam::\\d{12}:role\\/[\\w+=,.@/-]{1,512}$/, \"Must be a valid IAM role ARN\")",
+      "fingerprint": "dd278d61ae71"
+    },
+    {
+      "id": "G062",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(/^arn:aws:iam::\\d{12}:role\\/[\\w+=,.@/-]{1,512}$/, \"Must be a)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > deploymentRoleArn on aws > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 91,
+      "operator": "validator",
+      "scope": "deploymentRoleArn",
+      "before": "z .string() // IAM's own character set for role paths and names. .regex(/^arn:aws:iam::\\d{12}:role\\/[\\w+=,.@/-]{1,512}$/, \"Must be a valid IAM role ARN\")",
+      "after": "z .string()",
+      "fingerprint": "7d2166c0b33d"
+    },
+    {
+      "id": "G063",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => /^[A-Za-z0-9!_.*'()/-]{0,256}$/.test(v), \"Letters, nu)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > s3DocsPrefix on aws > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 101,
+      "operator": "validator",
+      "scope": "s3DocsPrefix",
+      "before": "z .string() .refine((v) => !v.startsWith(\"/\"), \"Must not start with a leading slash\") // S3's characters that are safe in a key without encoding. .refine( (v) => /^[A-Za-z0-9!_.*'()/-]{0,256}$/.test(v), \"Letters, numbers, '/' and !_.*'()- only, up to 256 characters\", )",
+      "after": "z .string() .refine((v) => !v.startsWith(\"/\"), \"Must not start with a leading slash\")",
+      "fingerprint": "9b673344f60d"
+    },
+    {
+      "id": "G064",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => !v.startsWith(\"/\"), \"Must not start with a leading sl)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "createTenantAndDeploy > AWS field validation > rejects an s3DocsPrefix with a leading slash"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 101,
+      "operator": "validator",
+      "scope": "s3DocsPrefix",
+      "before": "z .string() .refine((v) => !v.startsWith(\"/\"), \"Must not start with a leading slash\")",
+      "after": "z .string()",
+      "fingerprint": "a196a9d2b433"
+    },
+    {
+      "id": "G065",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => v === \"\" || /^arn:aws:acm:[a-z0-9-]+:\\d{12}:certifica)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > acmCertificateArn on aws > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 113,
+      "operator": "validator",
+      "scope": "acmCertificateArn",
+      "before": "z .string() .refine( (v) => v === \"\" || /^arn:aws:acm:[a-z0-9-]+:\\d{12}:certificate\\/[A-Za-z0-9-]{1,128}$/.test(v), \"Must be a valid ACM certificate ARN (arn:aws:acm:REGION:ACCOUNT:certificate/ID)\", )",
+      "after": "z .string()",
+      "fingerprint": "61582fb0a115"
+    },
+    {
+      "id": "G066",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(UUID_RE, `${label} must be a valid UUID`)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > azureSubscriptionId on azure > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 129,
+      "operator": "validator",
+      "scope": "azureUuid",
+      "before": "z.string().regex(UUID_RE, `${label} must be a valid UUID`)",
+      "after": "z.string()",
+      "fingerprint": "d4a94256eeac"
+    },
+    {
+      "id": "G067",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .regex(AZURE_REGION_RE, \"Must be a region name as Azure lists it, e)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "workflow injection through a dispatched field > azureRegion on azure > refuses a command separator"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 139,
+      "operator": "validator",
+      "scope": "azureRegion",
+      "before": "z .string() .min(1, \"Required\") .regex(AZURE_REGION_RE, \"Must be a region name as Azure lists it, e.g. swedencentral\")",
+      "after": "z .string() .min(1, \"Required\")",
+      "fingerprint": "f875817de898"
+    },
+    {
+      "id": "G068",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .min(1, \"Required\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 277,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 139,
+      "operator": "validator",
+      "scope": "azureRegion",
+      "before": "z .string() .min(1, \"Required\")",
+      "after": "z .string()",
+      "fingerprint": "c27a41ee6f3d"
+    },
+    {
+      "id": "G069",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => v.cloudProvider !== \"azure\" || v.slug.length <= 18, {)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > rejects an Azure slug past its Key Vault's limit, while AWS accepts the same one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 147,
+      "operator": "validator",
+      "scope": "TenantInput",
+      "before": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], }) // A certificate with no domain would open port 443 for a hostname nobody // resolves, while the tenant's advertised URL stayed on plain HTTP. .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || Boolean(v.domain), { message: \"A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.\", path: [\"acmCertificateArn\"], }) // A load balancer can only use certificates from its own region. Caught // here because otherwise it surfaces minutes later, as a Terraform error // from the middle of a workflow run. .refine( (v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || v.acmCertificateArn.split(\":\")[3] === v.awsRegion, { message: \"The certificate must live in the same region as the deployment. Request it again in the tenant's region.\", path: [\"acmCertificateArn\"], }, ) .refine( (v) => v.cloudProvider !== \"aws\" || !AWS_REGIONS_WITHOUT_STATE_BUCKETS.includes(v.awsRegion), { message: \"This region cannot hold the chatbot's deployment state in a bucket only your account can own (S3 does not offer account-regional namespaces in Bahrain or the UAE). Choose another region.\", path: [\"awsRegion\"], }, ) // Azure's Key Vault is named cb-<slug>-kv and capped at 24 characters, which // is stricter than the shared limit above. Caught here because a slug is // permanent: a tenant created too long can never be deployed, only deleted. .refine((v) => v.cloudProvider !== \"azure\" || v.slug.length <= 18, { message: \"An Azure tenant's slug must be 18 characters or fewer: its Key Vault is named cb-<slug>-kv.\", path: [\"slug\"], })",
+      "after": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], }) // A certificate with no domain would open port 443 for a hostname nobody // resolves, while the tenant's advertised URL stayed on plain HTTP. .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || Boolean(v.domain), { message: \"A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.\", path: [\"acmCertificateArn\"], }) // A load balancer can only use certificates from its own region. Caught // here because otherwise it surfaces minutes later, as a Terraform error // from the middle of a workflow run. .refine( (v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || v.acmCertificateArn.split(\":\")[3] === v.awsRegion, { message: \"The certificate must live in the same region as the deployment. Request it again in the tenant's region.\", path: [\"acmCertificateArn\"], }, ) .refine( (v) => v.cloudProvider !== \"aws\" || !AWS_REGIONS_WITHOUT_STATE_BUCKETS.includes(v.awsRegion), { message: \"This region cannot hold the chatbot's deployment state in a bucket only your account can own (S3 does not offer account-regional namespaces in Bahrain or the UAE). Choose another region.\", path: [\"awsRegion\"], }, )",
+      "fingerprint": "e135aed32025"
+    },
+    {
+      "id": "G070",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => v.cloudProvider !== \"aws\" || !AWS_REGIONS_WITHOUT_STA)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > refuses an AWS tenant in me-south-1"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 147,
+      "operator": "validator",
+      "scope": "TenantInput",
+      "before": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], }) // A certificate with no domain would open port 443 for a hostname nobody // resolves, while the tenant's advertised URL stayed on plain HTTP. .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || Boolean(v.domain), { message: \"A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.\", path: [\"acmCertificateArn\"], }) // A load balancer can only use certificates from its own region. Caught // here because otherwise it surfaces minutes later, as a Terraform error // from the middle of a workflow run. .refine( (v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || v.acmCertificateArn.split(\":\")[3] === v.awsRegion, { message: \"The certificate must live in the same region as the deployment. Request it again in the tenant's region.\", path: [\"acmCertificateArn\"], }, ) .refine( (v) => v.cloudProvider !== \"aws\" || !AWS_REGIONS_WITHOUT_STATE_BUCKETS.includes(v.awsRegion), { message: \"This region cannot hold the chatbot's deployment state in a bucket only your account can own (S3 does not offer account-regional namespaces in Bahrain or the UAE). Choose another region.\", path: [\"awsRegion\"], }, )",
+      "after": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], }) // A certificate with no domain would open port 443 for a hostname nobody // resolves, while the tenant's advertised URL stayed on plain HTTP. .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || Boolean(v.domain), { message: \"A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.\", path: [\"acmCertificateArn\"], }) // A load balancer can only use certificates from its own region. Caught // here because otherwise it surfaces minutes later, as a Terraform error // from the middle of a workflow run. .refine( (v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || v.acmCertificateArn.split(\":\")[3] === v.awsRegion, { message: \"The certificate must live in the same region as the deployment. Request it again in the tenant's region.\", path: [\"acmCertificateArn\"], }, )",
+      "fingerprint": "4549ff1158d1"
+    },
+    {
+      "id": "G071",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || )",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > rejects a certificate with no domain, and one from another region"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 147,
+      "operator": "validator",
+      "scope": "TenantInput",
+      "before": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], }) // A certificate with no domain would open port 443 for a hostname nobody // resolves, while the tenant's advertised URL stayed on plain HTTP. .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || Boolean(v.domain), { message: \"A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.\", path: [\"acmCertificateArn\"], }) // A load balancer can only use certificates from its own region. Caught // here because otherwise it surfaces minutes later, as a Terraform error // from the middle of a workflow run. .refine( (v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || v.acmCertificateArn.split(\":\")[3] === v.awsRegion, { message: \"The certificate must live in the same region as the deployment. Request it again in the tenant's region.\", path: [\"acmCertificateArn\"], }, )",
+      "after": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], }) // A certificate with no domain would open port 443 for a hostname nobody // resolves, while the tenant's advertised URL stayed on plain HTTP. .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || Boolean(v.domain), { message: \"A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.\", path: [\"acmCertificateArn\"], })",
+      "fingerprint": "f7a30055dc03"
+    },
+    {
+      "id": "G072",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || )",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > rejects a certificate with no domain, and one from another region"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 147,
+      "operator": "validator",
+      "scope": "TenantInput",
+      "before": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], }) // A certificate with no domain would open port 443 for a hostname nobody // resolves, while the tenant's advertised URL stayed on plain HTTP. .refine((v) => v.cloudProvider !== \"aws\" || !v.acmCertificateArn || Boolean(v.domain), { message: \"A certificate only takes effect together with a custom domain. ACM cannot issue one for the load balancer's own hostname.\", path: [\"acmCertificateArn\"], })",
+      "after": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], })",
+      "fingerprint": "0216cb7733dd"
+    },
+    {
+      "id": "G073",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? )",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > requires the Pinecone key only when Pinecone is the vector store"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 147,
+      "operator": "validator",
+      "scope": "TenantInput",
+      "before": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput]) .refine((v) => v.vectorStore !== \"pinecone\" || (v.pineconeApiKey ?? \"\").length >= 10, { message: \"Required when the vector store is Pinecone\", path: [\"pineconeApiKey\"], })",
+      "after": "z .discriminatedUnion(\"cloudProvider\", [AwsInput, AzureInput])",
+      "fingerprint": "ad39e7f7b200"
+    },
+    {
+      "id": "G074",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (result.success)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 277,
+      "killingTests": [
+        "validateTenantValues > passes a complete submission"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ],
+      "file": "src/lib/tenantInput.ts",
+      "line": 239,
+      "operator": "guard",
+      "scope": "validateTenantValues",
+      "before": "result.success",
+      "after": "false",
+      "fingerprint": "7985d74af763"
+    },
+    {
+      "id": "G075",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!raw)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 183,
+      "killingTests": [
+        "parseAllowedOperators > reports an unset variable as no list rather than an empty one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/operators.ts"
+      ],
+      "file": "src/lib/operators.ts",
+      "line": 22,
+      "operator": "guard",
+      "scope": "parseAllowedOperators",
+      "before": "!raw",
+      "after": "false",
+      "fingerprint": "0f45c81694d2"
+    },
+    {
+      "id": "G076",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (allowed === null)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 183,
+      "killingTests": [
+        "isAllowedOperator > imposes no restriction when no list is configured"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/operators.ts"
+      ],
+      "file": "src/lib/operators.ts",
+      "line": 39,
+      "operator": "guard",
+      "scope": "isAllowedOperator",
+      "before": "allowed === null",
+      "after": "false",
+      "fingerprint": "dc160348daa0"
+    },
+    {
+      "id": "G077",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!email)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 183,
+      "killingTests": [
+        "isAllowedOperator > refuses an account with no email, which cannot be matched"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/operators.ts"
+      ],
+      "file": "src/lib/operators.ts",
+      "line": 42,
+      "operator": "guard",
+      "scope": "isAllowedOperator",
+      "before": "!email",
+      "after": "false",
+      "fingerprint": "c82693de58e5"
+    },
+    {
+      "id": "G078",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 183,
+      "killingTests": [
+        "authorizeSession > reports no session as no session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/operators.ts"
+      ],
+      "file": "src/lib/operators.ts",
+      "line": 54,
+      "operator": "guard",
+      "scope": "authorizeSession",
+      "before": "!session",
+      "after": "false",
+      "fingerprint": "f19f3a66fbce"
+    },
+    {
+      "id": "G079",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(deployments.id, id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 223,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/reconcile.ts"
+      ],
+      "file": "src/lib/reconcile.ts",
+      "line": 60,
+      "operator": "conjunct",
+      "scope": "[updated]",
+      "before": "and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "after": "and(inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "fingerprint": "a56063e270b1"
+    },
+    {
+      "id": "G080",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: inArray(deployments.status, [...ACTIVE_STATUSES])",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 223,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/reconcile.ts"
+      ],
+      "file": "src/lib/reconcile.ts",
+      "line": 60,
+      "operator": "conjunct",
+      "scope": "[updated]",
+      "before": "and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "after": "and(eq(deployments.id, id))",
+      "fingerprint": "e1812ccee991"
+    },
+    {
+      "id": "G081",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (e.code === \"23505\" && `${e.constraint ?? \"\"} ${e.message ?? \"\"}`.includes(ONE_ACTIVE_INDEX))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > refuses a second active deployment for the tenant (the driver's error)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 36,
+      "operator": "guard",
+      "scope": "isActiveDeploymentConflict",
+      "before": "e.code === \"23505\" && `${e.constraint ?? \"\"} ${e.message ?? \"\"}`.includes(ONE_ACTIVE_INDEX)",
+      "after": "false",
+      "fingerprint": "1953f0a2a739"
+    },
+    {
+      "id": "G082",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (isActiveDeploymentConflict(err))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > refuses a second active deployment for the tenant (the driver's error)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 55,
+      "operator": "guard",
+      "scope": "claimDeployment",
+      "before": "isActiveDeploymentConflict(err)",
+      "after": "false",
+      "fingerprint": "784529f80ea8"
+    },
+    {
+      "id": "G083",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > throws when the tenant does not exist"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 72,
+      "operator": "guard",
+      "scope": "triggerDeployment",
+      "before": "!tenant",
+      "after": "false",
+      "fingerprint": "eba303da19b1"
+    },
+    {
+      "id": "G084",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!imageBase)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > throws when the platform image URI env vars are missing (AWS tenant)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 81,
+      "operator": "guard",
+      "scope": "triggerDeployment",
+      "before": "!imageBase",
+      "after": "false",
+      "fingerprint": "044266b3fe0c"
+    },
+    {
+      "id": "G085",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!frontendImageBase)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > throws when only PLATFORM_FRONTEND_IMAGE_URI is missing"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 88,
+      "operator": "guard",
+      "scope": "triggerDeployment",
+      "before": "!frontendImageBase",
+      "after": "false",
+      "fingerprint": "73e5d62ed013"
+    },
+    {
+      "id": "G086",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (tenant.cloudProvider === \"aws\" && !tenant.llmSecretArn)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > throws when an AWS tenant has no llmSecretArn"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 93,
+      "operator": "guard",
+      "scope": "triggerDeployment",
+      "before": "tenant.cloudProvider === \"aws\" && !tenant.llmSecretArn",
+      "after": "false",
+      "fingerprint": "fbdf09b3bc63"
+    },
+    {
+      "id": "G087",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (tenant.cloudProvider === \"azure\" && !tenant.llmApiKeyEncrypted)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > throws when an Azure tenant has no encrypted LLM key"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 98,
+      "operator": "guard",
+      "scope": "triggerDeployment",
+      "before": "tenant.cloudProvider === \"azure\" && !tenant.llmApiKeyEncrypted",
+      "after": "false",
+      "fingerprint": "93762936d31b"
+    },
+    {
+      "id": "G088",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!hasKey)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > throws when a pinecone tenant has no customer Pinecone key on file (AWS)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 109,
+      "operator": "guard",
+      "scope": "triggerDeployment",
+      "before": "!hasKey",
+      "after": "false",
+      "fingerprint": "c46b000684c7"
+    },
+    {
+      "id": "G089",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (tenant.cloudProvider === \"aws\" && !tenant.docsSignerSecretArn)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > refuses to deploy an AWS tenant with no docs-signer secret ARN"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 121,
+      "operator": "guard",
+      "scope": "triggerDeployment",
+      "before": "tenant.cloudProvider === \"aws\" && !tenant.docsSignerSecretArn",
+      "after": "false",
+      "fingerprint": "e25d9dfd7376"
+    },
+    {
+      "id": "G090",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (tenant.cloudProvider === \"azure\" && !tenant.docsSignerSecretEncrypted)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerDeployment > refuses to deploy an Azure tenant with no encrypted docs-signer secret"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 126,
+      "operator": "guard",
+      "scope": "triggerDeployment",
+      "before": "tenant.cloudProvider === \"azure\" && !tenant.docsSignerSecretEncrypted",
+      "after": "false",
+      "fingerprint": "3a041c1728b9"
+    },
+    {
+      "id": "G091",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 290,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 201,
+      "operator": "guard",
+      "scope": "triggerTenantDestroy",
+      "before": "!tenant",
+      "after": "false",
+      "fingerprint": "4e841199c546"
+    },
+    {
+      "id": "G092",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (tenant.deletedAt)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "triggerTenantDestroy > throws for a tenant that's already been deleted"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 202,
+      "operator": "guard",
+      "scope": "triggerTenantDestroy",
+      "before": "tenant.deletedAt",
+      "after": "false",
+      "fingerprint": "bb5515d53488"
+    },
+    {
+      "id": "G093",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (raw === undefined || raw === null || raw === \"\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "retrievalMinScore > returns an empty string when the tenant has no override"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 338,
+      "operator": "guard",
+      "scope": "retrievalMinScore",
+      "before": "raw === undefined || raw === null || raw === \"\"",
+      "after": "false",
+      "fingerprint": "5ab095010b79"
+    },
+    {
+      "id": "G094",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: raw === undefined",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 290,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 338,
+      "operator": "guard-term",
+      "scope": "retrievalMinScore",
+      "before": "raw === undefined || raw === null || raw === \"\"",
+      "after": "raw === null || raw === \"\"",
+      "fingerprint": "e675514e6b7a"
+    },
+    {
+      "id": "G095",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: raw === null",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 290,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 338,
+      "operator": "guard-term",
+      "scope": "retrievalMinScore",
+      "before": "raw === undefined || raw === null || raw === \"\"",
+      "after": "raw === undefined || raw === \"\"",
+      "fingerprint": "b54ab8a32492"
+    },
+    {
+      "id": "G096",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: raw === \"\"",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "retrievalMinScore > returns an empty string when the tenant has no override"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 338,
+      "operator": "guard-term",
+      "scope": "retrievalMinScore",
+      "before": "raw === undefined || raw === null || raw === \"\"",
+      "after": "raw === undefined || raw === null",
+      "fingerprint": "10f31e187541"
+    },
+    {
+      "id": "G097",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!Number.isFinite(value) || value < 0 || value > 1)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "retrievalMinScore > ignores values outside 0..1 rather than blocking the deploy"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 341,
+      "operator": "guard",
+      "scope": "retrievalMinScore",
+      "before": "!Number.isFinite(value) || value < 0 || value > 1",
+      "after": "false",
+      "fingerprint": "b9d57fba3abe"
+    },
+    {
+      "id": "G098",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: !Number.isFinite(value)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "retrievalMinScore > ignores values outside 0..1 rather than blocking the deploy"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 341,
+      "operator": "guard-term",
+      "scope": "retrievalMinScore",
+      "before": "!Number.isFinite(value) || value < 0 || value > 1",
+      "after": "value < 0 || value > 1",
+      "fingerprint": "70c260864ce2"
+    },
+    {
+      "id": "G099",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: value < 0",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "retrievalMinScore > ignores values outside 0..1 rather than blocking the deploy"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 341,
+      "operator": "guard-term",
+      "scope": "retrievalMinScore",
+      "before": "!Number.isFinite(value) || value < 0 || value > 1",
+      "after": "!Number.isFinite(value) || value > 1",
+      "fingerprint": "bb76c2f322e1"
+    },
+    {
+      "id": "G100",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: value > 1",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 217,
+      "killingTests": [
+        "retrievalMinScore > ignores values outside 0..1 rather than blocking the deploy"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploy.ts"
+      ],
+      "file": "src/lib/deploy.ts",
+      "line": 341,
+      "operator": "guard-term",
+      "scope": "retrievalMinScore",
+      "before": "!Number.isFinite(value) || value < 0 || value > 1",
+      "after": "!Number.isFinite(value) || value < 0",
+      "fingerprint": "0c3708d08c20"
+    },
+    {
+      "id": "G101",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .url()",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > body validation > rejects a githubRunUrl that is not a valid URL"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 16,
+      "operator": "validator",
+      "scope": "githubRunUrl",
+      "before": "z.string().url()",
+      "after": "z.string()",
+      "fingerprint": "167204800844"
+    },
+    {
+      "id": "G102",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .url()",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 84,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 19,
+      "operator": "validator",
+      "scope": "chatbotUrl",
+      "before": "z.string().url()",
+      "after": "z.string()",
+      "fingerprint": "34c73a9b6a24"
+    },
+    {
+      "id": "G103",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "validation dropped: .url()",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 84,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 20,
+      "operator": "validator",
+      "scope": "docsSignerUrl",
+      "before": "z.string().url()",
+      "after": "z.string()",
+      "fingerprint": "6ef16dd1f4ea"
+    },
+    {
+      "id": "G104",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!expected)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > authorization > rejects when DEPLOY_WEBHOOK_SECRET is not configured, even with a matching header"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 32,
+      "operator": "guard",
+      "scope": "authorized",
+      "before": "!expected",
+      "after": "false",
+      "fingerprint": "2c5b311694a4"
+    },
+    {
+      "id": "G105",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (a.length !== b.length)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > authorization > rejects when the header is missing"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 36,
+      "operator": "guard",
+      "scope": "authorized",
+      "before": "a.length !== b.length",
+      "after": "false",
+      "fingerprint": "078c95c5190b"
+    },
+    {
+      "id": "G106",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!authorized(req))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > authorization > rejects when DEPLOY_WEBHOOK_SECRET is not configured, even with a matching header"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 63,
+      "operator": "guard",
+      "scope": "POST",
+      "before": "!authorized(req)",
+      "after": "false",
+      "fingerprint": "fa72bad3cbf0"
+    },
+    {
+      "id": "G107",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!parsed.success)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > body validation > rejects malformed JSON with 400"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 70,
+      "operator": "guard",
+      "scope": "POST",
+      "before": "!parsed.success",
+      "after": "false",
+      "fingerprint": "758984f4776c"
+    },
+    {
+      "id": "G108",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!row)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > deployment update > returns 404 when the deployment row does not exist"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 79,
+      "operator": "guard",
+      "scope": "POST",
+      "before": "!row",
+      "after": "false",
+      "fingerprint": "0a2b6232b8c7"
+    },
+    {
+      "id": "G109",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!isActive(deployment.status))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > status transitions > refuses any update to a deployment that is already succeeded"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 84,
+      "operator": "guard",
+      "scope": "POST",
+      "before": "!isActive(deployment.status)",
+      "after": "false",
+      "fingerprint": "c08fa61742de"
+    },
+    {
+      "id": "G110",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (problem)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > docsSignerUrl > refuses another host for an AWS tenant, before writing anything"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 93,
+      "operator": "guard",
+      "scope": "POST",
+      "before": "problem",
+      "after": "false",
+      "fingerprint": "c34520e53f05"
+    },
+    {
+      "id": "G111",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(deployments.id, id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 84,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 109,
+      "operator": "conjunct",
+      "scope": "[updated]",
+      "before": "and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "after": "and(inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "fingerprint": "a31f093204b4"
+    },
+    {
+      "id": "G112",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: inArray(deployments.status, [...ACTIVE_STATUSES])",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 84,
+      "killingTests": [
+        "SEC-E2E-01 · deployment webhooks > concurrent terminal callbacks: the first to commit stands"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 109,
+      "operator": "conjunct",
+      "scope": "[updated]",
+      "before": "and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "after": "and(eq(deployments.id, id))",
+      "fingerprint": "bcfeac6cd5e9"
+    },
+    {
+      "id": "G113",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!updated)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > status transitions > reports a concurrent finish instead of overwriting it"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "line": 114,
+      "operator": "guard",
+      "scope": "POST",
+      "before": "!updated",
+      "after": "false",
+      "fingerprint": "593a9020a427"
+    },
+    {
+      "id": "G114",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!match)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 5,
+      "killingTests": [
+        "POST /api/deployments/[id]/secrets > rejects a request with no bearer token, without checking anything"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/secrets/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/secrets/route.ts",
+      "line": 12,
+      "operator": "guard",
+      "scope": "POST",
+      "before": "!match",
+      "after": "false",
+      "fingerprint": "c7ee367f7d30"
+    },
+    {
+      "id": "G115",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (err instanceof SecretsRequestError)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 5,
+      "killingTests": [
+        "POST /api/deployments/[id]/secrets > answers with the refusal's own status and message"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/secrets/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/secrets/route.ts",
+      "line": 21,
+      "operator": "guard",
+      "scope": "POST",
+      "before": "err instanceof SecretsRequestError",
+      "after": "false",
+      "fingerprint": "58897a6f64ee"
+    },
+    {
+      "id": "G116",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (status === 404)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > GitHub API errors > classifies a 404 and auto-fails the deployment once stale"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 76,
+      "operator": "guard",
+      "scope": "classifyGithubError",
+      "before": "status === 404",
+      "after": "false",
+      "fingerprint": "ca714a27ee74"
+    },
+    {
+      "id": "G117",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (status === 401 || status === 403)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > GitHub API errors > classifies a 401 as a github_auth error and never auto-fails"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 77,
+      "operator": "guard",
+      "scope": "classifyGithubError",
+      "before": "status === 401 || status === 403",
+      "after": "false",
+      "fingerprint": "9bd2ca30283a"
+    },
+    {
+      "id": "G118",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: status === 401",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > GitHub API errors > classifies a 401 as a github_auth error and never auto-fails"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 77,
+      "operator": "guard-term",
+      "scope": "classifyGithubError",
+      "before": "status === 401 || status === 403",
+      "after": "status === 403",
+      "fingerprint": "dac10a9da777"
+    },
+    {
+      "id": "G119",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: status === 403",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > GitHub API errors > classifies a 403 as a github_auth error and never auto-fails"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 77,
+      "operator": "guard-term",
+      "scope": "classifyGithubError",
+      "before": "status === 401 || status === 403",
+      "after": "status === 401",
+      "fingerprint": "e2845a49c1d7"
+    },
+    {
+      "id": "G120",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(deployments.id, id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 64,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 85,
+      "operator": "conjunct",
+      "scope": "failStuckDeployment",
+      "before": "and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "after": "and(inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "fingerprint": "3a3ebe2e6e9f"
+    },
+    {
+      "id": "G121",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: inArray(deployments.status, [...ACTIVE_STATUSES])",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 64,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 85,
+      "operator": "conjunct",
+      "scope": "failStuckDeployment",
+      "before": "and(eq(deployments.id, id), inArray(deployments.status, [...ACTIVE_STATUSES]))",
+      "after": "and(eq(deployments.id, id))",
+      "fingerprint": "c6d033b77dc2"
+    },
+    {
+      "id": "G122",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > returns 401 when there is no authenticated session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 98,
+      "operator": "guard",
+      "scope": "GET",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "0690653c6750"
+    },
+    {
+      "id": "G123",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(deployments.id, id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "S10.2 — another operator's deployment > S10.2 is answered 404, as if it did not exist"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 108,
+      "operator": "conjunct",
+      "scope": "[found]",
+      "before": "and(eq(deployments.id, id), eq(tenants.ownerUserId, session.user.id))",
+      "after": "and(eq(tenants.ownerUserId, session.user.id))",
+      "fingerprint": "96aa07da3669"
+    },
+    {
+      "id": "G124",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.ownerUserId, session.user.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "S10.2 — another operator's deployment > S10.2 is answered 404, as if it did not exist"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 108,
+      "operator": "conjunct",
+      "scope": "[found]",
+      "before": "and(eq(deployments.id, id), eq(tenants.ownerUserId, session.user.id))",
+      "after": "and(eq(deployments.id, id))",
+      "fingerprint": "ce5d45887fbb"
+    },
+    {
+      "id": "G125",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!found)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > returns 404 when the deployment doesn't belong to the session's user"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 110,
+      "operator": "guard",
+      "scope": "GET",
+      "before": "!found",
+      "after": "false",
+      "fingerprint": "f17d85e4338a"
+    },
+    {
+      "id": "G126",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!isActive)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 64,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 116,
+      "operator": "guard",
+      "scope": "GET",
+      "before": "!isActive",
+      "after": "false",
+      "fingerprint": "c8eb61216262"
+    },
+    {
+      "id": "G127",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!deployment.githubRunId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > missing run id > returns live=null without attempting a lookup within the grace period"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 148,
+      "operator": "guard",
+      "scope": "GET",
+      "before": "!deployment.githubRunId",
+      "after": "false",
+      "fingerprint": "c84d633320a2"
+    },
+    {
+      "id": "G128",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (ageMs > STALE_DEPLOYMENT_MS)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > missing run id > auto-fails the deployment once it has been un-locatable past the stale window"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 149,
+      "operator": "guard",
+      "scope": "GET",
+      "before": "ageMs > STALE_DEPLOYMENT_MS",
+      "after": "false",
+      "fingerprint": "c0e1ddbf4d02"
+    },
+    {
+      "id": "G129",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (live.runStatus === \"completed\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > self-healing on a completed run > maps GitHub conclusion 'success' to deployment status 'succeeded'"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 163,
+      "operator": "guard",
+      "scope": "GET",
+      "before": "live.runStatus === \"completed\"",
+      "after": "false",
+      "fingerprint": "5d8c635ef802"
+    },
+    {
+      "id": "G130",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (githubError === \"run_not_found\" && ageMs > STALE_DEPLOYMENT_MS)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 42,
+      "killingTests": [
+        "GET /api/deployments/[id]/progress > GitHub API errors > classifies a 404 and auto-fails the deployment once stale"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ],
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "line": 174,
+      "operator": "guard",
+      "scope": "GET",
+      "before": "githubError === \"run_not_found\" && ageMs > STALE_DEPLOYMENT_MS",
+      "after": "false",
+      "fingerprint": "f863e7bea1ef"
+    },
+    {
+      "id": "G131",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 24,
+      "killingTests": [
+        "redeployTenant > throws when there is no authenticated session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 20,
+      "operator": "guard",
+      "scope": "redeployTenant",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "d464b4e956ed"
+    },
+    {
+      "id": "G132",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.id, tenantId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 24,
+      "killingTests": [
+        "S10.5 — another operator's ID put into a request > S10.5 a redeploy naming another tenant is refused"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 26,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and( eq(tenants.id, tenantId), eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt), )",
+      "after": "and(eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt))",
+      "fingerprint": "b1a7ce667b35"
+    },
+    {
+      "id": "G133",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.ownerUserId, session.user.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 24,
+      "killingTests": [
+        "S10.5 — another operator's ID put into a request > S10.5 a redeploy naming another tenant is refused"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 26,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and( eq(tenants.id, tenantId), eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt), )",
+      "after": "and(eq(tenants.id, tenantId), isNull(tenants.deletedAt))",
+      "fingerprint": "314cb55884a8"
+    },
+    {
+      "id": "G134",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: isNull(tenants.deletedAt)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 46,
+      "killingTests": [
+        "SEC-E2E-01 · a manipulated tenant ID > a deleted tenant of Alice's own cannot be acted on"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 26,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and( eq(tenants.id, tenantId), eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt), )",
+      "after": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, session.user.id))",
+      "fingerprint": "cfccca4c3e12"
+    },
+    {
+      "id": "G135",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 24,
+      "killingTests": [
+        "redeployTenant > throws 'Tenant not found' when the query returns nothing (wrong owner or missing tenant)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 33,
+      "operator": "guard",
+      "scope": "redeployTenant",
+      "before": "!tenant",
+      "after": "false",
+      "fingerprint": "82125aa7a9ab"
+    },
+    {
+      "id": "G136",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 24,
+      "killingTests": [
+        "deleteTenant > throws when there is no authenticated session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 52,
+      "operator": "guard",
+      "scope": "deleteTenant",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "9b123d81eaf5"
+    },
+    {
+      "id": "G137",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.id, tenantId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 24,
+      "killingTests": [
+        "S10.3 — destroying another operator's tenant > S10.3 is refused, and no teardown is dispatched"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 58,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and( eq(tenants.id, tenantId), eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt), )",
+      "after": "and(eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt))",
+      "fingerprint": "ab3ede38ef7e"
+    },
+    {
+      "id": "G138",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.ownerUserId, session.user.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 24,
+      "killingTests": [
+        "S10.3 — destroying another operator's tenant > S10.3 is refused, and no teardown is dispatched"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 58,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and( eq(tenants.id, tenantId), eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt), )",
+      "after": "and(eq(tenants.id, tenantId), isNull(tenants.deletedAt))",
+      "fingerprint": "0223a2ada512"
+    },
+    {
+      "id": "G139",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: isNull(tenants.deletedAt)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 46,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 58,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and( eq(tenants.id, tenantId), eq(tenants.ownerUserId, session.user.id), isNull(tenants.deletedAt), )",
+      "after": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, session.user.id))",
+      "fingerprint": "f214cba7a06f"
+    },
+    {
+      "id": "G140",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 24,
+      "killingTests": [
+        "deleteTenant > throws 'Tenant not found' when the query returns nothing (wrong owner, missing, or already deleted)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/actions.ts",
+      "line": 65,
+      "operator": "guard",
+      "scope": "deleteTenant",
+      "before": "!tenant",
+      "after": "false",
+      "fingerprint": "f5c8c3e47605"
+    },
+    {
+      "id": "G141",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "S10.1 — without a session, nothing is reachable > S10.1 every tenant action refuses before acting"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 13,
+      "operator": "guard",
+      "scope": "requireSessionUserId",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "18d35b7ec553"
+    },
+    {
+      "id": "G142",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.id, tenantId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "S10.5 — another operator's ID put into a request > S10.5 document actions naming another tenant's document are refused"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 22,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt))",
+      "after": "and(eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt))",
+      "fingerprint": "2fae9a31235d"
+    },
+    {
+      "id": "G143",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.ownerUserId, userId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "S10.5 — another operator's ID put into a request > S10.5 document actions naming another tenant's document are refused"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 22,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt))",
+      "after": "and(eq(tenants.id, tenantId), isNull(tenants.deletedAt))",
+      "fingerprint": "26caf25a1b5c"
+    },
+    {
+      "id": "G144",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: isNull(tenants.deletedAt)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 56,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 22,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt))",
+      "after": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId))",
+      "fingerprint": "6d03e9c44f9b"
+    },
+    {
+      "id": "G145",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "confirmUpload > throws 'Tenant not found' when the document's tenant isn't owned by the caller"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 25,
+      "operator": "guard",
+      "scope": "requireOwnedTenant",
+      "before": "!tenant",
+      "after": "false",
+      "fingerprint": "a0615b373ed8"
+    },
+    {
+      "id": "G146",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (err instanceof DocsSignerError)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "requestUploadUrl > surfaces the signer's own reason for a 400, unwrapped from its JSON body"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 49,
+      "operator": "guard",
+      "scope": "describePresignFailure",
+      "before": "err instanceof DocsSignerError",
+      "after": "false",
+      "fingerprint": "a2b69d0e4824"
+    },
+    {
+      "id": "G147",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (err.status === 403)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "requestUploadUrl > distinguishes a 403 from the cloud from the signer's own 401"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 54,
+      "operator": "guard",
+      "scope": "describePresignFailure",
+      "before": "err.status === 403",
+      "after": "false",
+      "fingerprint": "c531aa5a254c"
+    },
+    {
+      "id": "G148",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (err.status === 401)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "requestUploadUrl > explains a 401 as a shared-secret mismatch rather than repeating the status"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 60,
+      "operator": "guard",
+      "scope": "describePresignFailure",
+      "before": "err.status === 401",
+      "after": "false",
+      "fingerprint": "a5e896b65f63"
+    },
+    {
+      "id": "G149",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (err.status === 400)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "requestUploadUrl > surfaces the signer's own reason for a 400, unwrapped from its JSON body"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 67,
+      "operator": "guard",
+      "scope": "describePresignFailure",
+      "before": "err.status === 400",
+      "after": "false",
+      "fingerprint": "6d38594021e0"
+    },
+    {
+      "id": "G150",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (err instanceof Error && (err.name === \"TimeoutError\" || err.name === \"AbortError\"))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 56,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 75,
+      "operator": "guard",
+      "scope": "describePresignFailure",
+      "before": "err instanceof Error && (err.name === \"TimeoutError\" || err.name === \"AbortError\")",
+      "after": "false",
+      "fingerprint": "473a96b408ec"
+    },
+    {
+      "id": "G151",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (err instanceof Error && err.message.includes(\"deploy has not completed\"))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 56,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 79,
+      "operator": "guard",
+      "scope": "describePresignFailure",
+      "before": "err instanceof Error && err.message.includes(\"deploy has not completed\")",
+      "after": "false",
+      "fingerprint": "1466e8e27059"
+    },
+    {
+      "id": "G152",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "requestUploadUrl > returns a failure when there is no authenticated session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 101,
+      "operator": "guard",
+      "scope": "requestUploadUrl",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "f58c79c9c947"
+    },
+    {
+      "id": "G153",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.id, tenantId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "S10.4 — upload authorization for another operator's tenant > S10.4 is refused before the tenant's signer is asked"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 110,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt))",
+      "after": "and(eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt))",
+      "fingerprint": "eceecfa02c24"
+    },
+    {
+      "id": "G154",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.ownerUserId, userId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "S10.4 — upload authorization for another operator's tenant > S10.4 is refused before the tenant's signer is asked"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 110,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt))",
+      "after": "and(eq(tenants.id, tenantId), isNull(tenants.deletedAt))",
+      "fingerprint": "fe05bb6a61af"
+    },
+    {
+      "id": "G155",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: isNull(tenants.deletedAt)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 56,
+      "killingTests": [
+        "SEC-E2E-01 · a manipulated tenant ID > a deleted tenant of Alice's own cannot be acted on"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 110,
+      "operator": "conjunct",
+      "scope": "[tenant]",
+      "before": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId), isNull(tenants.deletedAt))",
+      "after": "and(eq(tenants.id, tenantId), eq(tenants.ownerUserId, userId))",
+      "fingerprint": "5362db81ac46"
+    },
+    {
+      "id": "G156",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "requestUploadUrl > returns 'Tenant not found' when the query returns nothing (wrong owner or missing tenant)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 113,
+      "operator": "guard",
+      "scope": "requestUploadUrl",
+      "before": "!tenant",
+      "after": "false",
+      "fingerprint": "732934629244"
+    },
+    {
+      "id": "G157",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!tenant.docsSignerUrl)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "requestUploadUrl > returns a failure when the tenant has no docsSignerUrl yet (deploy not finished)"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 114,
+      "operator": "guard",
+      "scope": "requestUploadUrl",
+      "before": "!tenant.docsSignerUrl",
+      "after": "false",
+      "fingerprint": "f62a095db7c9"
+    },
+    {
+      "id": "G158",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!doc)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 34,
+      "killingTests": [
+        "confirmUpload > throws 'Document not found' when the document row does not exist"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 158,
+      "operator": "guard",
+      "scope": "requireOwnedDocument",
+      "before": "!doc",
+      "after": "false",
+      "fingerprint": "6bca4ec7ffdb"
+    },
+    {
+      "id": "G159",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenantDocuments.id, doc.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 56,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 201,
+      "operator": "conjunct",
+      "scope": "abandonUpload",
+      "before": "and(eq(tenantDocuments.id, doc.id), eq(tenantDocuments.status, \"pending\"))",
+      "after": "and(eq(tenantDocuments.status, \"pending\"))",
+      "fingerprint": "b9b4e5fcd129"
+    },
+    {
+      "id": "G160",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenantDocuments.status, \"pending\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 56,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ],
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "line": 201,
+      "operator": "conjunct",
+      "scope": "abandonUpload",
+      "before": "and(eq(tenantDocuments.id, doc.id), eq(tenantDocuments.status, \"pending\"))",
+      "after": "and(eq(tenantDocuments.id, doc.id))",
+      "fingerprint": "b4fd7c4db3ce"
+    },
+    {
+      "id": "G161",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (missing.length > 0)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 13,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/connectionActions.ts"
+      ],
+      "file": "src/app/tenants/connectionActions.ts",
+      "line": 72,
+      "operator": "guard",
+      "scope": "readTarget",
+      "before": "missing.length > 0",
+      "after": "false",
+      "fingerprint": "901013df60d2"
+    },
+    {
+      "id": "G162",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 13,
+      "killingTests": [
+        "S10.1 — without a session, nothing is reachable > S10.1 every tenant action refuses before acting"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/connectionActions.ts"
+      ],
+      "file": "src/app/tenants/connectionActions.ts",
+      "line": 107,
+      "operator": "guard",
+      "scope": "startCheck",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "8cbcf3b7cc17"
+    },
+    {
+      "id": "G163",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (\"missing\" in target)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 13,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/connectionActions.ts"
+      ],
+      "file": "src/app/tenants/connectionActions.ts",
+      "line": 110,
+      "operator": "guard",
+      "scope": "startCheck",
+      "before": "\"missing\" in target",
+      "after": "false",
+      "fingerprint": "d1cdaf616a95"
+    },
+    {
+      "id": "G164",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (owner && owner.ownerUserId !== session.user.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 13,
+      "killingTests": [
+        "S10.5 — another operator's ID put into a request > S10.5 a connection check naming another operator's tenant is refused"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/connectionActions.ts"
+      ],
+      "file": "src/app/tenants/connectionActions.ts",
+      "line": 124,
+      "operator": "guard",
+      "scope": "startCheck",
+      "before": "owner && owner.ownerUserId !== session.user.id",
+      "after": "false",
+      "fingerprint": "a2d93d5475b2"
+    },
+    {
+      "id": "G165",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 13,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/connectionActions.ts"
+      ],
+      "file": "src/app/tenants/connectionActions.ts",
+      "line": 156,
+      "operator": "guard",
+      "scope": "pollCheck",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "050fc5c9ca63"
+    },
+    {
+      "id": "G166",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (Number.isNaN(startedAt.getTime()))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 13,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/connectionActions.ts"
+      ],
+      "file": "src/app/tenants/connectionActions.ts",
+      "line": 159,
+      "operator": "guard",
+      "scope": "pollCheck",
+      "before": "Number.isNaN(startedAt.getTime())",
+      "after": "false",
+      "fingerprint": "8ac65e203ed6"
+    },
+    {
+      "id": "G167",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (e.$metadata && e.message)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > provisioning failures are returned, not thrown > surfaces an AWS SDK error verbatim, since it names the operator's own role"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 51,
+      "operator": "guard",
+      "scope": "describeProvisioningFailure",
+      "before": "e.$metadata && e.message",
+      "after": "false",
+      "fingerprint": "ae177b351301"
+    },
+    {
+      "id": "G168",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (e.name === \"HttpError\" && e.message)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > provisioning failures are returned, not thrown > reports a failed deploy dispatch after the tenant row was written"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 54,
+      "operator": "guard",
+      "scope": "describeProvisioningFailure",
+      "before": "e.name === \"HttpError\" && e.message",
+      "after": "false",
+      "fingerprint": "0ad478331333"
+    },
+    {
+      "id": "G169",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if ((e.name === \"LongLivedAwsKeyError\" || e.name === \"PlatformCredentialsError\") && e.message)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > provisioning failures are returned, not thrown > surfaces the refusal to call AWS with a long-lived access key"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 61,
+      "operator": "guard",
+      "scope": "describeProvisioningFailure",
+      "before": "(e.name === \"LongLivedAwsKeyError\" || e.name === \"PlatformCredentialsError\") && e.message",
+      "after": "false",
+      "fingerprint": "fc7af3b62f57"
+    },
+    {
+      "id": "G170",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (e.name === \"CredentialsProviderError\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > provisioning failures are returned, not thrown > tells the operator to sign in when the platform has no AWS session of its own"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 66,
+      "operator": "guard",
+      "scope": "describeProvisioningFailure",
+      "before": "e.name === \"CredentialsProviderError\"",
+      "after": "false",
+      "fingerprint": "214bec03e207"
+    },
+    {
+      "id": "G171",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (e.message?.includes(\"PLATFORM_\"))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > provisioning failures are returned, not thrown > names the platform setting an operator forgot to configure"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 77,
+      "operator": "guard",
+      "scope": "describeProvisioningFailure",
+      "before": "e.message?.includes(\"PLATFORM_\")",
+      "after": "false",
+      "fingerprint": "b75990360705"
+    },
+    {
+      "id": "G172",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (e.code === \"23505\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > provisioning failures are returned, not thrown > says the slug is taken instead of sending the operator to the server log"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 83,
+      "operator": "guard",
+      "scope": "describeProvisioningFailure",
+      "before": "e.code === \"23505\"",
+      "after": "false",
+      "fingerprint": "a1e374ebfbc9"
+    },
+    {
+      "id": "G173",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (constraint.includes(\"pkey\") || e.message?.includes(\"tenants_pkey\"))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > provisioning failures are returned, not thrown > recognises a reused tenant ID from the error message alone"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 85,
+      "operator": "guard",
+      "scope": "describeProvisioningFailure",
+      "before": "constraint.includes(\"pkey\") || e.message?.includes(\"tenants_pkey\")",
+      "after": "false",
+      "fingerprint": "12c6f4af6c8e"
+    },
+    {
+      "id": "G174",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: constraint.includes(\"pkey\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 85,
+      "operator": "guard-term",
+      "scope": "describeProvisioningFailure",
+      "before": "constraint.includes(\"pkey\") || e.message?.includes(\"tenants_pkey\")",
+      "after": "e.message?.includes(\"tenants_pkey\")",
+      "fingerprint": "06d17ad9ca29"
+    },
+    {
+      "id": "G175",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "alternative dropped: e.message?.includes(\"tenants_pkey\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > provisioning failures are returned, not thrown > recognises a reused tenant ID from the error message alone"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 85,
+      "operator": "guard-term",
+      "scope": "describeProvisioningFailure",
+      "before": "constraint.includes(\"pkey\") || e.message?.includes(\"tenants_pkey\")",
+      "after": "constraint.includes(\"pkey\")",
+      "fingerprint": "e25ba7f1bfe9"
+    },
+    {
+      "id": "G176",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (await slugTaken(slug))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > refuses a slug already in use before anything reaches the customer's cloud"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 113,
+      "operator": "guard",
+      "scope": "slugProblem",
+      "before": "await slugTaken(slug)",
+      "after": "false",
+      "fingerprint": "82a94babb48a"
+    },
+    {
+      "id": "G177",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenants.cloudProvider, \"azure\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 122,
+      "operator": "conjunct",
+      "scope": "others",
+      "before": "and(eq(tenants.cloudProvider, \"azure\"), isNull(tenants.deletedAt))",
+      "after": "and(isNull(tenants.deletedAt))",
+      "fingerprint": "6dbb942606a6"
+    },
+    {
+      "id": "G178",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: isNull(tenants.deletedAt)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 122,
+      "operator": "conjunct",
+      "scope": "others",
+      "before": "and(eq(tenants.cloudProvider, \"azure\"), isNull(tenants.deletedAt))",
+      "after": "and(eq(tenants.cloudProvider, \"azure\"))",
+      "fingerprint": "fe4a3f89af18"
+    },
+    {
+      "id": "G179",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (shared)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > refuses an Azure slug whose names another customer's live chatbot already needs"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 126,
+      "operator": "guard",
+      "scope": "slugProblem",
+      "before": "shared",
+      "after": "false",
+      "fingerprint": "8e6d98659702"
+    },
+    {
+      "id": "G180",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (taken)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > refuses a slug whose name someone outside the platform holds, before any cloud call"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 133,
+      "operator": "guard",
+      "scope": "slugProblem",
+      "before": "taken",
+      "after": "false",
+      "fingerprint": "94ae1f1a0c78"
+    },
+    {
+      "id": "G181",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "checkSlugAvailable > says nothing about any slug without a session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 150,
+      "operator": "guard",
+      "scope": "checkSlugAvailable",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "b35b058abcc2"
+    },
+    {
+      "id": "G182",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (cloud !== \"aws\" && cloud !== \"azure\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "checkSlugAvailable — the cloud it is asked for > answers only for the two clouds there are"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 152,
+      "operator": "guard",
+      "scope": "checkSlugAvailable",
+      "before": "cloud !== \"aws\" && cloud !== \"azure\"",
+      "after": "false",
+      "fingerprint": "9ea8cfce4fbe"
+    },
+    {
+      "id": "G183",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!value)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 154,
+      "operator": "guard",
+      "scope": "checkSlugAvailable",
+      "before": "!value",
+      "after": "false",
+      "fingerprint": "9d53f1519542"
+    },
+    {
+      "id": "G184",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "checkDeploymentIdentity > says nothing without a session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 196,
+      "operator": "guard",
+      "scope": "checkDeploymentIdentity",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "8d0a43358e03"
+    },
+    {
+      "id": "G185",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (field !== \"azureClientId\" && field !== \"deploymentRoleArn\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "checkDeploymentIdentity > looks up only the two identity columns"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 198,
+      "operator": "guard",
+      "scope": "checkDeploymentIdentity",
+      "before": "field !== \"azureClientId\" && field !== \"deploymentRoleArn\"",
+      "after": "false",
+      "fingerprint": "c592794123a5"
+    },
+    {
+      "id": "G186",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!value.trim())",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 201,
+      "operator": "guard",
+      "scope": "checkDeploymentIdentity",
+      "before": "!value.trim()",
+      "after": "false",
+      "fingerprint": "0cd9aa7fd3c7"
+    },
+    {
+      "id": "G187",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > redirects to /signin when there is no authenticated session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 211,
+      "operator": "guard",
+      "scope": "createTenantAndDeploy",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "3a74660479cf"
+    },
+    {
+      "id": "G188",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!result.success)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > shared field validation > rejects a slug that is too short"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 223,
+      "operator": "guard",
+      "scope": "createTenantAndDeploy",
+      "before": "!result.success",
+      "after": "false",
+      "fingerprint": "148a30c7caf0"
+    },
+    {
+      "id": "G189",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (slugIssue)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > refuses a slug already in use before anything reaches the customer's cloud"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 240,
+      "operator": "guard",
+      "scope": "createTenantAndDeploy",
+      "before": "slugIssue",
+      "after": "false",
+      "fingerprint": "69f04ff8c189"
+    },
+    {
+      "id": "G190",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (owner)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "createTenantAndDeploy > refuses an Azure identity another chatbot used, naming that chatbot"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 250,
+      "operator": "guard",
+      "scope": "createTenantAndDeploy",
+      "before": "owner",
+      "after": "false",
+      "fingerprint": "b78387b42b27"
+    },
+    {
+      "id": "G191",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenantDrafts.id, draftId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 385,
+      "operator": "conjunct",
+      "scope": "createTenantAndDeploy",
+      "before": "and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id))",
+      "after": "and(eq(tenantDrafts.ownerUserId, session.user.id))",
+      "fingerprint": "048513b7fbeb"
+    },
+    {
+      "id": "G192",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenantDrafts.ownerUserId, session.user.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 385,
+      "operator": "conjunct",
+      "scope": "createTenantAndDeploy",
+      "before": "and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id))",
+      "after": "and(eq(tenantDrafts.id, draftId))",
+      "fingerprint": "12045af17546"
+    },
+    {
+      "id": "G193",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "saveTenantDraft > redirects to /signin when there is no authenticated session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 429,
+      "operator": "guard",
+      "scope": "saveTenantDraft",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "de467d2aebc1"
+    },
+    {
+      "id": "G194",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenantDrafts.id, existingId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 451,
+      "operator": "conjunct",
+      "scope": "[updated]",
+      "before": "and(eq(tenantDrafts.id, existingId), eq(tenantDrafts.ownerUserId, session.user.id))",
+      "after": "and(eq(tenantDrafts.ownerUserId, session.user.id))",
+      "fingerprint": "b93be83c39a2"
+    },
+    {
+      "id": "G195",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenantDrafts.ownerUserId, session.user.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 451,
+      "operator": "conjunct",
+      "scope": "[updated]",
+      "before": "and(eq(tenantDrafts.id, existingId), eq(tenantDrafts.ownerUserId, session.user.id))",
+      "after": "and(eq(tenantDrafts.id, existingId))",
+      "fingerprint": "e9b221665bf5"
+    },
+    {
+      "id": "G196",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (updated)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "saveTenantDraft > updates an existing draft in place when draftId belongs to the session user"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 457,
+      "operator": "guard",
+      "scope": "saveTenantDraft",
+      "before": "updated",
+      "after": "false",
+      "fingerprint": "a995008b1240"
+    },
+    {
+      "id": "G197",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!session?.user?.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 80,
+      "killingTests": [
+        "deleteTenantDraft > redirects to /signin when there is no authenticated session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 474,
+      "operator": "guard",
+      "scope": "deleteTenantDraft",
+      "before": "!session?.user?.id",
+      "after": "false",
+      "fingerprint": "031c95bd30d8"
+    },
+    {
+      "id": "G198",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenantDrafts.id, draftId)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 478,
+      "operator": "conjunct",
+      "scope": "deleteTenantDraft",
+      "before": "and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id))",
+      "after": "and(eq(tenantDrafts.ownerUserId, session.user.id))",
+      "fingerprint": "0c0967faa105"
+    },
+    {
+      "id": "G199",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "query condition dropped: eq(tenantDrafts.ownerUserId, session.user.id)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 80,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/app/tenants/new/actions.ts"
+      ],
+      "file": "src/app/tenants/new/actions.ts",
+      "line": 478,
+      "operator": "conjunct",
+      "scope": "deleteTenantDraft",
+      "before": "and(eq(tenantDrafts.id, draftId), eq(tenantDrafts.ownerUserId, session.user.id))",
+      "after": "and(eq(tenantDrafts.id, draftId))",
+      "fingerprint": "e47e19fcf5e3"
+    },
+    {
+      "id": "G200",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (WEBHOOK_PATH.test(request.nextUrl.pathname))",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 170,
+      "killingTests": [
+        "the proxy's exception for workflow callbacks > lets /api/deployments/dep-1/status through without a session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/auth.ts"
+      ],
+      "file": "src/auth.ts",
+      "line": 79,
+      "operator": "guard",
+      "scope": "authorized",
+      "before": "WEBHOOK_PATH.test(request.nextUrl.pathname)",
+      "after": "false",
+      "fingerprint": "7a983a47d3c2"
+    },
+    {
+      "id": "G201",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!process.env.DATABASE_URL && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 192,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/auth.ts"
+      ],
+      "file": "src/auth.ts",
+      "line": 113,
+      "operator": "guard",
+      "scope": "(module)",
+      "before": "!process.env.DATABASE_URL && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\"",
+      "after": "false",
+      "fingerprint": "586b735f6163"
+    },
+    {
+      "id": "G202",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (!configuredAuthSecret && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 192,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/auth.ts"
+      ],
+      "file": "src/auth.ts",
+      "line": 125,
+      "operator": "guard",
+      "scope": "(module)",
+      "before": "!configuredAuthSecret && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\"",
+      "after": "false",
+      "fingerprint": "ebbc3d0eaeb6"
+    },
+    {
+      "id": "G203",
+      "class": "generated",
+      "scenario": null,
+      "unit": null,
+      "control": "guard removed: if (providers.length === 0 && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\")",
+      "expect": "killed",
+      "because": null,
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 192,
+      "killingTests": [],
+      "error": null,
+      "asExpected": false,
+      "targets": [
+        "src/auth.ts"
+      ],
+      "file": "src/auth.ts",
+      "line": 137,
+      "operator": "guard",
+      "scope": "(module)",
+      "before": "providers.length === 0 && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\"",
+      "after": "false",
+      "fingerprint": "18d8e982350f"
+    }
+  ]
+}

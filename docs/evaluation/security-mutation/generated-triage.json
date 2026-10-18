@@ -1,0 +1,352 @@
+{
+  "b9bed667172d": {
+    "id": "G005",
+    "where": "src/lib/crypto.ts:37",
+    "mutation": "alternative dropped: !ivHex",
+    "verdict": "equivalent",
+    "note": "An empty IV fails the 12-byte length check two lines down, with the same error."
+  },
+  "3933f88108fc": {
+    "id": "G006",
+    "where": "src/lib/crypto.ts:37",
+    "mutation": "alternative dropped: !tagHex",
+    "verdict": "equivalent",
+    "note": "An empty tag fails the 16-byte length check two lines down, with the same error."
+  },
+  "e038eb0d8444": {
+    "id": "G013",
+    "where": "src/lib/deploymentSecrets.ts:89",
+    "mutation": "alternative dropped: typeof repository !== \"string\"",
+    "verdict": "layered",
+    "note": "A repository claim that is not a string still fails the exact repository comparison (403 instead of 401). The wrong-type test covers run_id and sub."
+  },
+  "6cd0d09e5afe": {
+    "id": "G029",
+    "where": "src/lib/docsSigner.ts:35",
+    "mutation": "alternative dropped: parsed.username",
+    "verdict": "not security",
+    "note": "A user name in the URL does not change the host the secret is sent to; the host check below decides that."
+  },
+  "1f2ab5be63cc": {
+    "id": "G030",
+    "where": "src/lib/docsSigner.ts:35",
+    "mutation": "alternative dropped: parsed.password",
+    "verdict": "not security",
+    "note": "A password in the URL does not change the host the secret is sent to; the host check below decides that."
+  },
+  "cf43571a7070": {
+    "id": "G033",
+    "where": "src/lib/docsSigner.ts:35",
+    "mutation": "alternative dropped: parsed.hash",
+    "verdict": "not security",
+    "note": "A fragment is never sent to the server."
+  },
+  "b1fc380a49cd": {
+    "id": "G035",
+    "where": "src/lib/docsSigner.ts:44",
+    "mutation": "guard removed: if (!tenant.awsRegion)",
+    "verdict": "layered",
+    "note": "Without a region the next line throws, so the URL is still refused (by an error rather than a reason)."
+  },
+  "77cde7cd033b": {
+    "id": "G047",
+    "where": "src/lib/awsTrust.ts:91",
+    "mutation": "guard removed: if (!match)",
+    "verdict": "equivalent",
+    "note": "Without the guard, reading the failed match throws a TypeError instead; the ARN is still refused."
+  },
+  "cefa8a2900b8": {
+    "id": "G049",
+    "where": "src/lib/tenantInput.ts:37",
+    "mutation": "validation dropped: .max(100)",
+    "verdict": "not security",
+    "note": "The display name's length. The name is not dispatched to any workflow."
+  },
+  "23c37f5a4f0b": {
+    "id": "G050",
+    "where": "src/lib/tenantInput.ts:37",
+    "mutation": "validation dropped: .min(1, \"Required\")",
+    "verdict": "not security",
+    "note": "The display name's length. The name is not dispatched to any workflow."
+  },
+  "dd278d61ae71": {
+    "id": "G061",
+    "where": "src/lib/tenantInput.ts:91",
+    "mutation": "validation dropped: .refine((v) => v.includes(`:role/${AWS_DEPLOY_ROLE_PREFIX}`), `The r)",
+    "verdict": "layered",
+    "note": "An ARN outside the setup stack's prefix makes awsOnboardingRoleArn throw at onboarding, and the platform role may assume only chatbot-client-onboard-* roles (M17, M18). No test submits such an ARN to the form, so only the message is untested."
+  },
+  "c27a41ee6f3d": {
+    "id": "G068",
+    "where": "src/lib/tenantInput.ts:139",
+    "mutation": "validation dropped: .min(1, \"Required\")",
+    "verdict": "equivalent",
+    "note": "The region pattern already requires at least two characters."
+  },
+  "4e841199c546": {
+    "id": "G091",
+    "where": "src/lib/deploy.ts:201",
+    "mutation": "guard removed: if (!tenant)",
+    "verdict": "layered",
+    "note": "Its only caller, the teardown action, has already read the tenant as owned and live."
+  },
+  "e675514e6b7a": {
+    "id": "G094",
+    "where": "src/lib/deploy.ts:338",
+    "mutation": "alternative dropped: raw === undefined",
+    "verdict": "equivalent",
+    "note": "Number(undefined) is NaN, which the finiteness check below rejects the same way."
+  },
+  "b54ab8a32492": {
+    "id": "G095",
+    "where": "src/lib/deploy.ts:338",
+    "mutation": "alternative dropped: raw === null",
+    "verdict": "not security",
+    "note": "A null setting would become a relevance threshold of 0: answer quality, not isolation."
+  },
+  "34c73a9b6a24": {
+    "id": "G102",
+    "where": "src/app/api/deployments/[id]/status/route.ts:19",
+    "mutation": "validation dropped: .url()",
+    "verdict": "known open",
+    "note": "chatbotUrl is SECURITY.md #18: any URL is accepted, and .url() only requires that it parses."
+  },
+  "6ef16dd1f4ea": {
+    "id": "G103",
+    "where": "src/app/api/deployments/[id]/status/route.ts:20",
+    "mutation": "validation dropped: .url()",
+    "verdict": "layered",
+    "note": "acceptDocsSignerUrl parses the URL itself and refuses anything but this tenant's signer (M11, M12)."
+  },
+  "c6d033b77dc2": {
+    "id": "G121",
+    "where": "src/app/api/deployments/[id]/progress/route.ts:85",
+    "mutation": "query condition dropped: inArray(deployments.status, [...ACTIVE_STATUSES])",
+    "verdict": "layered",
+    "note": "Only called for a deployment the route has just read as active; the condition guards a callback landing in between, a race no test stages."
+  },
+  "c8eb61216262": {
+    "id": "G126",
+    "where": "src/app/api/deployments/[id]/progress/route.ts:116",
+    "mutation": "guard removed: if (!isActive)",
+    "verdict": "layered",
+    "note": "For a finished deployment the writes that follow are conditional on an active row, so nothing changes but, at most, a missing run link being filled in."
+  },
+  "f214cba7a06f": {
+    "id": "G139",
+    "where": "src/app/tenants/[id]/actions.ts:58",
+    "mutation": "query condition dropped: isNull(tenants.deletedAt)",
+    "verdict": "layered",
+    "note": "triggerTenantDestroy refuses a deleted tenant itself."
+  },
+  "6d03e9c44f9b": {
+    "id": "G144",
+    "where": "src/app/tenants/[id]/documents/actions.ts:22",
+    "mutation": "query condition dropped: isNull(tenants.deletedAt)",
+    "verdict": "layered",
+    "note": "A deleted tenant's docs-signer URL and secret are erased, so the signer refuses before anything is sent."
+  },
+  "473a96b408ec": {
+    "id": "G150",
+    "where": "src/app/tenants/[id]/documents/actions.ts:75",
+    "mutation": "guard removed: if (err instanceof Error && (err.name === \"TimeoutError\" || err.name === \"AbortError\"))",
+    "verdict": "not security",
+    "note": "Chooses the error message for a timed-out signer."
+  },
+  "1466e8e27059": {
+    "id": "G151",
+    "where": "src/app/tenants/[id]/documents/actions.ts:79",
+    "mutation": "guard removed: if (err instanceof Error && err.message.includes(\"deploy has not completed\"))",
+    "verdict": "not security",
+    "note": "Chooses the error message when the deploy has not finished."
+  },
+  "b4fd7c4db3ce": {
+    "id": "G160",
+    "where": "src/app/tenants/[id]/documents/actions.ts:201",
+    "mutation": "query condition dropped: eq(tenantDocuments.status, \"pending\")",
+    "verdict": "not security",
+    "note": "Would drop the record of one of the operator's own uploaded documents; within one tenant, and the object stays in storage."
+  },
+  "901013df60d2": {
+    "id": "G161",
+    "where": "src/app/tenants/connectionActions.ts:72",
+    "mutation": "guard removed: if (missing.length > 0)",
+    "verdict": "not security",
+    "note": "Names the missing fields; a check dispatched without them fails in the workflow instead."
+  },
+  "d1cdaf616a95": {
+    "id": "G163",
+    "where": "src/app/tenants/connectionActions.ts:110",
+    "mutation": "guard removed: if (\"missing\" in target)",
+    "verdict": "not security",
+    "note": "Names the missing fields; a check dispatched without them fails in the workflow instead."
+  },
+  "050fc5c9ca63": {
+    "id": "G165",
+    "where": "src/app/tenants/connectionActions.ts:156",
+    "mutation": "guard removed: if (!session?.user?.id)",
+    "verdict": "layered",
+    "note": "The proxy refuses an unauthenticated request before any server action runs (A06), and check ids are random, server-generated UUIDs."
+  },
+  "8ac65e203ed6": {
+    "id": "G166",
+    "where": "src/app/tenants/connectionActions.ts:159",
+    "mutation": "guard removed: if (Number.isNaN(startedAt.getTime()))",
+    "verdict": "not security",
+    "note": "An invalid timestamp in a status poll."
+  },
+  "06d17ad9ca29": {
+    "id": "G174",
+    "where": "src/app/tenants/new/actions.ts:85",
+    "mutation": "alternative dropped: constraint.includes(\"pkey\")",
+    "verdict": "not security",
+    "note": "Chooses which duplicate-key message to show."
+  },
+  "6dbb942606a6": {
+    "id": "G177",
+    "where": "src/app/tenants/new/actions.ts:122",
+    "mutation": "query condition dropped: eq(tenants.cloudProvider, \"azure\")",
+    "verdict": "strengthens",
+    "note": "Drops a filter from a collision search, so more tenants are compared and more slugs refused."
+  },
+  "fe4a3f89af18": {
+    "id": "G178",
+    "where": "src/app/tenants/new/actions.ts:122",
+    "mutation": "query condition dropped: isNull(tenants.deletedAt)",
+    "verdict": "strengthens",
+    "note": "Drops a filter from a collision search, so more tenants are compared and more slugs refused."
+  },
+  "9d53f1519542": {
+    "id": "G183",
+    "where": "src/app/tenants/new/actions.ts:154",
+    "mutation": "guard removed: if (!value)",
+    "verdict": "not security",
+    "note": "Shapes the availability hint only; an empty slug is refused by validation on submit."
+  },
+  "0cd9aa7fd3c7": {
+    "id": "G186",
+    "where": "src/app/tenants/new/actions.ts:201",
+    "mutation": "guard removed: if (!value.trim())",
+    "verdict": "not security",
+    "note": "Shapes the availability hint only; an empty value is refused by validation on submit."
+  },
+  "048513b7fbeb": {
+    "id": "G191",
+    "where": "src/app/tenants/new/actions.ts:385",
+    "mutation": "query condition dropped: eq(tenantDrafts.id, draftId)",
+    "verdict": "not security",
+    "note": "Would delete all of the operator's own drafts when a tenant is created; within one operator."
+  },
+  "12045af17546": {
+    "id": "G192",
+    "where": "src/app/tenants/new/actions.ts:385",
+    "mutation": "query condition dropped: eq(tenantDrafts.ownerUserId, session.user.id)",
+    "verdict": "gap",
+    "note": "The draft deletion at the end of tenant creation also checks the owner, and only the full create flow reaches it; no test runs that flow with another operator's draft present. Low risk: draft ids are random and never shown to another operator, and drafts hold no secrets."
+  },
+  "b93be83c39a2": {
+    "id": "G194",
+    "where": "src/app/tenants/new/actions.ts:451",
+    "mutation": "query condition dropped: eq(tenantDrafts.id, existingId)",
+    "verdict": "not security",
+    "note": "Would write the save into all of the operator's own drafts; within one operator."
+  },
+  "0c0967faa105": {
+    "id": "G198",
+    "where": "src/app/tenants/new/actions.ts:478",
+    "mutation": "query condition dropped: eq(tenantDrafts.id, draftId)",
+    "verdict": "not security",
+    "note": "Would delete all of the operator's own drafts; within one operator."
+  },
+  "5edc7044e697": {
+    "id": "G021",
+    "where": "src/lib/deploymentSecrets.ts:153",
+    "mutation": "query condition dropped: eq(deployments.id, deploymentId)",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-03 \"A's claim marks only A's deployment\" was added."
+  },
+  "1d433681cc71": {
+    "id": "G023",
+    "where": "src/lib/deploymentSecrets.ts:153",
+    "mutation": "query condition dropped: inArray(deployments.status, [...ACTIVE_STATUSES])",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-03 \"releases nothing for a deployment that finished without releasing its secrets\" was added."
+  },
+  "f88a7013c8e8": {
+    "id": "G024",
+    "where": "src/lib/deploymentSecrets.ts:153",
+    "mutation": "query condition dropped: or(isNull(deployments.githubRunId), eq(deployments.githubRunId, claims.run_id))",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-03 \"serves only the run the run-started callback recorded\" was added."
+  },
+  "a56063e270b1": {
+    "id": "G079",
+    "where": "src/lib/reconcile.ts:60",
+    "mutation": "query condition dropped: eq(deployments.id, id)",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-01 \"reconciling A's finished run changes only A's\" was added."
+  },
+  "e1812ccee991": {
+    "id": "G080",
+    "where": "src/lib/reconcile.ts:60",
+    "mutation": "query condition dropped: inArray(deployments.status, [...ACTIVE_STATUSES])",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-01 \"… and never reopens a finished deployment\" was added."
+  },
+  "a31f093204b4": {
+    "id": "G111",
+    "where": "src/app/api/deployments/[id]/status/route.ts:109",
+    "mutation": "query condition dropped: eq(deployments.id, id)",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-01 \"a terminal callback for A's deployment changes only A's\" was added."
+  },
+  "3a3ebe2e6e9f": {
+    "id": "G120",
+    "where": "src/app/api/deployments/[id]/progress/route.ts:85",
+    "mutation": "query condition dropped: eq(deployments.id, id)",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-01 \"a deployment of A's that went stale is failed alone\" was added."
+  },
+  "b9b4e5fcd129": {
+    "id": "G159",
+    "where": "src/app/tenants/[id]/documents/actions.ts:201",
+    "mutation": "query condition dropped: eq(tenantDocuments.id, doc.id)",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-01 \"abandoning A's pending upload removes only A's\" was added."
+  },
+  "e9b221665bf5": {
+    "id": "G195",
+    "where": "src/app/tenants/new/actions.ts:451",
+    "mutation": "query condition dropped: eq(tenantDrafts.ownerUserId, session.user.id)",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-01 \"Alice can neither overwrite nor delete Bob's wizard draft\" was added."
+  },
+  "e47e19fcf5e3": {
+    "id": "G199",
+    "where": "src/app/tenants/new/actions.ts:478",
+    "mutation": "query condition dropped: eq(tenantDrafts.ownerUserId, session.user.id)",
+    "verdict": "closed",
+    "note": "Killed after SEC-E2E-01 \"Alice can neither overwrite nor delete Bob's wizard draft\" was added."
+  },
+  "586b735f6163": {
+    "id": "G201",
+    "where": "src/auth.ts:113",
+    "mutation": "guard removed: if (!process.env.DATABASE_URL && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\")",
+    "verdict": "closed",
+    "note": "Killed after auth.test.ts \"starting in production\" was added."
+  },
+  "ebbc3d0eaeb6": {
+    "id": "G202",
+    "where": "src/auth.ts:125",
+    "mutation": "guard removed: if (!configuredAuthSecret && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\")",
+    "verdict": "closed",
+    "note": "Killed after auth.test.ts \"starting in production\" was added."
+  },
+  "18d8e982350f": {
+    "id": "G203",
+    "where": "src/auth.ts:137",
+    "mutation": "guard removed: if (providers.length === 0 && process.env.NODE_ENV === \"production\" && process.env.NEXT_PHASE !== \"phase-production-build\")",
+    "verdict": "closed",
+    "note": "Killed after auth.test.ts \"starting in production\" was added."
+  }
+}

@@ -1,0 +1,994 @@
+{
+  "generated": "2026-10-18T05:19:49.357Z",
+  "extracted_at": "2026-10-18T05:19:48.959Z",
+  "runs": 105,
+  "database_joined": true,
+  "cohorts": {
+    "AWS first deploy (inferred) · pgvector": {
+      "runs": 10,
+      "attempts": 12,
+      "versions": 5,
+      "succeeded": 6,
+      "attempts_succeeded": 6,
+      "run_s": {
+        "n": 6,
+        "median": 598.5,
+        "q1": 587.75,
+        "q3": 692.5,
+        "min": 492,
+        "max": 762,
+        "mean": 626.5,
+        "sd": 98.64431053030884,
+        "cv": 0.15745300962539321
+      },
+      "queue_s": {
+        "n": 10,
+        "median": 6,
+        "q1": 6,
+        "q3": 7.75,
+        "min": 5,
+        "max": 8,
+        "mean": 6.5,
+        "sd": 1.1785113019775793,
+        "cv": 0.18130943107347372
+      },
+      "platform_s": null
+    },
+    "AWS first deploy (inferred) · pinecone": {
+      "runs": 1,
+      "attempts": 1,
+      "versions": 1,
+      "succeeded": 0,
+      "attempts_succeeded": 0,
+      "run_s": null,
+      "queue_s": {
+        "n": 1,
+        "median": 6,
+        "q1": 6,
+        "q3": 6,
+        "min": 6,
+        "max": 6,
+        "mean": 6,
+        "sd": null,
+        "cv": null
+      },
+      "platform_s": null
+    },
+    "AWS first deploy · pgvector": {
+      "runs": 11,
+      "attempts": 11,
+      "versions": 8,
+      "succeeded": 4,
+      "attempts_succeeded": 4,
+      "run_s": {
+        "n": 4,
+        "median": 674,
+        "q1": 606,
+        "q3": 719.25,
+        "min": 537,
+        "max": 720,
+        "mean": 651.25,
+        "sd": 87.30168001438078,
+        "cv": 0.13405248370730255
+      },
+      "queue_s": {
+        "n": 11,
+        "median": 6,
+        "q1": 5.5,
+        "q3": 6.5,
+        "min": 5,
+        "max": 7,
+        "mean": 6,
+        "sd": 0.7745966692414834,
+        "cv": 0.12909944487358058
+      },
+      "platform_s": {
+        "n": 4,
+        "median": 680,
+        "q1": 613.75,
+        "q3": 722.5,
+        "min": 541,
+        "max": 724,
+        "mean": 656.25,
+        "sd": 86.65785211585464,
+        "cv": 0.13205006036701658
+      }
+    },
+    "AWS first deploy · pinecone": {
+      "runs": 2,
+      "attempts": 2,
+      "versions": 1,
+      "succeeded": 2,
+      "attempts_succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 419.5,
+        "q1": 417.75,
+        "q3": 421.25,
+        "min": 416,
+        "max": 423,
+        "mean": 419.5,
+        "sd": 4.949747468305833,
+        "cv": 0.011799159638392927
+      },
+      "queue_s": {
+        "n": 2,
+        "median": 6.5,
+        "q1": 6.25,
+        "q3": 6.75,
+        "min": 6,
+        "max": 7,
+        "mean": 6.5,
+        "sd": 0.7071067811865476,
+        "cv": 0.10878565864408424
+      },
+      "platform_s": {
+        "n": 2,
+        "median": 424,
+        "q1": 421.5,
+        "q3": 426.5,
+        "min": 419,
+        "max": 429,
+        "mean": 424,
+        "sd": 7.0710678118654755,
+        "cv": 0.016677046726097818
+      }
+    },
+    "AWS redeploy (inferred) · pgvector": {
+      "runs": 2,
+      "attempts": 2,
+      "versions": 1,
+      "succeeded": 2,
+      "attempts_succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 106.5,
+        "q1": 102.25,
+        "q3": 110.75,
+        "min": 98,
+        "max": 115,
+        "mean": 106.5,
+        "sd": 12.020815280171307,
+        "cv": 0.11287150497813433
+      },
+      "queue_s": {
+        "n": 2,
+        "median": 6,
+        "q1": 6,
+        "q3": 6,
+        "min": 6,
+        "max": 6,
+        "mean": 6,
+        "sd": 0,
+        "cv": 0
+      },
+      "platform_s": null
+    },
+    "AWS redeploy · pgvector": {
+      "runs": 3,
+      "attempts": 3,
+      "versions": 3,
+      "succeeded": 3,
+      "attempts_succeeded": 3,
+      "run_s": {
+        "n": 3,
+        "median": 108,
+        "q1": 104,
+        "q3": 123.5,
+        "min": 100,
+        "max": 139,
+        "mean": 115.66666666666667,
+        "sd": 20.5993527406405,
+        "cv": 0.1780923868066902
+      },
+      "queue_s": {
+        "n": 3,
+        "median": 6,
+        "q1": 5.5,
+        "q3": 7,
+        "min": 5,
+        "max": 8,
+        "mean": 6.333333333333333,
+        "sd": 1.5275252316519465,
+        "cv": 0.24118819447136
+      },
+      "platform_s": {
+        "n": 3,
+        "median": 118,
+        "q1": 112.5,
+        "q3": 132.5,
+        "min": 107,
+        "max": 147,
+        "mean": 124,
+        "sd": 20.663978319771825,
+        "cv": 0.1666449864497728
+      }
+    },
+    "AWS redeploy · pinecone": {
+      "runs": 2,
+      "attempts": 2,
+      "versions": 2,
+      "succeeded": 2,
+      "attempts_succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 179.5,
+        "q1": 169.25,
+        "q3": 189.75,
+        "min": 159,
+        "max": 200,
+        "mean": 179.5,
+        "sd": 28.991378028648448,
+        "cv": 0.16151185531280474
+      },
+      "queue_s": {
+        "n": 2,
+        "median": 5.5,
+        "q1": 5.25,
+        "q3": 5.75,
+        "min": 5,
+        "max": 6,
+        "mean": 5.5,
+        "sd": 0.7071067811865476,
+        "cv": 0.128564869306645
+      },
+      "platform_s": {
+        "n": 2,
+        "median": 183,
+        "q1": 173,
+        "q3": 193,
+        "min": 163,
+        "max": 203,
+        "mean": 183,
+        "sd": 28.284271247461902,
+        "cv": 0.1545588592757481
+      }
+    },
+    "AWS teardown (nothing to destroy) · pgvector": {
+      "runs": 1,
+      "attempts": 1,
+      "versions": 1,
+      "succeeded": 1,
+      "attempts_succeeded": 1,
+      "run_s": {
+        "n": 1,
+        "median": 30,
+        "q1": 30,
+        "q3": 30,
+        "min": 30,
+        "max": 30,
+        "mean": 30,
+        "sd": null,
+        "cv": null
+      },
+      "queue_s": {
+        "n": 1,
+        "median": 5,
+        "q1": 5,
+        "q3": 5,
+        "min": 5,
+        "max": 5,
+        "mean": 5,
+        "sd": null,
+        "cv": null
+      },
+      "platform_s": {
+        "n": 1,
+        "median": 34,
+        "q1": 34,
+        "q3": 34,
+        "min": 34,
+        "max": 34,
+        "mean": 34,
+        "sd": null,
+        "cv": null
+      }
+    },
+    "AWS teardown · pgvector": {
+      "runs": 6,
+      "attempts": 9,
+      "versions": 3,
+      "succeeded": 6,
+      "attempts_succeeded": 6,
+      "run_s": {
+        "n": 6,
+        "median": 106,
+        "q1": 23.75,
+        "q3": 192.75,
+        "min": 20,
+        "max": 770,
+        "mean": 203.33333333333334,
+        "sd": 289.5027921569439,
+        "cv": 1.4237842237226748
+      },
+      "queue_s": {
+        "n": 6,
+        "median": 6,
+        "q1": 6,
+        "q3": 6.75,
+        "min": 5,
+        "max": 8,
+        "mean": 6.333333333333333,
+        "sd": 1.0327955589886444,
+        "cv": 0.16307298299820702
+      },
+      "platform_s": {
+        "n": 3,
+        "median": 198,
+        "q1": 193.5,
+        "q3": 488,
+        "min": 189,
+        "max": 778,
+        "mean": 388.3333333333333,
+        "sd": 337.4912344540719,
+        "cv": 0.8690761402250778
+      }
+    },
+    "AWS teardown · pinecone": {
+      "runs": 3,
+      "attempts": 3,
+      "versions": 1,
+      "succeeded": 3,
+      "attempts_succeeded": 3,
+      "run_s": {
+        "n": 3,
+        "median": 200,
+        "q1": 194.5,
+        "q3": 252.5,
+        "min": 189,
+        "max": 305,
+        "mean": 231.33333333333334,
+        "sd": 64.03384521745772,
+        "cv": 0.27680336549333306
+      },
+      "queue_s": {
+        "n": 3,
+        "median": 6,
+        "q1": 5.5,
+        "q3": 6.5,
+        "min": 5,
+        "max": 7,
+        "mean": 6,
+        "sd": 1,
+        "cv": 0.16666666666666666
+      },
+      "platform_s": {
+        "n": 3,
+        "median": 204,
+        "q1": 198.5,
+        "q3": 256.5,
+        "min": 193,
+        "max": 309,
+        "mean": 235.33333333333334,
+        "sd": 64.03384521745772,
+        "cv": 0.27209849242545775
+      }
+    },
+    "AWS unknown · pgvector": {
+      "runs": 3,
+      "attempts": 3,
+      "versions": 2,
+      "succeeded": 1,
+      "attempts_succeeded": 1,
+      "run_s": {
+        "n": 1,
+        "median": 93,
+        "q1": 93,
+        "q3": 93,
+        "min": 93,
+        "max": 93,
+        "mean": 93,
+        "sd": null,
+        "cv": null
+      },
+      "queue_s": {
+        "n": 3,
+        "median": 6,
+        "q1": 5.5,
+        "q3": 6.5,
+        "min": 5,
+        "max": 7,
+        "mean": 6,
+        "sd": 1,
+        "cv": 0.16666666666666666
+      },
+      "platform_s": null
+    },
+    "AWS unknown": {
+      "runs": 29,
+      "attempts": 51,
+      "versions": 13,
+      "succeeded": 20,
+      "attempts_succeeded": 24,
+      "run_s": {
+        "n": 20,
+        "median": 342,
+        "q1": 284.25,
+        "q3": 370.5,
+        "min": 84,
+        "max": 478,
+        "mean": 300.55,
+        "sd": 116.3870471179766,
+        "cv": 0.3872468711295179
+      },
+      "queue_s": {
+        "n": 29,
+        "median": 6,
+        "q1": 5,
+        "q3": 7,
+        "min": 5,
+        "max": 13,
+        "mean": 6.379310344827586,
+        "sd": 1.6778769132330869,
+        "cv": 0.26301854315545686
+      },
+      "platform_s": null
+    },
+    "AZURE first deploy · pgvector": {
+      "runs": 6,
+      "attempts": 6,
+      "versions": 4,
+      "succeeded": 2,
+      "attempts_succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 848,
+        "q1": 680,
+        "q3": 1016,
+        "min": 512,
+        "max": 1184,
+        "mean": 848,
+        "sd": 475.1757569573599,
+        "cv": 0.5603487699968867
+      },
+      "queue_s": {
+        "n": 6,
+        "median": 6,
+        "q1": 6,
+        "q3": 7.5,
+        "min": 5,
+        "max": 8,
+        "mean": 6.5,
+        "sd": 1.224744871391589,
+        "cv": 0.1884222879063983
+      },
+      "platform_s": {
+        "n": 2,
+        "median": 853.5,
+        "q1": 686.25,
+        "q3": 1020.75,
+        "min": 519,
+        "max": 1188,
+        "mean": 853.5,
+        "sd": 473.0544366138003,
+        "cv": 0.5542524154818984
+      }
+    },
+    "AZURE teardown · pgvector": {
+      "runs": 3,
+      "attempts": 3,
+      "versions": 1,
+      "succeeded": 2,
+      "attempts_succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 895,
+        "q1": 587.5,
+        "q3": 1202.5,
+        "min": 280,
+        "max": 1510,
+        "mean": 895,
+        "sd": 869.7413408594534,
+        "cv": 0.9717780344798362
+      },
+      "queue_s": {
+        "n": 3,
+        "median": 6,
+        "q1": 5.5,
+        "q3": 6,
+        "min": 5,
+        "max": 6,
+        "mean": 5.666666666666667,
+        "sd": 0.5773502691896258,
+        "cv": 0.10188534162169867
+      },
+      "platform_s": {
+        "n": 2,
+        "median": 901,
+        "q1": 592.5,
+        "q3": 1209.5,
+        "min": 284,
+        "max": 1518,
+        "mean": 901,
+        "sd": 872.5697679841996,
+        "cv": 0.9684459134119863
+      }
+    },
+    "AZURE unknown": {
+      "runs": 23,
+      "attempts": 34,
+      "versions": 9,
+      "succeeded": 4,
+      "attempts_succeeded": 5,
+      "run_s": {
+        "n": 4,
+        "median": 284.5,
+        "q1": 179,
+        "q3": 382.5,
+        "min": 149,
+        "max": 390,
+        "mean": 277,
+        "sd": 125.83852086437338,
+        "cv": 0.4542906890410591
+      },
+      "queue_s": {
+        "n": 23,
+        "median": 6,
+        "q1": 5,
+        "q3": 7,
+        "min": 5,
+        "max": 10,
+        "mean": 6.3478260869565215,
+        "sd": 1.4650068461575658,
+        "cv": 0.2307887497371508
+      },
+      "platform_s": null
+    }
+  },
+  "strict": [
+    {
+      "cloud": "aws",
+      "mode": "first deploy (inferred)",
+      "vector_store": "pgvector",
+      "version": "23e1bfc+fd97da4",
+      "runs": 4,
+      "succeeded": 3,
+      "run_s": {
+        "n": 3,
+        "median": 607,
+        "q1": 549.5,
+        "q3": 664,
+        "min": 492,
+        "max": 721,
+        "mean": 606.6666666666666,
+        "sd": 114.50036390044066,
+        "cv": 0.18873686357215494
+      },
+      "tenants": 4,
+      "planned": [
+        "+20/~0/−0",
+        "+42/~0/−0"
+      ],
+      "resource_sets": 2
+    },
+    {
+      "cloud": "aws",
+      "mode": "redeploy (inferred)",
+      "vector_store": "pgvector",
+      "version": "23e1bfc+fd97da4",
+      "runs": 2,
+      "succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 106.5,
+        "q1": 102.25,
+        "q3": 110.75,
+        "min": 98,
+        "max": 115,
+        "mean": 106.5,
+        "sd": 12.020815280171307,
+        "cv": 0.11287150497813433
+      },
+      "tenants": 1,
+      "planned": [
+        "+0/~0/−0"
+      ],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "first deploy (inferred)",
+      "vector_store": "pgvector",
+      "version": "23e1bfc+392f766",
+      "runs": 2,
+      "succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 588.5,
+        "q1": 587.75,
+        "q3": 589.25,
+        "min": 587,
+        "max": 590,
+        "mean": 588.5,
+        "sd": 2.1213203435596424,
+        "cv": 0.003604622503924626
+      },
+      "tenants": 2,
+      "planned": [
+        "+42/~0/−0"
+      ],
+      "resource_sets": 1
+    },
+    {
+      "cloud": "aws",
+      "mode": "first deploy",
+      "vector_store": "pinecone",
+      "version": "55143b8+2eade1e",
+      "runs": 2,
+      "succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 419.5,
+        "q1": 417.75,
+        "q3": 421.25,
+        "min": 416,
+        "max": 423,
+        "mean": 419.5,
+        "sd": 4.949747468305833,
+        "cv": 0.011799159638392927
+      },
+      "tenants": 2,
+      "planned": [
+        "+38/~0/−0"
+      ],
+      "resource_sets": 1
+    },
+    {
+      "cloud": "azure",
+      "mode": "first deploy",
+      "vector_store": "pgvector",
+      "version": "b014981+b5d756b",
+      "runs": 3,
+      "succeeded": 1,
+      "run_s": {
+        "n": 1,
+        "median": 1184,
+        "q1": 1184,
+        "q3": 1184,
+        "min": 1184,
+        "max": 1184,
+        "mean": 1184,
+        "sd": null,
+        "cv": null
+      },
+      "tenants": 2,
+      "planned": [
+        "+0/~0/−0 then +2/~0/−0"
+      ],
+      "resource_sets": 1
+    },
+    {
+      "cloud": "aws",
+      "mode": "first deploy (inferred)",
+      "vector_store": "pgvector",
+      "version": "c00f8db+b9a70c1",
+      "runs": 2,
+      "succeeded": 1,
+      "run_s": {
+        "n": 1,
+        "median": 762,
+        "q1": 762,
+        "q3": 762,
+        "min": 762,
+        "max": 762,
+        "mean": 762,
+        "sd": null,
+        "cv": null
+      },
+      "tenants": 2,
+      "planned": [
+        "+34/~0/−0"
+      ],
+      "resource_sets": 1
+    },
+    {
+      "cloud": "aws",
+      "mode": "first deploy",
+      "vector_store": "pgvector",
+      "version": "2f8fc9c+0b9065e",
+      "runs": 2,
+      "succeeded": 1,
+      "run_s": {
+        "n": 1,
+        "median": 719,
+        "q1": 719,
+        "q3": 719,
+        "min": 719,
+        "max": 719,
+        "mean": 719,
+        "sd": null,
+        "cv": null
+      },
+      "tenants": 2,
+      "planned": [
+        "+45/~0/−0"
+      ],
+      "resource_sets": 1
+    },
+    {
+      "cloud": "aws",
+      "mode": "first deploy",
+      "vector_store": "pgvector",
+      "version": "2f8fc9c+0566d14",
+      "runs": 2,
+      "succeeded": 0,
+      "run_s": null,
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "first deploy",
+      "vector_store": "pgvector",
+      "version": "ee2facd+7eb3ee9",
+      "runs": 2,
+      "succeeded": 0,
+      "run_s": null,
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "4157f7a+cfd9f3f",
+      "runs": 4,
+      "succeeded": 4,
+      "run_s": {
+        "n": 4,
+        "median": 313,
+        "q1": 239.75,
+        "q3": 340.75,
+        "min": 86,
+        "max": 358,
+        "mean": 267.5,
+        "sd": 124.15178881782842,
+        "cv": 0.4641188367021623
+      },
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "azure",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "93c1957+4017b2b",
+      "runs": 6,
+      "succeeded": 3,
+      "run_s": {
+        "n": 3,
+        "median": 380,
+        "q1": 264.5,
+        "q3": 385,
+        "min": 149,
+        "max": 390,
+        "mean": 306.3333333333333,
+        "sd": 136.34637264457507,
+        "cv": 0.4450915320279926
+      },
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "b1416db+3223ce5",
+      "runs": 3,
+      "succeeded": 3,
+      "run_s": {
+        "n": 3,
+        "median": 121,
+        "q1": 102.5,
+        "q3": 212,
+        "min": 84,
+        "max": 303,
+        "mean": 169.33333333333334,
+        "sd": 117.2276986609109,
+        "cv": 0.6922895590211273
+      },
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "8aee30e+b1aa1fd",
+      "runs": 4,
+      "succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 323,
+        "q1": 310,
+        "q3": 336,
+        "min": 297,
+        "max": 349,
+        "mean": 323,
+        "sd": 36.76955262170047,
+        "cv": 0.11383762421579093
+      },
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "b1416db+abae2e7",
+      "runs": 3,
+      "succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 363,
+        "q1": 358.5,
+        "q3": 367.5,
+        "min": 354,
+        "max": 372,
+        "mean": 363,
+        "sd": 12.727922061357855,
+        "cv": 0.035063146174539546
+      },
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "8aee30e+e6e14a0",
+      "runs": 2,
+      "succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 404.5,
+        "q1": 387.25,
+        "q3": 421.75,
+        "min": 370,
+        "max": 439,
+        "mean": 404.5,
+        "sd": 48.79036790187178,
+        "cv": 0.1206189564941206
+      },
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "4157f7a+b8e36d2",
+      "runs": 2,
+      "succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 333,
+        "q1": 310,
+        "q3": 356,
+        "min": 287,
+        "max": 379,
+        "mean": 333,
+        "sd": 65.05382386916237,
+        "cv": 0.19535682843592303
+      },
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "d592e18+99e9f18",
+      "runs": 2,
+      "succeeded": 2,
+      "run_s": {
+        "n": 2,
+        "median": 377,
+        "q1": 326.5,
+        "q3": 427.5,
+        "min": 276,
+        "max": 478,
+        "mean": 377,
+        "sd": 142.8355697996826,
+        "cv": 0.37887419045008647
+      },
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "pgvector",
+      "version": "c00f8db+b9a70c1",
+      "runs": 2,
+      "succeeded": 1,
+      "run_s": {
+        "n": 1,
+        "median": 93,
+        "q1": 93,
+        "q3": 93,
+        "min": 93,
+        "max": 93,
+        "mean": 93,
+        "sd": null,
+        "cv": null
+      },
+      "tenants": 1,
+      "planned": [
+        "+6/~0/−1"
+      ],
+      "resource_sets": 1
+    },
+    {
+      "cloud": "azure",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "897b62d+9152cef",
+      "runs": 5,
+      "succeeded": 0,
+      "run_s": null,
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "azure",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "897b62d+48128ce",
+      "runs": 5,
+      "succeeded": 0,
+      "run_s": null,
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "5f7e130+b9a70c1",
+      "runs": 3,
+      "succeeded": 0,
+      "run_s": null,
+      "tenants": 2,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "aws",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "f8dbbe8+3223ce5",
+      "runs": 2,
+      "succeeded": 0,
+      "run_s": null,
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    },
+    {
+      "cloud": "azure",
+      "mode": "unknown",
+      "vector_store": "?",
+      "version": "897b62d+15f2a86",
+      "runs": 2,
+      "succeeded": 0,
+      "run_s": null,
+      "tenants": 1,
+      "planned": [],
+      "resource_sets": 0
+    }
+  ],
+  "campaigns": []
+}

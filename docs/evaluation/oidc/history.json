@@ -1,0 +1,2460 @@
+{
+  "extracted_at": "2026-10-09T22:08:48.737Z",
+  "cutoff": "2026-09-28T01:02:44Z",
+  "total_rows": 41,
+  "total_deploys": 29,
+  "total_teardowns": 12,
+  "excluded_before_cutoff": 19,
+  "candidates": [
+    {
+      "id": "a0658c40-0da1-42e9-9d47-71289e287093",
+      "tenant_id": "12cd0e4c-f8c9-479e-82a4-f9df763f7888",
+      "kind": "deploy",
+      "status": "failed",
+      "chatbot_version": "latest",
+      "github_run_id": "36637828399",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/36637828399",
+      "started_at": "2026-09-29T22:09:04.096Z",
+      "finished_at": "2026-09-29T22:13:56.116Z",
+      "error_message": "Azure workflow run 36637828399 failed; see GitHub Actions logs.",
+      "cloud_provider": "azure",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-09-29T22:09:03.763Z",
+      "duration_minutes": 4.867,
+      "github": {
+        "head_sha": "ca6e8012f0f617bb1c082d66ba2b0ce8ff7caa1f",
+        "path": ".github/workflows/deploy-tenant-azure.yml",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "created_at": "2026-09-29T22:09:05Z",
+        "run_started_at": "2026-09-29T22:09:05Z",
+        "updated_at": "2026-09-29T22:13:59Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/36637828399"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "Deploy chatbot-seeu-chatbot",
+          "conclusion": "failure",
+          "started_at": "2026-09-29T22:09:11Z",
+          "completed_at": "2026-09-29T22:13:58Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-09-29T22:09:11Z",
+              "completed_at": "2026-09-29T22:09:20Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-09-29T22:09:20Z",
+              "completed_at": "2026-09-29T22:09:22Z"
+            },
+            {
+              "name": "Fetch tenant secrets from the platform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-09-29T22:09:22Z",
+              "completed_at": "2026-09-29T22:09:23Z"
+            },
+            {
+              "name": "Parse tenant config",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-09-29T22:09:23Z",
+              "completed_at": "2026-09-29T22:09:23Z"
+            },
+            {
+              "name": "Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-09-29T22:09:23Z",
+              "completed_at": "2026-09-29T22:09:23Z"
+            },
+            {
+              "name": "Compute resource names",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-09-29T22:09:23Z",
+              "completed_at": "2026-09-29T22:09:23Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-09-29T22:09:23Z",
+              "completed_at": "2026-09-29T22:09:24Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-09-29T22:09:24Z",
+              "completed_at": "2026-09-29T22:10:03Z"
+            },
+            {
+              "name": "Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-09-29T22:10:03Z",
+              "completed_at": "2026-09-29T22:10:06Z"
+            },
+            {
+              "name": "Setup Terraform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-09-29T22:10:06Z",
+              "completed_at": "2026-09-29T22:10:08Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's subscription)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11,
+              "started_at": "2026-09-29T22:10:08Z",
+              "completed_at": "2026-09-29T22:10:23Z"
+            },
+            {
+              "name": "Terraform apply — bootstrap registry and chatbot identity",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-09-29T22:10:23Z",
+              "completed_at": "2026-09-29T22:11:32Z"
+            },
+            {
+              "name": "Allow the AcrPull grant to propagate",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13,
+              "started_at": "2026-09-29T22:11:32Z",
+              "completed_at": "2026-09-29T22:13:02Z"
+            },
+            {
+              "name": "Log in to ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14,
+              "started_at": "2026-09-29T22:13:02Z",
+              "completed_at": "2026-09-29T22:13:06Z"
+            },
+            {
+              "name": "Retag and push images to tenant ACR",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 15,
+              "started_at": "2026-09-29T22:13:06Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Terraform apply — full deploy",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 16,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Remove tenant secrets from the runner",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 18,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Install docs-signer Function dependencies",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 19,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Deploy docs-signer Function code",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 20,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 21,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 22,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 23,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:55Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 24,
+              "started_at": "2026-09-29T22:13:55Z",
+              "completed_at": "2026-09-29T22:13:56Z"
+            },
+            {
+              "name": "Post Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 46,
+              "started_at": "2026-09-29T22:13:56Z",
+              "completed_at": "2026-09-29T22:13:56Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 47,
+              "started_at": "2026-09-29T22:13:56Z",
+              "completed_at": "2026-09-29T22:13:56Z"
+            },
+            {
+              "name": "Post Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 48,
+              "started_at": "2026-09-29T22:13:56Z",
+              "completed_at": "2026-09-29T22:13:57Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 49,
+              "started_at": "2026-09-29T22:13:57Z",
+              "completed_at": "2026-09-29T22:13:57Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cecc5105-b284-4030-98fe-595f1bde6940",
+      "tenant_id": "12cd0e4c-f8c9-479e-82a4-f9df763f7888",
+      "kind": "deploy",
+      "status": "failed",
+      "chatbot_version": "latest",
+      "github_run_id": "36640227188",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/36640227188",
+      "started_at": "2026-09-29T22:33:02.527Z",
+      "finished_at": "2026-09-29T22:42:24.185Z",
+      "error_message": "Azure workflow run 36640227188 failed; see GitHub Actions logs.",
+      "cloud_provider": "azure",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-09-29T22:09:03.763Z",
+      "duration_minutes": 9.360966666666666,
+      "github": {
+        "head_sha": "ac664af88a3e18ed9091981212582e24df5af7dc",
+        "path": ".github/workflows/deploy-tenant-azure.yml",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "created_at": "2026-09-29T22:33:04Z",
+        "run_started_at": "2026-09-29T22:33:04Z",
+        "updated_at": "2026-09-29T22:42:27Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/36640227188"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "Deploy chatbot-seeu-chatbot",
+          "conclusion": "failure",
+          "started_at": "2026-09-29T22:33:09Z",
+          "completed_at": "2026-09-29T22:42:27Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-09-29T22:33:10Z",
+              "completed_at": "2026-09-29T22:33:19Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-09-29T22:33:19Z",
+              "completed_at": "2026-09-29T22:33:20Z"
+            },
+            {
+              "name": "Fetch tenant secrets from the platform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-09-29T22:33:20Z",
+              "completed_at": "2026-09-29T22:33:21Z"
+            },
+            {
+              "name": "Parse tenant config",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-09-29T22:33:21Z",
+              "completed_at": "2026-09-29T22:33:21Z"
+            },
+            {
+              "name": "Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-09-29T22:33:21Z",
+              "completed_at": "2026-09-29T22:33:22Z"
+            },
+            {
+              "name": "Compute resource names",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-09-29T22:33:22Z",
+              "completed_at": "2026-09-29T22:33:22Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-09-29T22:33:22Z",
+              "completed_at": "2026-09-29T22:33:23Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-09-29T22:33:23Z",
+              "completed_at": "2026-09-29T22:33:58Z"
+            },
+            {
+              "name": "Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-09-29T22:33:58Z",
+              "completed_at": "2026-09-29T22:34:02Z"
+            },
+            {
+              "name": "Setup Terraform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-09-29T22:34:02Z",
+              "completed_at": "2026-09-29T22:34:03Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's subscription)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11,
+              "started_at": "2026-09-29T22:34:03Z",
+              "completed_at": "2026-09-29T22:34:13Z"
+            },
+            {
+              "name": "Terraform apply — bootstrap registry and chatbot identity",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-09-29T22:34:13Z",
+              "completed_at": "2026-09-29T22:34:34Z"
+            },
+            {
+              "name": "Allow the AcrPull grant to propagate",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13,
+              "started_at": "2026-09-29T22:34:34Z",
+              "completed_at": "2026-09-29T22:36:04Z"
+            },
+            {
+              "name": "Log in to ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14,
+              "started_at": "2026-09-29T22:36:04Z",
+              "completed_at": "2026-09-29T22:36:08Z"
+            },
+            {
+              "name": "Retag and push images to tenant ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-09-29T22:36:08Z",
+              "completed_at": "2026-09-29T22:36:17Z"
+            },
+            {
+              "name": "Terraform apply — full deploy",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 16,
+              "started_at": "2026-09-29T22:36:17Z",
+              "completed_at": "2026-09-29T22:42:22Z"
+            },
+            {
+              "name": "Remove tenant secrets from the runner",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-09-29T22:42:22Z",
+              "completed_at": "2026-09-29T22:42:22Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 18,
+              "started_at": "2026-09-29T22:42:22Z",
+              "completed_at": "2026-09-29T22:42:22Z"
+            },
+            {
+              "name": "Install docs-signer Function dependencies",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 19,
+              "started_at": "2026-09-29T22:42:22Z",
+              "completed_at": "2026-09-29T22:42:22Z"
+            },
+            {
+              "name": "Deploy docs-signer Function code",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 20,
+              "started_at": "2026-09-29T22:42:22Z",
+              "completed_at": "2026-09-29T22:42:22Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 21,
+              "started_at": "2026-09-29T22:42:22Z",
+              "completed_at": "2026-09-29T22:42:22Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 22,
+              "started_at": "2026-09-29T22:42:22Z",
+              "completed_at": "2026-09-29T22:42:22Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 23,
+              "started_at": "2026-09-29T22:42:22Z",
+              "completed_at": "2026-09-29T22:42:22Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 24,
+              "started_at": "2026-09-29T22:42:22Z",
+              "completed_at": "2026-09-29T22:42:24Z"
+            },
+            {
+              "name": "Post Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 46,
+              "started_at": "2026-09-29T22:42:24Z",
+              "completed_at": "2026-09-29T22:42:25Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 47,
+              "started_at": "2026-09-29T22:42:25Z",
+              "completed_at": "2026-09-29T22:42:25Z"
+            },
+            {
+              "name": "Post Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 48,
+              "started_at": "2026-09-29T22:42:25Z",
+              "completed_at": "2026-09-29T22:42:25Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 49,
+              "started_at": "2026-09-29T22:42:25Z",
+              "completed_at": "2026-09-29T22:42:25Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "720d2743-d1a2-45ea-aec4-7d0d46f192eb",
+      "tenant_id": "12cd0e4c-f8c9-479e-82a4-f9df763f7888",
+      "kind": "deploy",
+      "status": "succeeded",
+      "chatbot_version": "latest",
+      "github_run_id": "36702467937",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/36702467937",
+      "started_at": "2026-09-30T10:26:46.790Z",
+      "finished_at": "2026-09-30T10:35:25.526Z",
+      "error_message": null,
+      "cloud_provider": "azure",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-09-29T22:09:03.763Z",
+      "duration_minutes": 8.6456,
+      "github": {
+        "head_sha": "f538418d408d632fa63ee7f2e96c4d085c1effb6",
+        "path": ".github/workflows/deploy-tenant-azure.yml",
+        "conclusion": "success",
+        "run_attempt": 1,
+        "created_at": "2026-09-30T10:26:48Z",
+        "run_started_at": "2026-09-30T10:26:48Z",
+        "updated_at": "2026-09-30T10:35:29Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/36702467937"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "Deploy chatbot-seeu-chatbot",
+          "conclusion": "success",
+          "started_at": "2026-09-30T10:26:55Z",
+          "completed_at": "2026-09-30T10:35:28Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-09-30T10:26:56Z",
+              "completed_at": "2026-09-30T10:27:10Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-09-30T10:27:10Z",
+              "completed_at": "2026-09-30T10:27:12Z"
+            },
+            {
+              "name": "Fetch tenant secrets from the platform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-09-30T10:27:12Z",
+              "completed_at": "2026-09-30T10:27:13Z"
+            },
+            {
+              "name": "Parse tenant config",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-09-30T10:27:13Z",
+              "completed_at": "2026-09-30T10:27:13Z"
+            },
+            {
+              "name": "Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-09-30T10:27:13Z",
+              "completed_at": "2026-09-30T10:27:15Z"
+            },
+            {
+              "name": "Compute resource names",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-09-30T10:27:15Z",
+              "completed_at": "2026-09-30T10:27:15Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-09-30T10:27:15Z",
+              "completed_at": "2026-09-30T10:27:15Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-09-30T10:27:15Z",
+              "completed_at": "2026-09-30T10:27:56Z"
+            },
+            {
+              "name": "Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-09-30T10:27:56Z",
+              "completed_at": "2026-09-30T10:27:59Z"
+            },
+            {
+              "name": "Setup Terraform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-09-30T10:27:59Z",
+              "completed_at": "2026-09-30T10:28:00Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's subscription)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11,
+              "started_at": "2026-09-30T10:28:00Z",
+              "completed_at": "2026-09-30T10:28:15Z"
+            },
+            {
+              "name": "Terraform apply — bootstrap registry and chatbot identity",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-09-30T10:28:15Z",
+              "completed_at": "2026-09-30T10:28:41Z"
+            },
+            {
+              "name": "Allow the AcrPull grant to propagate",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13,
+              "started_at": "2026-09-30T10:28:41Z",
+              "completed_at": "2026-09-30T10:30:11Z"
+            },
+            {
+              "name": "Log in to ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14,
+              "started_at": "2026-09-30T10:30:11Z",
+              "completed_at": "2026-09-30T10:30:15Z"
+            },
+            {
+              "name": "Retag and push images to tenant ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-09-30T10:30:15Z",
+              "completed_at": "2026-09-30T10:30:28Z"
+            },
+            {
+              "name": "Terraform apply — full deploy",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-09-30T10:30:28Z",
+              "completed_at": "2026-09-30T10:34:07Z"
+            },
+            {
+              "name": "Remove tenant secrets from the runner",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-09-30T10:34:07Z",
+              "completed_at": "2026-09-30T10:34:07Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18,
+              "started_at": "2026-09-30T10:34:07Z",
+              "completed_at": "2026-09-30T10:34:30Z"
+            },
+            {
+              "name": "Install docs-signer Function dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-09-30T10:34:30Z",
+              "completed_at": "2026-09-30T10:34:35Z"
+            },
+            {
+              "name": "Deploy docs-signer Function code",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 20,
+              "started_at": "2026-09-30T10:34:35Z",
+              "completed_at": "2026-09-30T10:35:22Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 21,
+              "started_at": "2026-09-30T10:35:22Z",
+              "completed_at": "2026-09-30T10:35:22Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 22,
+              "started_at": "2026-09-30T10:35:22Z",
+              "completed_at": "2026-09-30T10:35:23Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 23,
+              "started_at": "2026-09-30T10:35:23Z",
+              "completed_at": "2026-09-30T10:35:25Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 24,
+              "started_at": "2026-09-30T10:35:25Z",
+              "completed_at": "2026-09-30T10:35:25Z"
+            },
+            {
+              "name": "Post Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 46,
+              "started_at": "2026-09-30T10:35:25Z",
+              "completed_at": "2026-09-30T10:35:26Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 47,
+              "started_at": "2026-09-30T10:35:26Z",
+              "completed_at": "2026-09-30T10:35:26Z"
+            },
+            {
+              "name": "Post Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 48,
+              "started_at": "2026-09-30T10:35:26Z",
+              "completed_at": "2026-09-30T10:35:26Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 49,
+              "started_at": "2026-09-30T10:35:26Z",
+              "completed_at": "2026-09-30T10:35:26Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2cdfea10-0809-489f-a79b-817a0ea3fd4e",
+      "tenant_id": "652565d4-af90-43e8-8c12-3af7152257fa",
+      "kind": "deploy",
+      "status": "failed",
+      "chatbot_version": "latest",
+      "github_run_id": "37128904771",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37128904771",
+      "started_at": "2026-10-03T14:13:54.640Z",
+      "finished_at": "2026-10-03T14:25:52.771Z",
+      "error_message": "Azure workflow run 37128904771 failed; see GitHub Actions logs.",
+      "cloud_provider": "azure",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-10-03T14:13:54.612Z",
+      "duration_minutes": 11.96885,
+      "github": {
+        "head_sha": "670a1ce681cc0287d632caf8a1bb4e736c2f96cf",
+        "path": ".github/workflows/deploy-tenant-azure.yml",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "created_at": "2026-10-03T14:13:56Z",
+        "run_started_at": "2026-10-03T14:13:56Z",
+        "updated_at": "2026-10-03T14:25:57Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37128904771"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "Deploy chatbot-hr-chatbot",
+          "conclusion": "failure",
+          "started_at": "2026-10-03T14:14:01Z",
+          "completed_at": "2026-10-03T14:25:56Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-03T14:14:02Z",
+              "completed_at": "2026-10-03T14:14:23Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-03T14:14:23Z",
+              "completed_at": "2026-10-03T14:14:24Z"
+            },
+            {
+              "name": "Fetch tenant secrets from the platform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-03T14:14:24Z",
+              "completed_at": "2026-10-03T14:14:24Z"
+            },
+            {
+              "name": "Parse tenant config",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-03T14:14:24Z",
+              "completed_at": "2026-10-03T14:14:24Z"
+            },
+            {
+              "name": "Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-03T14:14:24Z",
+              "completed_at": "2026-10-03T14:14:25Z"
+            },
+            {
+              "name": "Compute resource names",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-03T14:14:25Z",
+              "completed_at": "2026-10-03T14:14:25Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-03T14:14:25Z",
+              "completed_at": "2026-10-03T14:14:26Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-03T14:14:26Z",
+              "completed_at": "2026-10-03T14:15:15Z"
+            },
+            {
+              "name": "Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-03T14:15:15Z",
+              "completed_at": "2026-10-03T14:15:18Z"
+            },
+            {
+              "name": "Setup Terraform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-03T14:15:18Z",
+              "completed_at": "2026-10-03T14:15:20Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's subscription)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11,
+              "started_at": "2026-10-03T14:15:20Z",
+              "completed_at": "2026-10-03T14:15:40Z"
+            },
+            {
+              "name": "Terraform apply — bootstrap registry and chatbot identity",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-10-03T14:15:40Z",
+              "completed_at": "2026-10-03T14:17:11Z"
+            },
+            {
+              "name": "Allow the AcrPull grant to propagate",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13,
+              "started_at": "2026-10-03T14:17:11Z",
+              "completed_at": "2026-10-03T14:18:41Z"
+            },
+            {
+              "name": "Log in to ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14,
+              "started_at": "2026-10-03T14:18:41Z",
+              "completed_at": "2026-10-03T14:18:46Z"
+            },
+            {
+              "name": "Retag and push images to tenant ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-03T14:18:46Z",
+              "completed_at": "2026-10-03T14:19:35Z"
+            },
+            {
+              "name": "Terraform apply — full deploy",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 16,
+              "started_at": "2026-10-03T14:19:35Z",
+              "completed_at": "2026-10-03T14:25:49Z"
+            },
+            {
+              "name": "Remove tenant secrets from the runner",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-03T14:25:49Z",
+              "completed_at": "2026-10-03T14:25:49Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 18,
+              "started_at": "2026-10-03T14:25:49Z",
+              "completed_at": "2026-10-03T14:25:49Z"
+            },
+            {
+              "name": "Install docs-signer Function dependencies",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 19,
+              "started_at": "2026-10-03T14:25:49Z",
+              "completed_at": "2026-10-03T14:25:49Z"
+            },
+            {
+              "name": "Deploy docs-signer Function code",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 20,
+              "started_at": "2026-10-03T14:25:49Z",
+              "completed_at": "2026-10-03T14:25:49Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 21,
+              "started_at": "2026-10-03T14:25:49Z",
+              "completed_at": "2026-10-03T14:25:49Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 22,
+              "started_at": "2026-10-03T14:25:49Z",
+              "completed_at": "2026-10-03T14:25:49Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 23,
+              "started_at": "2026-10-03T14:25:49Z",
+              "completed_at": "2026-10-03T14:25:49Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 24,
+              "started_at": "2026-10-03T14:25:49Z",
+              "completed_at": "2026-10-03T14:25:52Z"
+            },
+            {
+              "name": "Post Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 46,
+              "started_at": "2026-10-03T14:25:52Z",
+              "completed_at": "2026-10-03T14:25:53Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 47,
+              "started_at": "2026-10-03T14:25:53Z",
+              "completed_at": "2026-10-03T14:25:53Z"
+            },
+            {
+              "name": "Post Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 48,
+              "started_at": "2026-10-03T14:25:53Z",
+              "completed_at": "2026-10-03T14:25:53Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 49,
+              "started_at": "2026-10-03T14:25:53Z",
+              "completed_at": "2026-10-03T14:25:53Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "0e7342db-cf92-4db8-bce7-f68ce291b543",
+      "tenant_id": "fb1fdd0f-5a45-482e-9e72-839010f14c63",
+      "kind": "deploy",
+      "status": "failed",
+      "chatbot_version": "latest",
+      "github_run_id": "37131153968",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37131153968",
+      "started_at": "2026-10-03T14:51:48.837Z",
+      "finished_at": "2026-10-03T15:04:48.176Z",
+      "error_message": "Azure workflow run 37131153968 failed; see GitHub Actions logs.",
+      "cloud_provider": "azure",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-10-03T14:51:48.803Z",
+      "duration_minutes": 12.988983333333334,
+      "github": {
+        "head_sha": "670a1ce681cc0287d632caf8a1bb4e736c2f96cf",
+        "path": ".github/workflows/deploy-tenant-azure.yml",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "created_at": "2026-10-03T14:51:50Z",
+        "run_started_at": "2026-10-03T14:51:50Z",
+        "updated_at": "2026-10-03T15:04:53Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37131153968"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "Deploy chatbot-hr-chatbot-1",
+          "conclusion": "failure",
+          "started_at": "2026-10-03T14:51:57Z",
+          "completed_at": "2026-10-03T15:04:52Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-03T14:51:58Z",
+              "completed_at": "2026-10-03T14:52:10Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-03T14:52:10Z",
+              "completed_at": "2026-10-03T14:52:11Z"
+            },
+            {
+              "name": "Fetch tenant secrets from the platform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-03T14:52:11Z",
+              "completed_at": "2026-10-03T14:52:12Z"
+            },
+            {
+              "name": "Parse tenant config",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-03T14:52:12Z",
+              "completed_at": "2026-10-03T14:52:12Z"
+            },
+            {
+              "name": "Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-03T14:52:12Z",
+              "completed_at": "2026-10-03T14:52:13Z"
+            },
+            {
+              "name": "Compute resource names",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-03T14:52:13Z",
+              "completed_at": "2026-10-03T14:52:13Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-03T14:52:13Z",
+              "completed_at": "2026-10-03T14:52:14Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-03T14:52:14Z",
+              "completed_at": "2026-10-03T14:52:55Z"
+            },
+            {
+              "name": "Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-03T14:52:55Z",
+              "completed_at": "2026-10-03T14:53:04Z"
+            },
+            {
+              "name": "Setup Terraform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-03T14:53:04Z",
+              "completed_at": "2026-10-03T14:53:05Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's subscription)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11,
+              "started_at": "2026-10-03T14:53:05Z",
+              "completed_at": "2026-10-03T14:53:28Z"
+            },
+            {
+              "name": "Terraform apply — bootstrap registry and chatbot identity",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-10-03T14:53:28Z",
+              "completed_at": "2026-10-03T14:54:54Z"
+            },
+            {
+              "name": "Allow the AcrPull grant to propagate",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13,
+              "started_at": "2026-10-03T14:54:54Z",
+              "completed_at": "2026-10-03T14:56:24Z"
+            },
+            {
+              "name": "Log in to ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14,
+              "started_at": "2026-10-03T14:56:24Z",
+              "completed_at": "2026-10-03T14:56:29Z"
+            },
+            {
+              "name": "Retag and push images to tenant ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-03T14:56:29Z",
+              "completed_at": "2026-10-03T14:57:30Z"
+            },
+            {
+              "name": "Terraform apply — full deploy",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 16,
+              "started_at": "2026-10-03T14:57:30Z",
+              "completed_at": "2026-10-03T15:04:47Z"
+            },
+            {
+              "name": "Remove tenant secrets from the runner",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-03T15:04:47Z",
+              "completed_at": "2026-10-03T15:04:47Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 18,
+              "started_at": "2026-10-03T15:04:47Z",
+              "completed_at": "2026-10-03T15:04:47Z"
+            },
+            {
+              "name": "Install docs-signer Function dependencies",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 19,
+              "started_at": "2026-10-03T15:04:47Z",
+              "completed_at": "2026-10-03T15:04:47Z"
+            },
+            {
+              "name": "Deploy docs-signer Function code",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 20,
+              "started_at": "2026-10-03T15:04:47Z",
+              "completed_at": "2026-10-03T15:04:47Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 21,
+              "started_at": "2026-10-03T15:04:47Z",
+              "completed_at": "2026-10-03T15:04:47Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 22,
+              "started_at": "2026-10-03T15:04:47Z",
+              "completed_at": "2026-10-03T15:04:47Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 23,
+              "started_at": "2026-10-03T15:04:47Z",
+              "completed_at": "2026-10-03T15:04:47Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 24,
+              "started_at": "2026-10-03T15:04:47Z",
+              "completed_at": "2026-10-03T15:04:48Z"
+            },
+            {
+              "name": "Post Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 46,
+              "started_at": "2026-10-03T15:04:48Z",
+              "completed_at": "2026-10-03T15:04:48Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 47,
+              "started_at": "2026-10-03T15:04:48Z",
+              "completed_at": "2026-10-03T15:04:48Z"
+            },
+            {
+              "name": "Post Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 48,
+              "started_at": "2026-10-03T15:04:49Z",
+              "completed_at": "2026-10-03T15:04:49Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 49,
+              "started_at": "2026-10-03T15:04:49Z",
+              "completed_at": "2026-10-03T15:04:49Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "6e41f244-d225-4e80-b301-2408ef67d7cd",
+      "tenant_id": "fb1fdd0f-5a45-482e-9e72-839010f14c63",
+      "kind": "deploy",
+      "status": "succeeded",
+      "chatbot_version": "latest",
+      "github_run_id": "37133733196",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37133733196",
+      "started_at": "2026-10-03T15:34:40.909Z",
+      "finished_at": "2026-10-03T15:54:29.371Z",
+      "error_message": null,
+      "cloud_provider": "azure",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-10-03T14:51:48.803Z",
+      "duration_minutes": 19.8077,
+      "github": {
+        "head_sha": "670a1ce681cc0287d632caf8a1bb4e736c2f96cf",
+        "path": ".github/workflows/deploy-tenant-azure.yml",
+        "conclusion": "success",
+        "run_attempt": 1,
+        "created_at": "2026-10-03T15:34:42Z",
+        "run_started_at": "2026-10-03T15:34:42Z",
+        "updated_at": "2026-10-03T15:54:32Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37133733196"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "Deploy chatbot-hr-chatbot-1",
+          "conclusion": "success",
+          "started_at": "2026-10-03T15:34:46Z",
+          "completed_at": "2026-10-03T15:54:31Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-03T15:34:47Z",
+              "completed_at": "2026-10-03T15:35:03Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-03T15:35:03Z",
+              "completed_at": "2026-10-03T15:35:04Z"
+            },
+            {
+              "name": "Fetch tenant secrets from the platform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-03T15:35:04Z",
+              "completed_at": "2026-10-03T15:35:04Z"
+            },
+            {
+              "name": "Parse tenant config",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-03T15:35:04Z",
+              "completed_at": "2026-10-03T15:35:05Z"
+            },
+            {
+              "name": "Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-03T15:35:05Z",
+              "completed_at": "2026-10-03T15:35:06Z"
+            },
+            {
+              "name": "Compute resource names",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-03T15:35:06Z",
+              "completed_at": "2026-10-03T15:35:06Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-03T15:35:06Z",
+              "completed_at": "2026-10-03T15:35:06Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-03T15:35:06Z",
+              "completed_at": "2026-10-03T15:35:47Z"
+            },
+            {
+              "name": "Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-03T15:35:47Z",
+              "completed_at": "2026-10-03T15:35:50Z"
+            },
+            {
+              "name": "Setup Terraform",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-03T15:35:50Z",
+              "completed_at": "2026-10-03T15:35:51Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's subscription)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11,
+              "started_at": "2026-10-03T15:35:51Z",
+              "completed_at": "2026-10-03T15:36:04Z"
+            },
+            {
+              "name": "Terraform apply — bootstrap registry and chatbot identity",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-10-03T15:36:04Z",
+              "completed_at": "2026-10-03T15:36:31Z"
+            },
+            {
+              "name": "Allow the AcrPull grant to propagate",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13,
+              "started_at": "2026-10-03T15:36:31Z",
+              "completed_at": "2026-10-03T15:38:01Z"
+            },
+            {
+              "name": "Log in to ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14,
+              "started_at": "2026-10-03T15:38:01Z",
+              "completed_at": "2026-10-03T15:38:06Z"
+            },
+            {
+              "name": "Retag and push images to tenant ACR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-03T15:38:06Z",
+              "completed_at": "2026-10-03T15:38:17Z"
+            },
+            {
+              "name": "Terraform apply — full deploy",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-03T15:38:17Z",
+              "completed_at": "2026-10-03T15:53:12Z"
+            },
+            {
+              "name": "Remove tenant secrets from the runner",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-03T15:53:12Z",
+              "completed_at": "2026-10-03T15:53:12Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18,
+              "started_at": "2026-10-03T15:53:12Z",
+              "completed_at": "2026-10-03T15:53:34Z"
+            },
+            {
+              "name": "Install docs-signer Function dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-10-03T15:53:34Z",
+              "completed_at": "2026-10-03T15:53:38Z"
+            },
+            {
+              "name": "Deploy docs-signer Function code",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 20,
+              "started_at": "2026-10-03T15:53:38Z",
+              "completed_at": "2026-10-03T15:54:27Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 21,
+              "started_at": "2026-10-03T15:54:27Z",
+              "completed_at": "2026-10-03T15:54:27Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 22,
+              "started_at": "2026-10-03T15:54:27Z",
+              "completed_at": "2026-10-03T15:54:28Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 23,
+              "started_at": "2026-10-03T15:54:28Z",
+              "completed_at": "2026-10-03T15:54:29Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 24,
+              "started_at": "2026-10-03T15:54:29Z",
+              "completed_at": "2026-10-03T15:54:29Z"
+            },
+            {
+              "name": "Post Azure login (customer subscription, federated credential)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 46,
+              "started_at": "2026-10-03T15:54:29Z",
+              "completed_at": "2026-10-03T15:54:29Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 47,
+              "started_at": "2026-10-03T15:54:29Z",
+              "completed_at": "2026-10-03T15:54:29Z"
+            },
+            {
+              "name": "Post Checkout platform repo",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 48,
+              "started_at": "2026-10-03T15:54:29Z",
+              "completed_at": "2026-10-03T15:54:30Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 49,
+              "started_at": "2026-10-03T15:54:30Z",
+              "completed_at": "2026-10-03T15:54:30Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "8890dfb5-6674-41a0-b42d-31a0c61a2f81",
+      "tenant_id": "e35a1880-aa95-450a-8db9-946d36957447",
+      "kind": "deploy",
+      "status": "failed",
+      "chatbot_version": "latest",
+      "github_run_id": "37134553206",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37134553206",
+      "started_at": "2026-10-03T15:48:39.314Z",
+      "finished_at": "2026-10-03T15:54:29.485Z",
+      "error_message": "Workflow run 37134553206 failed; see GitHub Actions logs.",
+      "cloud_provider": "aws",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-10-03T15:48:39.259Z",
+      "duration_minutes": 5.8361833333333335,
+      "github": {
+        "head_sha": "670a1ce681cc0287d632caf8a1bb4e736c2f96cf",
+        "path": ".github/workflows/deploy-tenant.yml",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "created_at": "2026-10-03T15:48:40Z",
+        "run_started_at": "2026-10-03T15:48:40Z",
+        "updated_at": "2026-10-03T15:54:32Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37134553206"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "deploy",
+          "conclusion": "failure",
+          "started_at": "2026-10-03T15:48:44Z",
+          "completed_at": "2026-10-03T15:54:32Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-03T15:48:45Z",
+              "completed_at": "2026-10-03T15:48:46Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-03T15:48:46Z",
+              "completed_at": "2026-10-03T15:48:47Z"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-03T15:48:47Z",
+              "completed_at": "2026-10-03T15:48:48Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — for source ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-03T15:48:48Z",
+              "completed_at": "2026-10-03T15:48:49Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-03T15:48:49Z",
+              "completed_at": "2026-10-03T15:49:25Z"
+            },
+            {
+              "name": "Configure AWS credentials (client — tenant role via OIDC)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-03T15:49:25Z",
+              "completed_at": "2026-10-03T15:49:26Z"
+            },
+            {
+              "name": "Replicate images to client ECR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-03T15:49:26Z",
+              "completed_at": "2026-10-03T15:50:11Z"
+            },
+            {
+              "name": "Ensure ECS service-linked role exists",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-03T15:50:11Z",
+              "completed_at": "2026-10-03T15:50:12Z"
+            },
+            {
+              "name": "Run hashicorp/setup-terraform@v3",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-03T15:50:12Z",
+              "completed_at": "2026-10-03T15:50:14Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's account)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-03T15:50:14Z",
+              "completed_at": "2026-10-03T15:50:20Z"
+            },
+            {
+              "name": "Read customer Pinecone key",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 11,
+              "started_at": "2026-10-03T15:50:20Z",
+              "completed_at": "2026-10-03T15:50:20Z"
+            },
+            {
+              "name": "Install docs-signer Lambda dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-10-03T15:50:20Z",
+              "completed_at": "2026-10-03T15:50:24Z"
+            },
+            {
+              "name": "Terraform apply",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 13,
+              "started_at": "2026-10-03T15:50:24Z",
+              "completed_at": "2026-10-03T15:54:28Z"
+            },
+            {
+              "name": "Grant the docs-signer Function URL its invoke permission",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 14,
+              "started_at": "2026-10-03T15:54:28Z",
+              "completed_at": "2026-10-03T15:54:28Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 15,
+              "started_at": "2026-10-03T15:54:28Z",
+              "completed_at": "2026-10-03T15:54:28Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 16,
+              "started_at": "2026-10-03T15:54:28Z",
+              "completed_at": "2026-10-03T15:54:28Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 17,
+              "started_at": "2026-10-03T15:54:28Z",
+              "completed_at": "2026-10-03T15:54:28Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 18,
+              "started_at": "2026-10-03T15:54:28Z",
+              "completed_at": "2026-10-03T15:54:28Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-10-03T15:54:28Z",
+              "completed_at": "2026-10-03T15:54:29Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (client — tenant role via OIDC)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 36,
+              "started_at": "2026-10-03T15:54:29Z",
+              "completed_at": "2026-10-03T15:54:29Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — for source ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 37,
+              "started_at": "2026-10-03T15:54:29Z",
+              "completed_at": "2026-10-03T15:54:29Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 38,
+              "started_at": "2026-10-03T15:54:29Z",
+              "completed_at": "2026-10-03T15:54:29Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 39,
+              "started_at": "2026-10-03T15:54:29Z",
+              "completed_at": "2026-10-03T15:54:30Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "98ea12a0-f2cc-43d1-98cf-3dd2ab063fcf",
+      "tenant_id": "e35a1880-aa95-450a-8db9-946d36957447",
+      "kind": "deploy",
+      "status": "failed",
+      "chatbot_version": "latest",
+      "github_run_id": "37138293682",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37138293682",
+      "started_at": "2026-10-03T16:49:53.377Z",
+      "finished_at": "2026-10-03T16:51:22.298Z",
+      "error_message": "Workflow run 37138293682 failed; see GitHub Actions logs.",
+      "cloud_provider": "aws",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-10-03T15:48:39.259Z",
+      "duration_minutes": 1.4820166666666668,
+      "github": {
+        "head_sha": "4741ca46d543c5fbfa116a95f18461e7549db6e7",
+        "path": ".github/workflows/deploy-tenant.yml",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "created_at": "2026-10-03T16:49:54Z",
+        "run_started_at": "2026-10-03T16:49:54Z",
+        "updated_at": "2026-10-03T16:51:26Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37138293682"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "deploy",
+          "conclusion": "failure",
+          "started_at": "2026-10-03T16:49:59Z",
+          "completed_at": "2026-10-03T16:51:25Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-03T16:50:00Z",
+              "completed_at": "2026-10-03T16:50:02Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-03T16:50:02Z",
+              "completed_at": "2026-10-03T16:50:03Z"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-03T16:50:03Z",
+              "completed_at": "2026-10-03T16:50:04Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — for source ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-03T16:50:04Z",
+              "completed_at": "2026-10-03T16:50:04Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-03T16:50:04Z",
+              "completed_at": "2026-10-03T16:50:47Z"
+            },
+            {
+              "name": "Configure AWS credentials (client — tenant role via OIDC)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-03T16:50:47Z",
+              "completed_at": "2026-10-03T16:50:48Z"
+            },
+            {
+              "name": "Replicate images to client ECR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-03T16:50:48Z",
+              "completed_at": "2026-10-03T16:50:57Z"
+            },
+            {
+              "name": "Ensure ECS service-linked role exists",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-03T16:50:57Z",
+              "completed_at": "2026-10-03T16:50:58Z"
+            },
+            {
+              "name": "Run hashicorp/setup-terraform@v3",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-03T16:50:58Z",
+              "completed_at": "2026-10-03T16:50:59Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's account)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-03T16:50:59Z",
+              "completed_at": "2026-10-03T16:51:09Z"
+            },
+            {
+              "name": "Read customer Pinecone key",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 11,
+              "started_at": "2026-10-03T16:51:09Z",
+              "completed_at": "2026-10-03T16:51:09Z"
+            },
+            {
+              "name": "Install docs-signer Lambda dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-10-03T16:51:09Z",
+              "completed_at": "2026-10-03T16:51:13Z"
+            },
+            {
+              "name": "Terraform apply",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 13,
+              "started_at": "2026-10-03T16:51:13Z",
+              "completed_at": "2026-10-03T16:51:21Z"
+            },
+            {
+              "name": "Grant the docs-signer Function URL its invoke permission",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 14,
+              "started_at": "2026-10-03T16:51:21Z",
+              "completed_at": "2026-10-03T16:51:21Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 15,
+              "started_at": "2026-10-03T16:51:21Z",
+              "completed_at": "2026-10-03T16:51:21Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 16,
+              "started_at": "2026-10-03T16:51:21Z",
+              "completed_at": "2026-10-03T16:51:21Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 17,
+              "started_at": "2026-10-03T16:51:21Z",
+              "completed_at": "2026-10-03T16:51:21Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 18,
+              "started_at": "2026-10-03T16:51:21Z",
+              "completed_at": "2026-10-03T16:51:21Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-10-03T16:51:21Z",
+              "completed_at": "2026-10-03T16:51:22Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (client — tenant role via OIDC)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 36,
+              "started_at": "2026-10-03T16:51:22Z",
+              "completed_at": "2026-10-03T16:51:22Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — for source ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 37,
+              "started_at": "2026-10-03T16:51:22Z",
+              "completed_at": "2026-10-03T16:51:22Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 38,
+              "started_at": "2026-10-03T16:51:22Z",
+              "completed_at": "2026-10-03T16:51:22Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 39,
+              "started_at": "2026-10-03T16:51:22Z",
+              "completed_at": "2026-10-03T16:51:22Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "8306224f-1a5c-40db-82c1-cf1e2f9d648a",
+      "tenant_id": "e35a1880-aa95-450a-8db9-946d36957447",
+      "kind": "deploy",
+      "status": "failed",
+      "chatbot_version": "latest",
+      "github_run_id": "37138434111",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37138434111",
+      "started_at": "2026-10-03T16:52:07.829Z",
+      "finished_at": "2026-10-03T16:53:44.399Z",
+      "error_message": "Workflow run 37138434111 failed; see GitHub Actions logs.",
+      "cloud_provider": "aws",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-10-03T15:48:39.259Z",
+      "duration_minutes": 1.6095,
+      "github": {
+        "head_sha": "4741ca46d543c5fbfa116a95f18461e7549db6e7",
+        "path": ".github/workflows/deploy-tenant.yml",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "created_at": "2026-10-03T16:52:08Z",
+        "run_started_at": "2026-10-03T16:52:08Z",
+        "updated_at": "2026-10-03T16:53:48Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37138434111"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "deploy",
+          "conclusion": "failure",
+          "started_at": "2026-10-03T16:52:14Z",
+          "completed_at": "2026-10-03T16:53:47Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-03T16:52:15Z",
+              "completed_at": "2026-10-03T16:52:17Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-03T16:52:17Z",
+              "completed_at": "2026-10-03T16:52:18Z"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-03T16:52:18Z",
+              "completed_at": "2026-10-03T16:52:19Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — for source ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-03T16:52:19Z",
+              "completed_at": "2026-10-03T16:52:20Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-03T16:52:20Z",
+              "completed_at": "2026-10-03T16:53:03Z"
+            },
+            {
+              "name": "Configure AWS credentials (client — tenant role via OIDC)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-03T16:53:03Z",
+              "completed_at": "2026-10-03T16:53:04Z"
+            },
+            {
+              "name": "Replicate images to client ECR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-03T16:53:04Z",
+              "completed_at": "2026-10-03T16:53:16Z"
+            },
+            {
+              "name": "Ensure ECS service-linked role exists",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-03T16:53:16Z",
+              "completed_at": "2026-10-03T16:53:17Z"
+            },
+            {
+              "name": "Run hashicorp/setup-terraform@v3",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-03T16:53:17Z",
+              "completed_at": "2026-10-03T16:53:18Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's account)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-03T16:53:18Z",
+              "completed_at": "2026-10-03T16:53:29Z"
+            },
+            {
+              "name": "Read customer Pinecone key",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 11,
+              "started_at": "2026-10-03T16:53:29Z",
+              "completed_at": "2026-10-03T16:53:29Z"
+            },
+            {
+              "name": "Install docs-signer Lambda dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-10-03T16:53:29Z",
+              "completed_at": "2026-10-03T16:53:34Z"
+            },
+            {
+              "name": "Terraform apply",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 13,
+              "started_at": "2026-10-03T16:53:34Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Grant the docs-signer Function URL its invoke permission",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 14,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 15,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 16,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 17,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 18,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (client — tenant role via OIDC)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 36,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — for source ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 37,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 38,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 39,
+              "started_at": "2026-10-03T16:53:44Z",
+              "completed_at": "2026-10-03T16:53:44Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "d7b2b284-9669-4ed1-a259-8767938b3a0b",
+      "tenant_id": "e35a1880-aa95-450a-8db9-946d36957447",
+      "kind": "deploy",
+      "status": "succeeded",
+      "chatbot_version": "latest",
+      "github_run_id": "37139514235",
+      "github_run_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37139514235",
+      "started_at": "2026-10-03T17:10:09.484Z",
+      "finished_at": "2026-10-03T17:19:10.051Z",
+      "error_message": null,
+      "cloud_provider": "aws",
+      "vector_store": "pgvector",
+      "tenant_created_at": "2026-10-03T15:48:39.259Z",
+      "duration_minutes": 9.00945,
+      "github": {
+        "head_sha": "c1c56f102567946cbedbf5a8fc928071c43dcd36",
+        "path": ".github/workflows/deploy-tenant.yml",
+        "conclusion": "success",
+        "run_attempt": 1,
+        "created_at": "2026-10-03T17:10:10Z",
+        "run_started_at": "2026-10-03T17:10:10Z",
+        "updated_at": "2026-10-03T17:19:12Z",
+        "html_url": "https://github.com/kaltrinaT/ai-chatbot-platform/actions/runs/37139514235"
+      },
+      "oidc_verified": true,
+      "jobs": [
+        {
+          "name": "deploy",
+          "conclusion": "success",
+          "started_at": "2026-10-03T17:10:15Z",
+          "completed_at": "2026-10-03T17:19:12Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-03T17:10:15Z",
+              "completed_at": "2026-10-03T17:10:17Z"
+            },
+            {
+              "name": "Notify platform — run started",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-03T17:10:17Z",
+              "completed_at": "2026-10-03T17:10:18Z"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-03T17:10:18Z",
+              "completed_at": "2026-10-03T17:10:18Z"
+            },
+            {
+              "name": "Configure AWS credentials (platform role via OIDC — for source ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-03T17:10:18Z",
+              "completed_at": "2026-10-03T17:10:19Z"
+            },
+            {
+              "name": "Pull source images (backend + frontend)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-03T17:10:19Z",
+              "completed_at": "2026-10-03T17:11:00Z"
+            },
+            {
+              "name": "Configure AWS credentials (client — tenant role via OIDC)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-03T17:11:00Z",
+              "completed_at": "2026-10-03T17:11:01Z"
+            },
+            {
+              "name": "Replicate images to client ECR",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-03T17:11:01Z",
+              "completed_at": "2026-10-03T17:11:08Z"
+            },
+            {
+              "name": "Ensure ECS service-linked role exists",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-03T17:11:08Z",
+              "completed_at": "2026-10-03T17:11:09Z"
+            },
+            {
+              "name": "Run hashicorp/setup-terraform@v3",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-03T17:11:09Z",
+              "completed_at": "2026-10-03T17:11:10Z"
+            },
+            {
+              "name": "Terraform init (state in the customer's account)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-03T17:11:10Z",
+              "completed_at": "2026-10-03T17:11:16Z"
+            },
+            {
+              "name": "Read customer Pinecone key",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 11,
+              "started_at": "2026-10-03T17:11:16Z",
+              "completed_at": "2026-10-03T17:11:16Z"
+            },
+            {
+              "name": "Install docs-signer Lambda dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12,
+              "started_at": "2026-10-03T17:11:16Z",
+              "completed_at": "2026-10-03T17:11:19Z"
+            },
+            {
+              "name": "Terraform apply",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13,
+              "started_at": "2026-10-03T17:11:19Z",
+              "completed_at": "2026-10-03T17:19:03Z"
+            },
+            {
+              "name": "Grant the docs-signer Function URL its invoke permission",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14,
+              "started_at": "2026-10-03T17:19:03Z",
+              "completed_at": "2026-10-03T17:19:05Z"
+            },
+            {
+              "name": "Read Terraform outputs",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-03T17:19:05Z",
+              "completed_at": "2026-10-03T17:19:08Z"
+            },
+            {
+              "name": "Upload deployment outputs",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-03T17:19:08Z",
+              "completed_at": "2026-10-03T17:19:08Z"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-03T17:19:08Z",
+              "completed_at": "2026-10-03T17:19:08Z"
+            },
+            {
+              "name": "Notify platform — success",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18,
+              "started_at": "2026-10-03T17:19:08Z",
+              "completed_at": "2026-10-03T17:19:10Z"
+            },
+            {
+              "name": "Notify platform — failure",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 19,
+              "started_at": "2026-10-03T17:19:10Z",
+              "completed_at": "2026-10-03T17:19:10Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (client — tenant role via OIDC)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 36,
+              "started_at": "2026-10-03T17:19:10Z",
+              "completed_at": "2026-10-03T17:19:10Z"
+            },
+            {
+              "name": "Post Configure AWS credentials (platform role via OIDC — for source ECR read)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 37,
+              "started_at": "2026-10-03T17:19:10Z",
+              "completed_at": "2026-10-03T17:19:10Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 38,
+              "started_at": "2026-10-03T17:19:10Z",
+              "completed_at": "2026-10-03T17:19:10Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 39,
+              "started_at": "2026-10-03T17:19:10Z",
+              "completed_at": "2026-10-03T17:19:10Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

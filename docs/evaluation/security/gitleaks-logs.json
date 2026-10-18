@@ -1,0 +1,50 @@
+[
+  {
+    "RuleID": "generic-api-key",
+    "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+    "File": "/work/logs/36552145469/0_verify.txt",
+    "StartLine": 52,
+    "Match": "credentials. Trace ID: REDACTED ",
+    "Fingerprint": "/work/logs/36552145469/0_verify.txt:generic-api-key:52"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+    "File": "/work/logs/36552310047/0_verify.txt",
+    "StartLine": 52,
+    "Match": "credentials. Trace ID: REDACTED ",
+    "Fingerprint": "/work/logs/36552310047/0_verify.txt:generic-api-key:52"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+    "File": "/work/logs/36556401440/0_verify.txt",
+    "StartLine": 52,
+    "Match": "credentials. Trace ID: REDACTED ",
+    "Fingerprint": "/work/logs/36556401440/0_verify.txt:generic-api-key:52"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+    "File": "/work/logs/36562166047/0_verify.txt",
+    "StartLine": 52,
+    "Match": "credentials. Trace ID: REDACTED ",
+    "Fingerprint": "/work/logs/36562166047/0_verify.txt:generic-api-key:52"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+    "File": "/work/logs/36563745139/0_verify.txt",
+    "StartLine": 52,
+    "Match": "credentials. Trace ID: REDACTED ",
+    "Fingerprint": "/work/logs/36563745139/0_verify.txt:generic-api-key:52"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+    "File": "/work/logs/36573178973/0_verify.txt",
+    "StartLine": 52,
+    "Match": "credentials. Trace ID: REDACTED ",
+    "Fingerprint": "/work/logs/36573178973/0_verify.txt:generic-api-key:52"
+  }
+]

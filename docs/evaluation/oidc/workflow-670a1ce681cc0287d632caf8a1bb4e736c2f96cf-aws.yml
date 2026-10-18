@@ -1,0 +1,461 @@
+name: Deploy tenant chatbot
+# The deployment ID in the run name lets the platform find this run by
+# display_title if the "run started" callback below never arrives.
+run-name: "Deploy ${{ inputs.tenant_slug }} [${{ inputs.deployment_id }}]"
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        required: true
+        type: string
+      tenant_id:
+        required: true
+        type: string
+        description: "Platform tenant row UUID. Names the GitHub environment the job runs in, which is the subject the customer's trust policy federates on — see src/lib/githubOidc.ts"
+      tenant_slug:
+        required: true
+        type: string
+      aws_account_id:
+        required: true
+        type: string
+      aws_region:
+        required: true
+        type: string
+      deployment_role_arn:
+        required: true
+        type: string
+      chatbot_version:
+        required: true
+        type: string
+      domain:
+        required: false
+        type: string
+        default: ""
+      acm_certificate_arn:
+        required: false
+        type: string
+        default: ""
+        description: "ACM certificate ARN covering `domain`. Empty means the ALB serves plain HTTP; set means an HTTPS listener plus a 301 from port 80."
+      enable_cdn:
+        required: false
+        type: boolean
+        default: true
+        description: "Front the ALB with CloudFront so tenants without a certificate still get HTTPS. Ignored when acm_certificate_arn is set. Re-run this workflow manually with it unchecked to remove a distribution that is misbehaving — the ALB keeps serving either way."
+      s3_docs_prefix:
+        required: false
+        type: string
+        default: ""
+      llm_provider:
+        required: true
+        type: string
+      llm_secret_arn:
+        required: true
+        type: string
+      docs_signer_secret_arn:
+        required: true
+        type: string
+        description: "ARN of the docs-signer Lambda's shared auth secret, written by the platform during onboarding (like llm_secret_arn — an ARN, not the secret value)"
+      llm_model:
+        required: false
+        type: string
+        default: ""
+      retrieval_min_score:
+        required: false
+        type: string
+        default: ""
+        description: "Minimum cosine similarity a retrieved chunk must clear to be used as context. Empty uses the container default. Raise it to make the chatbot more willing to refuse, lower it if it refuses questions its documents can answer."
+      your_ecr_image:
+        required: true
+        type: string
+        description: "Source backend image URI in the platform's ECR (with tag)"
+      your_frontend_ecr_image:
+        required: true
+        type: string
+        description: "Source frontend (chat UI) image URI in the platform's ECR (with tag)"
+      vector_store:
+        required: false
+        type: string
+        default: "pinecone"
+        description: "pinecone (customer's own project) or pgvector (RDS in their VPC)"
+      pinecone_secret_arn:
+        required: false
+        type: string
+        default: ""
+        description: "ARN of the customer's Pinecone key secret; empty for pgvector"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # The customer's account is reached with no stored credential and without
+    # the platform standing in the middle. Their deployment role trusts
+    # GitHub's OIDC token for exactly this subject:
+    #
+    #   repo:<owner>/<repo>:environment:tenant-<tenant_id>
+    #
+    # GitHub puts the environment name into the token's `sub` claim, so each
+    # tenant's runs carry a subject no other tenant's role accepts. A ref
+    # subject would be identical for every customer (see src/lib/githubOidc.ts,
+    # which builds the subject the wizard and the bootstrap stack show, and
+    # must stay in sync with this line). The environment is created on first
+    # use and needs no configuration.
+    #
+    # Private repositories need GitHub Pro, Team or Enterprise for
+    # environments. Without them this fails closed: the token carries no
+    # environment, the subject does not match, and AWS refuses the assume.
+    environment: tenant-${{ inputs.tenant_id }}
+    # One run at a time per tenant, across all four deploy and teardown
+    # workflows on both clouds: they share this group name, so a redeploy and
+    # a teardown of the same tenant queue behind each other instead of running
+    # Terraform against the same state at once. Never cancel-in-progress — a
+    # half-applied Terraform run is worse than a delayed one. The platform
+    # enforces the same rule before dispatching (deployments_one_active_per_tenant
+    # in src/db/schema.ts); this covers a run started by hand in GitHub too.
+    concurrency:
+      group: tenant-${{ inputs.tenant_id }}
+      cancel-in-progress: false
+    # OIDC needs id-token: write, or GitHub never issues the token and the
+    # credentials steps fail. A job-level block drops every scope it does not
+    # list, which is safe here: no step calls the GitHub API with the job
+    # token. Status callbacks carry their own webhook secret, and artifact
+    # uploads use the runner's own token.
+    permissions:
+      id-token: write
+      contents: read
+    # Raised from 30 when the apply stopped returning early: it now waits for
+    # both ECS services to reach steady state (see wait_for_steady_state in
+    # infra/terraform/main.tf) on top of replicating two images and creating a
+    # CloudFront distribution. The wait is the point — it is what turns a
+    # failed rollout into a failed deployment instead of a green one.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # Report the run ID to the platform immediately so the tenant page can
+      # poll live progress. Best-effort: a platform outage must not fail the
+      # customer's deploy, hence continue-on-error.
+      #
+      # Every callback below checks the HTTP status rather than trusting
+      # curl's exit code. Plain `curl -sS` exits 0 for any response it managed
+      # to receive, including a 404 or a tunnel's "endpoint offline" page, so
+      # a callback that never reached the platform used to leave a green step
+      # and a deployment row stuck on "running" with nothing to explain it.
+      - name: Notify platform — run started
+        continue-on-error: true
+        run: |
+          cat > /tmp/callback.json <<EOF
+          {
+            "status": "running",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'running' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+            exit 1
+          fi
+          echo "Platform acknowledged the run-started callback."
+
+      - uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────────────
+      # 1. Pull source image from the PLATFORM's ECR
+      # ─────────────────────────────────────────────────────────────
+      # No stored AWS key. GitHub presents a signed OIDC token for this run,
+      # and STS exchanges it for one-hour credentials on the platform role,
+      # which trusts this repository's tenant-* environments and can pull the
+      # golden images but assume no customer role (see
+      # infra/platform/github-oidc). The customer's role is reached by a
+      # separate sign-in in the next credentials step.
+      - name: Configure AWS credentials (platform role via OIDC — for source ECR read)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-session-name: platform-deploy-${{ github.run_id }}
+          role-duration-seconds: 3600
+          aws-region: ${{ inputs.aws_region }}
+
+      # ECR login tokens are regional. The source registry is the platform's,
+      # so the token comes from the registry's own region — the fourth field
+      # of <account>.dkr.ecr.<region>.amazonaws.com — not the tenant's: asking
+      # the tenant's region failed every tenant deployed outside the region the
+      # platform's images live in. deploy-tenant-azure.yml derives it the same way.
+      - name: Pull source images (backend + frontend)
+        run: |
+          SOURCE_REGISTRY=$(echo "${{ inputs.your_ecr_image }}" | cut -d/ -f1)
+          SOURCE_REGION=$(echo "$SOURCE_REGISTRY" | cut -d. -f4)
+          aws ecr get-login-password --region "$SOURCE_REGION" \
+            | docker login --username AWS --password-stdin "$SOURCE_REGISTRY"
+          docker pull "${{ inputs.your_ecr_image }}"
+          docker pull "${{ inputs.your_frontend_ecr_image }}"
+
+      # ─────────────────────────────────────────────────────────────
+      # 2. Assume client deployment role, push image to client ECR
+      # ─────────────────────────────────────────────────────────────
+      # A second, independent OIDC exchange — not a chain from the platform
+      # role above. The customer's role trusts GitHub directly, through the
+      # OIDC provider in their own account, so the platform account is not a
+      # principal here and nothing it holds is involved in this sign-in.
+      #
+      # unset-current-credentials is what makes that true in practice. The
+      # platform-role credentials from the step above are still in the
+      # environment, and the action would otherwise chain from them; the
+      # customer's trust policy does not name the platform account for
+      # sts:AssumeRoleWithWebIdentity, so the attempt would fail — and if it
+      # ever stopped failing, it would mean the tenant was still on the old
+      # cross-account trust and the per-tenant binding was not being enforced.
+      #
+      # role-duration-seconds stays at 3600 because the role's
+      # MaxSessionDuration is one hour (see the bootstrap template).
+      - name: Configure AWS credentials (client — tenant role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.deployment_role_arn }}
+          role-session-name: deploy-${{ inputs.tenant_slug }}-${{ github.run_id }}
+          role-duration-seconds: 3600
+          unset-current-credentials: true
+
+      # Pushes are retried: a registry's network blips on its own (see the same
+      # step in deploy-tenant-azure.yml), and a push is idempotent.
+      - name: Replicate images to client ECR
+        id: client_image
+        run: |
+          push() {
+            for attempt in 1 2 3; do
+              docker push "$1" && return 0
+              echo "::warning::Pushing $1 failed (attempt $attempt of 3); retrying in $((attempt * 15))s."
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
+          CLIENT_REGISTRY="${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ inputs.aws_region }} \
+            | docker login --username AWS --password-stdin "$CLIENT_REGISTRY"
+
+          # Backend
+          BACKEND_REPO="${{ inputs.tenant_slug }}/chatbot"
+          aws ecr describe-repositories --repository-names "$BACKEND_REPO" \
+            --region ${{ inputs.aws_region }} \
+            || aws ecr create-repository --repository-name "$BACKEND_REPO" \
+                 --region ${{ inputs.aws_region }} \
+                 --image-scanning-configuration scanOnPush=true
+          BACKEND_URI="$CLIENT_REGISTRY/$BACKEND_REPO:${{ inputs.chatbot_version }}"
+          docker tag "${{ inputs.your_ecr_image }}" "$BACKEND_URI"
+          push "$BACKEND_URI"
+
+          # Frontend (chat UI)
+          FRONTEND_REPO="${{ inputs.tenant_slug }}/chatbot-frontend"
+          aws ecr describe-repositories --repository-names "$FRONTEND_REPO" \
+            --region ${{ inputs.aws_region }} \
+            || aws ecr create-repository --repository-name "$FRONTEND_REPO" \
+                 --region ${{ inputs.aws_region }} \
+                 --image-scanning-configuration scanOnPush=true
+          FRONTEND_URI="$CLIENT_REGISTRY/$FRONTEND_REPO:${{ inputs.chatbot_version }}"
+          docker tag "${{ inputs.your_frontend_ecr_image }}" "$FRONTEND_URI"
+          push "$FRONTEND_URI"
+
+          echo "uri=$BACKEND_URI" >> "$GITHUB_OUTPUT"
+          echo "frontend_uri=$FRONTEND_URI" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
+      # 3. Terraform apply
+      # ─────────────────────────────────────────────────────────────
+      - name: Ensure ECS service-linked role exists
+        run: |
+          aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com 2>&1 \
+            | grep -qE "already exists|NoSuchEntity" || true
+
+      # 1.11 or later: S3-native state locking (use_lockfile) is stable from
+      # 1.11. Pinned exactly, to the version the configuration is validated
+      # against.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.3
+
+      # State lives in the customer's own account, in the bucket their
+      # bootstrap stack creates, and is locked there while this run holds it.
+      # See .github/scripts/terraform-init-aws.sh.
+      - name: Terraform init (state in the customer's account)
+        working-directory: infra/terraform
+        env:
+          TENANT_SLUG: ${{ inputs.tenant_slug }}
+          AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+          TENANT_REGION: ${{ inputs.aws_region }}
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/terraform-init-aws.sh"
+
+      # The customer's Pinecone key lives in THEIR Secrets Manager and is never
+      # passed as a workflow input. Terraform needs the value only to create
+      # the index in their Pinecone project, so read it here under the assumed
+      # client role and mask it before it can reach any log.
+      - name: Read customer Pinecone key
+        id: pinecone
+        if: inputs.vector_store == 'pinecone'
+        run: |
+          key="$(aws secretsmanager get-secret-value \
+            --secret-id "${{ inputs.pinecone_secret_arn }}" \
+            --query SecretString --output text)"
+          echo "::add-mask::$key"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      # The docs-signer Lambda ships real node_modules (the Node 20.x Lambda
+      # runtime only bundles @aws-sdk/client-s3, not s3-presigned-post or
+      # client-secrets-manager) — archive_file just zips whatever's on disk,
+      # so the deps have to be installed before Terraform runs.
+      - name: Install docs-signer Lambda dependencies
+        working-directory: infra/lambda/docs-signer
+        run: npm install --production
+
+      - name: Terraform apply
+        working-directory: infra/terraform
+        env:
+          # The pinecone provider requires a non-empty credential to
+          # initialize even when vector_store = pgvector, where count = 0
+          # means no Pinecone resources are actually created and this value
+          # is never used for anything real.
+          TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key || 'unused' }}
+        run: |
+          terraform apply -auto-approve \
+            -var "tenant_slug=${{ inputs.tenant_slug }}" \
+            -var "aws_region=${{ inputs.aws_region }}" \
+            -var "image_uri=${{ steps.client_image.outputs.uri }}" \
+            -var "frontend_image_uri=${{ steps.client_image.outputs.frontend_uri }}" \
+            -var "s3_docs_prefix=${{ inputs.s3_docs_prefix }}" \
+            -var "llm_provider=${{ inputs.llm_provider }}" \
+            -var "llm_secret_arn=${{ inputs.llm_secret_arn }}" \
+            -var "llm_model=${{ inputs.llm_model }}" \
+            -var "retrieval_min_score=${{ inputs.retrieval_min_score }}" \
+            -var "vector_store=${{ inputs.vector_store }}" \
+            -var "pinecone_secret_arn=${{ inputs.pinecone_secret_arn }}" \
+            -var "domain=${{ inputs.domain }}" \
+            -var "acm_certificate_arn=${{ inputs.acm_certificate_arn }}" \
+            -var "enable_cdn=${{ inputs.enable_cdn }}" \
+            -var "docs_signer_secret_arn=${{ inputs.docs_signer_secret_arn }}" \
+            -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
+            -var "extra_cors_origin=${{ vars.EXTRA_CORS_ORIGIN }}"
+
+      # The one piece of tenant infrastructure Terraform cannot express here.
+      #
+      # Since October 2025 a Lambda Function URL requires BOTH
+      # lambda:InvokeFunctionUrl and lambda:InvokeFunction in the function's
+      # resource policy. With only the first, Lambda answers 403 to every
+      # anonymous request before the handler runs, no matter that the URL's
+      # AuthType is NONE — which is exactly how document upload was broken for
+      # every AWS tenant. The second statement needs the
+      # lambda:InvokedViaFunctionUrl condition, and AWS rejects the only
+      # alternative the 5.x provider can emit:
+      #   "FunctionUrlAuthType is only supported for lambda:InvokeFunctionUrl"
+      #
+      # aws_lambda_permission gained invoked_via_function_url in AWS provider
+      # 6.28.0, but infra/terraform pins ~> 5.60. Move this into Terraform and
+      # delete this step once that constraint is raised.
+      #
+      # Idempotent: remove-then-add, since AddPermission rejects a duplicate
+      # statement id and the statement already exists on any redeployed tenant.
+      - name: Grant the docs-signer Function URL its invoke permission
+        env:
+          FN: chatbot-${{ inputs.tenant_slug }}-docs-signer
+          SID: AllowDocsSignerInvokeViaFunctionUrl
+        run: |
+          aws lambda remove-permission \
+            --function-name "$FN" \
+            --statement-id "$SID" \
+            --region "${{ inputs.aws_region }}" 2>/dev/null || true
+          aws lambda add-permission \
+            --function-name "$FN" \
+            --statement-id "$SID" \
+            --action lambda:InvokeFunction \
+            --principal '*' \
+            --invoked-via-function-url \
+            --region "${{ inputs.aws_region }}" > /dev/null
+          echo "Granted lambda:InvokeFunction via function URL on $FN."
+
+      - name: Read Terraform outputs
+        id: tf
+        working-directory: infra/terraform
+        run: |
+          echo "alb_dns_name=$(terraform output -raw alb_dns_name)" >> "$GITHUB_OUTPUT"
+          echo "chatbot_url=$(terraform output -raw chatbot_url)" >> "$GITHUB_OUTPUT"
+          echo "docs_signer_url=$(terraform output -raw docs_signer_url)" >> "$GITHUB_OUTPUT"
+
+      # Durable copy of the outputs above, independent of the webhook below —
+      # if PLATFORM_BASE_URL is unreachable or the POST is otherwise lost,
+      # the platform's self-heal reconciliation recovers these from this
+      # artifact instead of losing them until the next redeploy.
+      - name: Upload deployment outputs
+        if: success()
+        run: |
+          cat > outputs.json <<EOF
+          {
+            "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
+            "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
+            "docsSignerUrl": "${{ steps.tf.outputs.docs_signer_url }}"
+          }
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: deployment-outputs-${{ inputs.deployment_id }}
+          path: outputs.json
+          retention-days: 90
+
+      # ─────────────────────────────────────────────────────────────
+      # 4. Callback to platform
+      # ─────────────────────────────────────────────────────────────
+      # A lost terminal callback is annotated but never fails the step. The
+      # infrastructure really is deployed at this point, and failing here
+      # would flip the run's conclusion to failure — which the platform's own
+      # reconciliation reads back as a FAILED deployment, turning a lost
+      # callback into an actively wrong status. The annotation surfaces it at
+      # the top of the run instead, and the tenant page's poller repairs the
+      # row from the run's real conclusion regardless.
+      - name: Notify platform — success
+        if: success()
+        run: |
+          cat > /tmp/callback.json <<EOF
+          {
+            "status": "succeeded",
+            "albDnsName": "${{ steps.tf.outputs.alb_dns_name }}",
+            "chatbotUrl": "${{ steps.tf.outputs.chatbot_url }}",
+            "docsSignerUrl": "${{ steps.tf.outputs.docs_signer_url }}",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'succeeded' to PLATFORM_BASE_URL — the deploy worked but the platform was not told. $(head -c 300 /tmp/callback.out)"
+          else
+            echo "Platform acknowledged the success callback."
+          fi
+
+      - name: Notify platform — failure
+        if: failure()
+        run: |
+          cat > /tmp/callback.json <<EOF
+          {
+            "status": "failed",
+            "errorMessage": "Workflow run ${{ github.run_id }} failed; see GitHub Actions logs.",
+            "githubRunId": "${{ github.run_id }}",
+            "githubRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          code=$(curl -sS --max-time 15 -o /tmp/callback.out -w '%{http_code}' -X POST \
+            -H "x-webhook-secret: ${{ secrets.PLATFORM_WEBHOOK_SECRET }}" \
+            -H "content-type: application/json" \
+            --data @/tmp/callback.json \
+            "${{ secrets.PLATFORM_BASE_URL }}/api/deployments/${{ inputs.deployment_id }}/status") || code=000
+          if [ "$code" != "200" ]; then
+            echo "::error title=Platform callback failed::HTTP $code posting 'failed' to PLATFORM_BASE_URL. $(head -c 300 /tmp/callback.out)"
+          fi

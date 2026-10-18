@@ -1,0 +1,1999 @@
+{
+  "extracted_at": "2026-10-09T23:17:52.957Z",
+  "commit": "61de490076406567376e10fba567be5184c5421f",
+  "uncommitted_changes": true,
+  "images": {
+    "gitleaks": "zricethezav/gitleaks:v8.30.1",
+    "checkov": "bridgecrew/checkov:3.3.19",
+    "zizmor": "ghcr.io/zizmorcore/zizmor:1.30.1"
+  },
+  "target": "https://ai-chatbot-platform-gamma.vercel.app",
+  "results": [
+    {
+      "id": "S2",
+      "cloud": "aws",
+      "claim": "The platform holds no credential able to read a tenant document",
+      "method": "Static IAM evaluation of the deployed control-plane policy and the bootstrap template, rendered for a sample tenant; each link checked with negative controls",
+      "result": "FAIL",
+      "summary": "Every link of platform role → AssumeRole(ExternalId = tenant ID) → deployment role → s3:GetObject is allowed. The onboarding trust statement has no time bound, so the capability lasts as long as the bootstrap stack does.",
+      "links": [
+        {
+          "step": "The platform role may call sts:AssumeRole on the tenant's deployment role",
+          "outcome": {
+            "decision": "Allow",
+            "statements": [
+              "AssumeCustomerDeploymentRoles"
+            ]
+          },
+          "evidence": "infra/platform/control-plane/terraform.tfstate (deployed, state serial 9)"
+        },
+        {
+          "step": "The deployment role trusts the platform account when it sends the tenant ID as ExternalId",
+          "outcome": {
+            "decision": "Allow",
+            "statements": [
+              "PlatformOnboarding"
+            ]
+          },
+          "evidence": "infra/bootstrap/aws/tenant-bootstrap.yaml:254"
+        },
+        {
+          "step": "The platform knows that ExternalId: it is the tenant's own ID, stored as the tenant row's key",
+          "outcome": {
+            "decision": "Allow",
+            "statements": []
+          },
+          "evidence": "src/app/tenants/new/actions.ts:270; src/lib/awsTrust.ts:68"
+        },
+        {
+          "step": "The deployment role may read a document",
+          "outcome": {
+            "decision": "Allow",
+            "statements": [
+              "Storage"
+            ]
+          },
+          "evidence": "infra/bootstrap/aws/tenant-bootstrap.yaml:291"
+        },
+        {
+          "step": "The deployment role may list the documents bucket",
+          "outcome": {
+            "decision": "Allow",
+            "statements": [
+              "Storage"
+            ]
+          },
+          "evidence": "infra/bootstrap/aws/tenant-bootstrap.yaml:291"
+        },
+        {
+          "step": "No bucket policy on the documents bucket denies the deployment role",
+          "outcome": {
+            "decision": "Allow",
+            "statements": []
+          },
+          "evidence": "infra/terraform/main.tf declares no aws_s3_bucket_policy for aws_s3_bucket.docs"
+        },
+        {
+          "step": "No permissions boundary caps the deployment role itself (the runtime boundary applies only to the roles it creates)",
+          "outcome": {
+            "decision": "Allow",
+            "statements": []
+          },
+          "evidence": "DeploymentRole has no PermissionsBoundary (infra/bootstrap/aws/tenant-bootstrap.yaml:201)"
+        }
+      ],
+      "controls": [
+        {
+          "step": "Another tenant's ExternalId is refused",
+          "outcome": {
+            "decision": "ImplicitDeny",
+            "statements": []
+          }
+        },
+        {
+          "step": "A request without ExternalId is refused",
+          "outcome": {
+            "decision": "ImplicitDeny",
+            "statements": []
+          }
+        },
+        {
+          "step": "A principal in another AWS account is refused",
+          "outcome": {
+            "decision": "ImplicitDeny",
+            "statements": []
+          }
+        },
+        {
+          "step": "The platform role may not assume a role outside chatbot-client-deploy-*",
+          "outcome": {
+            "decision": "ImplicitDeny",
+            "statements": []
+          }
+        },
+        {
+          "step": "The deployment role may not edit its own IAM role",
+          "outcome": {
+            "decision": "ExplicitDeny",
+            "statements": [
+              "DeploymentRolesAreOffLimits"
+            ]
+          }
+        }
+      ],
+      "holders": [
+        "OperatorSignInSession: {\"AWS\":\"arn:aws:iam::<account>:user/kaltrina\"} when {\"Null\":{\"aws:TokenIssueTime\":\"false\"}}",
+        "HostWorkloadIdentity: {\"Federated\":\"arn:aws:iam::<account>:oidc-provider/oidc.vercel.com/kaltrina127316s-projects\"} when {\"StringEquals\":{\"oidc.vercel.com/kaltrina127316s-projects:aud\":\"https://vercel.com/kaltrina127316s-projects\",\"oidc.vercel.com/kaltrina127316s-projects:sub\":\"owner:kaltrina127316s-projects:project:ai-chatbot-platform:environment:production\"}}"
+      ],
+      "sample": {
+        "tenant_id": "7d6c1f9e-5b1a-4c3e-9f00-00000000a11c",
+        "slug": "acme"
+      }
+    },
+    {
+      "id": "S2",
+      "cloud": "azure",
+      "claim": "The platform holds no credential able to read a tenant document",
+      "method": "Static: the application's dependencies and imports",
+      "result": "PASS",
+      "summary": "The application carries no Azure SDK and stores no Azure credential. Reach into a subscription exists only through a deploy-workflow run in the tenant's environment (Known Limitation #8); see S9 for how a dispatch can reach it.",
+      "evidence": [
+        "package.json @azure/* runtime dependencies: none",
+        "src/ files importing @azure/*: none"
+      ]
+    },
+    {
+      "id": "S3",
+      "cloud": "both",
+      "claim": "The docs-signer can write and delete documents but never read or list them",
+      "method": "Static: every policy attached to the signer's role (AWS) and every role assigned to the signer's identity (Azure)",
+      "result": "PASS",
+      "evidence": [
+        "AWS signer S3 actions [\"s3:PutObject\",\"s3:DeleteObject\"] (infra/terraform/main.tf:555): GetObject ImplicitDeny, ListBucket ImplicitDeny, PutObject (control) Allow",
+        "AWS policies attached to the signer role: docs_signer_logs, docs_signer_s3, docs_signer_secret_read; others granting s3: none",
+        "Azure signer role infra/terraform/azure/main.tf:521: actions [\"Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action\"], data actions [\"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write\",\"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete\"]",
+        "Azure role assignments to the signer identity: docs_signer_storage; using another role: none; Key Vault access policy: none"
+      ]
+    },
+    {
+      "id": "S8",
+      "cloud": "both",
+      "claim": "Only a run in the tenant's own GitHub environment can sign in to its cloud",
+      "method": "Static: AWS trust policy evaluated against forged token claims; Azure federated credential checked against the expected subject expression. The live half (a real token from another environment) is not run.",
+      "result": "PASS (static)",
+      "cases": [
+        {
+          "name": "This tenant's environment (control)",
+          "decision": "Allow",
+          "expect": "Allow"
+        },
+        {
+          "name": "Another tenant's environment",
+          "decision": "ImplicitDeny",
+          "expect": "refused"
+        },
+        {
+          "name": "The deploy branch, without an environment",
+          "decision": "ImplicitDeny",
+          "expect": "refused"
+        },
+        {
+          "name": "A fork naming the same environment",
+          "decision": "ImplicitDeny",
+          "expect": "refused"
+        },
+        {
+          "name": "A prefix of the environment name",
+          "decision": "ImplicitDeny",
+          "expect": "refused"
+        },
+        {
+          "name": "Right subject, Azure's audience",
+          "decision": "ImplicitDeny",
+          "expect": "refused"
+        }
+      ],
+      "evidence": [
+        "AWS subject condition operator: StringEquals (infra/bootstrap/aws/tenant-bootstrap.yaml:228)",
+        "Azure subject: [format('repo:{0}/{1}:environment:tenant-{2}', parameters('gitHubOwner'), parameters('gitHubRepo'), parameters('chatbotId'))] (infra/bootstrap/azure/tenant-bootstrap.json:80); issuer and audience as expected"
+      ]
+    },
+    {
+      "id": "S7",
+      "cloud": "both",
+      "claim": "No secret is stored in plaintext; stored secrets are AES-256-GCM ciphertexts",
+      "method": "Read-only queries: format, authentication under the current key and IV uniqueness of every stored ciphertext; erasure on deleted tenants; a credential-pattern scan of every text column of every table",
+      "result": "FAIL",
+      "summary": "The accounts matches are operators' GitHub sign-in tokens, which the next-auth Drizzle adapter (src/auth.ts) stores as GitHub returns them. Nothing in the platform reads them after sign-in; it dispatches with GITHUB_PAT.",
+      "evidence": [
+        "2 stored ciphertexts across 16 tenants; malformed: 0",
+        "authenticate under PLATFORM_ENCRYPTION_KEY: 2/2",
+        "reused 96-bit IVs: 0 (GCM loses confidentiality and integrity if an IV repeats under one key)",
+        "deleted tenants still holding secrets: none",
+        "credential-pattern matches outside the encrypted columns: accounts.refresh_token github_token ×3; accounts.access_token github_token ×5 (850 cells scanned)"
+      ],
+      "malformed": [],
+      "unauthenticated": [],
+      "plaintext": [
+        {
+          "table": "accounts",
+          "column": "refresh_token",
+          "kind": "github_token",
+          "rows": 3
+        },
+        {
+          "table": "accounts",
+          "column": "access_token",
+          "kind": "github_token",
+          "rows": 5
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "cloud": "both",
+      "claim": "No secret is recoverable from the public repository or its CI logs",
+      "method": "gitleaks (default rules plus OpenRouter and Pinecone) over every commit and every retained Actions log, with reviewed false positives; exact search for every secret the operator holds",
+      "result": "PASS",
+      "evidence": [
+        "git history: 9 gitleaks findings, 9 reviewed as false positives (gitleaks-triage.json)",
+        "Actions logs: 116 runs, 67 with retained logs (134 files, 6.6 MB, oldest 2026-08-27T00:35:05Z), unavailable by HTTP status {\"410\":49}; 6 gitleaks findings",
+        "unreviewed findings: 0",
+        "known secrets searched: 8 (DEPLOY_WEBHOOK_SECRET, GITHUB_PAT, AUTH_SECRET, AUTH_GITHUB_SECRET, PLATFORM_ENCRYPTION_KEY, tenant llm_api_key, tenant docs_signer_secret, DATABASE_URL password); exact matches: none",
+        "Logs deleted before this run cannot be scanned; an exposure in them is outside this test."
+      ],
+      "unreviewed": [],
+      "logs": {
+        "runs": 116,
+        "with_logs": 67,
+        "without_logs": {
+          "410": 49
+        },
+        "files": 134,
+        "bytes": 6631450,
+        "oldest_with_logs": "2026-08-27T00:35:05Z"
+      }
+    },
+    {
+      "id": "S9",
+      "cloud": "both",
+      "claim": "Dispatching a workflow cannot make it run anything but its own steps",
+      "method": "zizmor template-injection audit (high confidence) of every workflow; dispatch inputs interpolated into run: blocks",
+      "result": "FAIL",
+      "summary": "Dispatch inputs are expanded into shell scripts before any validation, so a caller able only to dispatch (GITHUB_PAT, or the actions:write GitHub App SECURITY.md recommends) can run code inside a job that holds id-token: write in the tenant's environment. That code can mint the tenant's cloud token and, on Azure, claim its application secrets. Passing inputs through env: and quoting them in the shell closes this.",
+      "evidence": [
+        "deploy-tenant-azure.yml: 12 flagged steps; inputs deployment_id, tenant_id, tenant_slug, your_ecr_image, your_frontend_ecr_image; secrets in those steps PLATFORM_BASE_URL, PLATFORM_WEBHOOK_SECRET",
+        "deploy-tenant.yml: 34 flagged steps; inputs acm_certificate_arn, aws_account_id, aws_region, chatbot_version, deployment_id, docs_signer_secret_arn, domain, enable_cdn, llm_model, llm_provider, llm_secret_arn, pinecone_secret_arn, retrieval_min_score, s3_docs_prefix, tenant_slug, vector_store, your_ecr_image, your_frontend_ecr_image; secrets in those steps PLATFORM_BASE_URL, PLATFORM_WEBHOOK_SECRET",
+        "destroy-tenant-azure.yml: 6 flagged steps; inputs deployment_id, tenant_slug; secrets in those steps PLATFORM_BASE_URL, PLATFORM_WEBHOOK_SECRET",
+        "destroy-tenant.yml: 33 flagged steps; inputs aws_account_id, aws_region, chatbot_version, deployment_id, docs_signer_secret_arn, domain, llm_model, llm_provider, llm_secret_arn, pinecone_secret_arn, s3_docs_prefix, tenant_slug, vector_store; secrets in those steps PLATFORM_BASE_URL, PLATFORM_WEBHOOK_SECRET",
+        "verify-tenant-aws.yml: 3 flagged steps; inputs aws_region, deployment_role_arn, tenant_id, tenant_slug; secrets in those steps none",
+        "verify-tenant-azure.yml: 4 flagged steps; inputs azure_client_id, azure_subscription_id, tenant_id, tenant_slug; secrets in those steps none",
+        "workflows granting id-token: write: deploy-tenant-azure.yml, deploy-tenant.yml, destroy-tenant-azure.yml, destroy-tenant.yml, verify-tenant-aws.yml, verify-tenant-azure.yml"
+      ]
+    },
+    {
+      "id": "S5",
+      "cloud": "both",
+      "claim": "The deployment webhooks cannot be forged or replayed",
+      "method": "Live requests to https://ai-chatbot-platform-gamma.vercel.app: near-miss webhook secrets, a replay against a finished deployment, and forged GitHub OIDC tokens; unit tests in src/app/api/deployments/[id]/status/route.test.ts and src/lib/deploymentSecrets.test.ts cover the same paths in-process",
+      "result": "PASS",
+      "summary": "1 forged request(s) were refused by Vercel's firewall before reaching the platform, so they show the deployment is protected but do not exercise the platform's own check; src/lib/deploymentSecrets.test.ts covers those forgeries against the verifier directly.",
+      "cases": [
+        {
+          "endpoint": "status",
+          "name": "No secret header",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "unauthorized"
+        },
+        {
+          "endpoint": "status",
+          "name": "Random secret of the same length",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "unauthorized"
+        },
+        {
+          "endpoint": "status",
+          "name": "Real secret with its last character changed",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "unauthorized"
+        },
+        {
+          "endpoint": "status",
+          "name": "Real secret with one character appended",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "unauthorized"
+        },
+        {
+          "endpoint": "status",
+          "name": "Real secret missing its last character",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "unauthorized"
+        },
+        {
+          "endpoint": "status",
+          "name": "Control: real secret, unknown deployment",
+          "expect": 404,
+          "status": 404,
+          "edge": false,
+          "error": "deployment not found"
+        },
+        {
+          "endpoint": "status",
+          "name": "Replay of a terminal callback to a finished deployment (row unchanged: true)",
+          "expect": 409,
+          "status": 409,
+          "edge": false,
+          "error": "deployment already succeeded; a finished deployment cannot be changed"
+        },
+        {
+          "endpoint": "secrets",
+          "name": "No bearer token",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "A GitHub Actions OIDC bearer token is required."
+        },
+        {
+          "endpoint": "secrets",
+          "name": "A string that is not a JWT",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "The OIDC token is not a valid GitHub Actions token for this platform."
+        },
+        {
+          "endpoint": "secrets",
+          "name": "Unsigned token (alg: none) with valid-looking claims",
+          "expect": 401,
+          "status": 403,
+          "edge": true,
+          "error": "refused by the hosting firewall"
+        },
+        {
+          "endpoint": "secrets",
+          "name": "Token signed by a foreign RSA key under GitHub's key ID",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "The OIDC token is not a valid GitHub Actions token for this platform."
+        },
+        {
+          "endpoint": "secrets",
+          "name": "Algorithm confusion: HS256 keyed with GitHub's public key",
+          "expect": 401,
+          "status": 401,
+          "edge": false,
+          "error": "The OIDC token is not a valid GitHub Actions token for this platform."
+        }
+      ]
+    },
+    {
+      "id": "S1",
+      "cloud": "both",
+      "claim": "One tenant's chatbot cannot retrieve another tenant's documents",
+      "method": "Canary documents in two live tenants",
+      "result": "NOT RUN",
+      "evidence": [
+        "Needs two tenants deployed at once; the Azure student subscription holds one Container Apps environment."
+      ]
+    },
+    {
+      "id": "S4",
+      "cloud": "aws",
+      "claim": "Platform activity in a customer account stays within the documented inventory",
+      "method": "CloudTrail events of one full deploy",
+      "result": "NOT RUN",
+      "evidence": [
+        "Needs a live AWS deploy with CloudTrail capture."
+      ]
+    }
+  ],
+  "checkov": {
+    "summary": [
+      {
+        "framework": "cloudformation",
+        "passed": 17,
+        "failed": 6,
+        "parsing_errors": 0
+      },
+      {
+        "framework": "arm",
+        "passed": 3,
+        "failed": 5,
+        "parsing_errors": 0
+      },
+      {
+        "framework": "github_actions",
+        "passed": 332,
+        "failed": 12,
+        "parsing_errors": 0
+      },
+      {
+        "framework": "terraform",
+        "passed": 216,
+        "failed": 110,
+        "parsing_errors": 0
+      }
+    ],
+    "failed": [
+      {
+        "framework": "cloudformation",
+        "id": "CKV_AWS_107",
+        "name": "Ensure IAM policies does not allow credentials exposure",
+        "file": "/infra/bootstrap/aws/tenant-bootstrap.yaml",
+        "resource": "AWS::IAM::Role.DeploymentRole",
+        "lines": [
+          201,
+          401
+        ]
+      },
+      {
+        "framework": "cloudformation",
+        "id": "CKV_AWS_111",
+        "name": "Ensure IAM policies does not allow write access without constraints",
+        "file": "/infra/bootstrap/aws/tenant-bootstrap.yaml",
+        "resource": "AWS::IAM::Role.DeploymentRole",
+        "lines": [
+          201,
+          401
+        ]
+      },
+      {
+        "framework": "cloudformation",
+        "id": "CKV_AWS_108",
+        "name": "Ensure IAM policies does not allow data exfiltration",
+        "file": "/infra/bootstrap/aws/tenant-bootstrap.yaml",
+        "resource": "AWS::IAM::Role.DeploymentRole",
+        "lines": [
+          201,
+          401
+        ]
+      },
+      {
+        "framework": "cloudformation",
+        "id": "CKV_AWS_110",
+        "name": "Ensure IAM policies does not allow privilege escalation",
+        "file": "/infra/bootstrap/aws/tenant-bootstrap.yaml",
+        "resource": "AWS::IAM::Role.DeploymentRole",
+        "lines": [
+          201,
+          401
+        ]
+      },
+      {
+        "framework": "cloudformation",
+        "id": "CKV_AWS_109",
+        "name": "Ensure IAM policies does not allow permissions management without constraints",
+        "file": "/infra/bootstrap/aws/tenant-bootstrap.yaml",
+        "resource": "AWS::IAM::Role.DeploymentRole",
+        "lines": [
+          201,
+          401
+        ]
+      },
+      {
+        "framework": "cloudformation",
+        "id": "CKV_AWS_18",
+        "name": "Ensure the S3 bucket has access logging enabled",
+        "file": "/infra/bootstrap/aws/tenant-bootstrap.yaml",
+        "resource": "AWS::S3::Bucket.TerraformStateBucket",
+        "lines": [
+          421,
+          457
+        ]
+      },
+      {
+        "framework": "arm",
+        "id": "CKV_AZURE_206",
+        "name": "Ensure that Storage Accounts use replication",
+        "file": "/infra/bootstrap/azure/tenant-bootstrap.json",
+        "resource": "Microsoft.Storage/storageAccounts.[format('cbtf{0}', replace(parameters('chatbotSlug'), '-', ''))]",
+        "lines": [
+          196,
+          217
+        ]
+      },
+      {
+        "framework": "arm",
+        "id": "CKV_AZURE_43",
+        "name": "Ensure Storage Accounts adhere to the naming rules",
+        "file": "/infra/bootstrap/azure/tenant-bootstrap.json",
+        "resource": "Microsoft.Storage/storageAccounts.[format('cbtf{0}', replace(parameters('chatbotSlug'), '-', ''))]",
+        "lines": [
+          196,
+          217
+        ]
+      },
+      {
+        "framework": "arm",
+        "id": "CKV_AZURE_36",
+        "name": "Ensure 'Trusted Microsoft Services' is enabled for Storage Account access",
+        "file": "/infra/bootstrap/azure/tenant-bootstrap.json",
+        "resource": "Microsoft.Storage/storageAccounts.[format('cbtf{0}', replace(parameters('chatbotSlug'), '-', ''))]",
+        "lines": [
+          196,
+          217
+        ]
+      },
+      {
+        "framework": "arm",
+        "id": "CKV_AZURE_59",
+        "name": "Ensure that Storage accounts disallow public access",
+        "file": "/infra/bootstrap/azure/tenant-bootstrap.json",
+        "resource": "Microsoft.Storage/storageAccounts.[format('cbtf{0}', replace(parameters('chatbotSlug'), '-', ''))]",
+        "lines": [
+          196,
+          217
+        ]
+      },
+      {
+        "framework": "arm",
+        "id": "CKV_AZURE_35",
+        "name": "Ensure default network access rule for Storage Accounts is set to deny",
+        "file": "/infra/bootstrap/azure/tenant-bootstrap.json",
+        "resource": "Microsoft.Storage/storageAccounts.[format('cbtf{0}', replace(parameters('chatbotSlug'), '-', ''))]",
+        "lines": [
+          196,
+          217
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV_GHA_7",
+        "name": "The build output cannot be affected by user parameters other than the build entry point and the top-level source location. GitHub Actions workflow_dispatch inputs MUST be empty. ",
+        "file": "/.github/workflows/verify-tenant-azure.yml",
+        "resource": "on(Verify tenant connection (Azure))",
+        "lines": [
+          13,
+          35
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV_GHA_7",
+        "name": "The build output cannot be affected by user parameters other than the build entry point and the top-level source location. GitHub Actions workflow_dispatch inputs MUST be empty. ",
+        "file": "/.github/workflows/destroy-tenant-azure.yml",
+        "resource": "on(Destroy Tenant (Azure))",
+        "lines": [
+          13,
+          29
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV_GHA_7",
+        "name": "The build output cannot be affected by user parameters other than the build entry point and the top-level source location. GitHub Actions workflow_dispatch inputs MUST be empty. ",
+        "file": "/.github/workflows/verify-tenant-aws.yml",
+        "resource": "on(Verify tenant connection (AWS))",
+        "lines": [
+          19,
+          38
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV_GHA_7",
+        "name": "The build output cannot be affected by user parameters other than the build entry point and the top-level source location. GitHub Actions workflow_dispatch inputs MUST be empty. ",
+        "file": "/.github/workflows/deploy-tenant-azure.yml",
+        "resource": "on(Deploy Tenant (Azure))",
+        "lines": [
+          16,
+          40
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV_GHA_7",
+        "name": "The build output cannot be affected by user parameters other than the build entry point and the top-level source location. GitHub Actions workflow_dispatch inputs MUST be empty. ",
+        "file": "/.github/workflows/deploy-tenant.yml",
+        "resource": "on(Deploy tenant chatbot)",
+        "lines": [
+          9,
+          88
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV_GHA_7",
+        "name": "The build output cannot be affected by user parameters other than the build entry point and the top-level source location. GitHub Actions workflow_dispatch inputs MUST be empty. ",
+        "file": "/.github/workflows/destroy-tenant.yml",
+        "resource": "on(Destroy tenant chatbot)",
+        "lines": [
+          7,
+          64
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV2_GHA_1",
+        "name": "Ensure top-level permissions are not set to write-all",
+        "file": "/.github/workflows/verify-tenant-azure.yml",
+        "resource": "on(Verify tenant connection (Azure))",
+        "lines": [
+          40,
+          41
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV2_GHA_1",
+        "name": "Ensure top-level permissions are not set to write-all",
+        "file": "/.github/workflows/destroy-tenant-azure.yml",
+        "resource": "on(Destroy Tenant (Azure))",
+        "lines": [
+          48,
+          49
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV2_GHA_1",
+        "name": "Ensure top-level permissions are not set to write-all",
+        "file": "/.github/workflows/verify-tenant-aws.yml",
+        "resource": "on(Verify tenant connection (AWS))",
+        "lines": [
+          44,
+          45
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV2_GHA_1",
+        "name": "Ensure top-level permissions are not set to write-all",
+        "file": "/.github/workflows/deploy-tenant-azure.yml",
+        "resource": "on(Deploy Tenant (Azure))",
+        "lines": [
+          77,
+          78
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV2_GHA_1",
+        "name": "Ensure top-level permissions are not set to write-all",
+        "file": "/.github/workflows/deploy-tenant.yml",
+        "resource": "on(Deploy tenant chatbot)",
+        "lines": [
+          122,
+          123
+        ]
+      },
+      {
+        "framework": "github_actions",
+        "id": "CKV2_GHA_1",
+        "name": "Ensure top-level permissions are not set to write-all",
+        "file": "/.github/workflows/destroy-tenant.yml",
+        "resource": "on(Destroy tenant chatbot)",
+        "lines": [
+          83,
+          84
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_56",
+        "name": "Ensure S3 bucket has 'restrict_public_buckets' enabled",
+        "file": "/infra/platform/bootstrap-templates/main.tf",
+        "resource": "aws_s3_bucket_public_access_block.templates",
+        "lines": [
+          78,
+          85
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_54",
+        "name": "Ensure S3 bucket has block public policy enabled",
+        "file": "/infra/platform/bootstrap-templates/main.tf",
+        "resource": "aws_s3_bucket_public_access_block.templates",
+        "lines": [
+          78,
+          85
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_163",
+        "name": "Enable vulnerability scanning for container images.",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_container_registry.this",
+        "lines": [
+          130,
+          143
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_165",
+        "name": "Ensure geo-replicated container registries to match multi-region container deployments.",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_container_registry.this",
+        "lines": [
+          130,
+          143
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_164",
+        "name": "Ensures that ACR uses signed/trusted images",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_container_registry.this",
+        "lines": [
+          130,
+          143
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_167",
+        "name": "Ensure a retention policy is set to cleanup untagged manifests.",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_container_registry.this",
+        "lines": [
+          130,
+          143
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_233",
+        "name": "Ensure Azure Container Registry (ACR) is zone redundant",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_container_registry.this",
+        "lines": [
+          130,
+          143
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_139",
+        "name": "Ensure ACR set to disable public networking",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_container_registry.this",
+        "lines": [
+          130,
+          143
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_166",
+        "name": "Ensure container image quarantine, scan, and mark images verified",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_container_registry.this",
+        "lines": [
+          130,
+          143
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_237",
+        "name": "Ensure dedicated data endpoints are enabled.",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_container_registry.this",
+        "lines": [
+          130,
+          143
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_42",
+        "name": "Ensure the key vault is recoverable",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault.this",
+        "lines": [
+          191,
+          205
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_109",
+        "name": "Ensure that key vault allows firewall rules settings",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault.this",
+        "lines": [
+          191,
+          205
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_110",
+        "name": "Ensure that key vault enables purge protection",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault.this",
+        "lines": [
+          191,
+          205
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_189",
+        "name": "Ensure that Azure Key Vault disables public network access",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault.this",
+        "lines": [
+          191,
+          205
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_114",
+        "name": "Ensure that key vault secrets have \"content_type\" set",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault_secret.llm_api_key",
+        "lines": [
+          207,
+          211
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_41",
+        "name": "Ensure that the expiration date is set on all secrets",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault_secret.llm_api_key",
+        "lines": [
+          207,
+          211
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_114",
+        "name": "Ensure that key vault secrets have \"content_type\" set",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault_secret.pinecone_api_key",
+        "lines": [
+          213,
+          219
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_41",
+        "name": "Ensure that the expiration date is set on all secrets",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault_secret.pinecone_api_key",
+        "lines": [
+          213,
+          219
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_136",
+        "name": "Ensure that PostgreSQL Flexible server enables geo-redundant backups",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_postgresql_flexible_server.vectors",
+        "lines": [
+          268,
+          291
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_114",
+        "name": "Ensure that key vault secrets have \"content_type\" set",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault_secret.vector_db_url",
+        "lines": [
+          323,
+          335
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_41",
+        "name": "Ensure that the expiration date is set on all secrets",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault_secret.vector_db_url",
+        "lines": [
+          323,
+          335
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_206",
+        "name": "Ensure that Storage Accounts use replication",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.docs",
+        "lines": [
+          341,
+          394
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_33",
+        "name": "Ensure Storage logging is enabled for Queue service for read, write and delete requests",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.docs",
+        "lines": [
+          341,
+          394
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_59",
+        "name": "Ensure that Storage accounts disallow public access",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.docs",
+        "lines": [
+          341,
+          394
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_114",
+        "name": "Ensure that key vault secrets have \"content_type\" set",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault_secret.docs_signer",
+        "lines": [
+          424,
+          428
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_41",
+        "name": "Ensure that the expiration date is set on all secrets",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault_secret.docs_signer",
+        "lines": [
+          424,
+          428
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_44",
+        "name": "Ensure Storage Account is using the latest version of TLS encryption",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_206",
+        "name": "Ensure that Storage Accounts use replication",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_33",
+        "name": "Ensure Storage logging is enabled for Queue service for read, write and delete requests",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_59",
+        "name": "Ensure that Storage accounts disallow public access",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_190",
+        "name": "Ensure that Storage blobs restrict public access",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_225",
+        "name": "Ensure the App Service Plan is zone redundant",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_service_plan.docs_signer",
+        "lines": [
+          454,
+          461
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_212",
+        "name": "Ensure App Service has a minimum number of instances for failover",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_service_plan.docs_signer",
+        "lines": [
+          454,
+          461
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AZURE_221",
+        "name": "Ensure that Azure Function App public network access is disabled",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_linux_function_app.docs_signer",
+        "lines": [
+          463,
+          509
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_394",
+        "name": "Ensure aws_availability_zones data source pins zone identity so its result set does not silently expand when AWS adds an Availability Zone",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_availability_zones.available",
+        "lines": [
+          34,
+          34
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_130",
+        "name": "Ensure VPC subnets do not assign public IP by default",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_subnet.public[0]",
+        "lines": [
+          99,
+          106
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_382",
+        "name": "Ensure no security groups allow egress from 0.0.0.0:0 to port -1",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_security_group.alb",
+        "lines": [
+          127,
+          159
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_260",
+        "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 80",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_security_group.alb",
+        "lines": [
+          127,
+          159
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_23",
+        "name": "Ensure every security group and rule has a description",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_security_group.alb",
+        "lines": [
+          127,
+          159
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_382",
+        "name": "Ensure no security groups allow egress from 0.0.0.0:0 to port -1",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_security_group.task",
+        "lines": [
+          161,
+          190
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_23",
+        "name": "Ensure every security group and rule has a description",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_security_group.task",
+        "lines": [
+          161,
+          190
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_131",
+        "name": "Ensure that ALB drops HTTP headers",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lb.this",
+        "lines": [
+          196,
+          215
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_150",
+        "name": "Ensure that Load Balancer has deletion protection enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lb.this",
+        "lines": [
+          196,
+          215
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_91",
+        "name": "Ensure the ELBv2 (Application/Network) has access logging enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lb.this",
+        "lines": [
+          196,
+          215
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_174",
+        "name": "Verify CloudFront Distribution Viewer Certificate is using TLS v1.2 or higher",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_86",
+        "name": "Ensure CloudFront distribution has Access Logging enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_310",
+        "name": "Ensure CloudFront distributions should have origin failover configured",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_305",
+        "name": "Ensure CloudFront distribution has a default root object configured",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_68",
+        "name": "CloudFront Distribution should have WAF enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_374",
+        "name": "Ensure AWS CloudFront web distribution has geo restriction enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_338",
+        "name": "Ensure CloudWatch log groups retains logs for at least 1 year",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudwatch_log_group.this",
+        "lines": [
+          417,
+          421
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_158",
+        "name": "Ensure that CloudWatch Log Group is encrypted by KMS",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudwatch_log_group.this",
+        "lines": [
+          417,
+          421
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_338",
+        "name": "Ensure CloudWatch log groups retains logs for at least 1 year",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudwatch_log_group.docs_signer",
+        "lines": [
+          586,
+          590
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_158",
+        "name": "Ensure that CloudWatch Log Group is encrypted by KMS",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudwatch_log_group.docs_signer",
+        "lines": [
+          586,
+          590
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_115",
+        "name": "Ensure that AWS Lambda function is configured for function-level concurrent execution limit",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lambda_function.docs_signer",
+        "lines": [
+          592,
+          614
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_173",
+        "name": "Check encryption settings for Lambda environmental variable",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lambda_function.docs_signer",
+        "lines": [
+          592,
+          614
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_50",
+        "name": "X-Ray tracing is enabled for Lambda",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lambda_function.docs_signer",
+        "lines": [
+          592,
+          614
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_117",
+        "name": "Ensure that AWS Lambda function is configured inside a VPC",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lambda_function.docs_signer",
+        "lines": [
+          592,
+          614
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_116",
+        "name": "Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lambda_function.docs_signer",
+        "lines": [
+          592,
+          614
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_272",
+        "name": "Ensure AWS Lambda function is configured to validate code-signing",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lambda_function.docs_signer",
+        "lines": [
+          592,
+          614
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_258",
+        "name": "Ensure that Lambda function URLs AuthType is not None",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lambda_function_url.docs_signer",
+        "lines": [
+          621,
+          624
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_301",
+        "name": "Ensure that AWS Lambda function is not publicly accessible",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lambda_permission.docs_signer_url",
+        "lines": [
+          649,
+          655
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_23",
+        "name": "Ensure every security group and rule has a description",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_security_group.vectors",
+        "lines": [
+          688,
+          703
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_118",
+        "name": "Ensure that enhanced monitoring is enabled for Amazon RDS instances",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_293",
+        "name": "Ensure that AWS database instances have deletion protection enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_161",
+        "name": "Ensure RDS database has IAM authentication enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_353",
+        "name": "Ensure that RDS instances have performance insights enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_226",
+        "name": "Ensure DB instance gets all minor upgrades automatically",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_157",
+        "name": "Ensure that RDS instances have Multi-AZ enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_129",
+        "name": "Ensure that respective logs of Amazon Relational Database Service (Amazon RDS) are enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_149",
+        "name": "Ensure that Secrets Manager secret is encrypted using KMS CMK",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_secretsmanager_secret.vectors",
+        "lines": [
+          767,
+          773
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_65",
+        "name": "Ensure container insights are enabled on ECS cluster",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_ecs_cluster.this",
+        "lines": [
+          862,
+          865
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_333",
+        "name": "Ensure ECS services do not have public IP addresses assigned to them automatically",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_ecs_service.this",
+        "lines": [
+          935,
+          1000
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_333",
+        "name": "Ensure ECS services do not have public IP addresses assigned to them automatically",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_ecs_service.frontend",
+        "lines": [
+          1036,
+          1069
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_130",
+        "name": "Ensure VPC subnets do not assign public IP by default",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_subnet.public[1]",
+        "lines": [
+          99,
+          106
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_41",
+        "name": "Ensure storage account is configured with SAS expiration policy",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_1",
+        "name": "Ensure storage for critical data are encrypted with Customer Managed Key",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.docs",
+        "lines": [
+          341,
+          394
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_1",
+        "name": "Ensure storage for critical data are encrypted with Customer Managed Key",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_38",
+        "name": "Ensure soft-delete is enabled on Azure storage account",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_57",
+        "name": "Ensure PostgreSQL Flexible Server is configured with private endpoint",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_postgresql_flexible_server.vectors",
+        "lines": [
+          268,
+          291
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_26",
+        "name": "Ensure Azure PostgreSQL Flexible server is not configured with overly permissive network access",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_postgresql_flexible_server_firewall_rule.azure_services",
+        "lines": [
+          314,
+          321
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_47",
+        "name": "Ensure storage account is configured without blob anonymous access",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_40",
+        "name": "Ensure storage account is not configured with Shared Key authorization",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_21",
+        "name": "Ensure Storage logging is enabled for Blob service for read requests",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_container.docs",
+        "lines": [
+          396,
+          400
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_32",
+        "name": "Ensure private endpoint is configured to key vault",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_key_vault.this",
+        "lines": [
+          191,
+          205
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_33",
+        "name": "Ensure storage account is configured with private endpoint",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.docs",
+        "lines": [
+          341,
+          394
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AZURE_33",
+        "name": "Ensure storage account is configured with private endpoint",
+        "file": "/infra/terraform/azure/main.tf",
+        "resource": "azurerm_storage_account.function_runtime",
+        "lines": [
+          436,
+          452
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_12",
+        "name": "Ensure the default security group of every VPC restricts all traffic",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_vpc.this",
+        "lines": [
+          87,
+          92
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_30",
+        "name": "Ensure Postgres RDS as aws_db_instance has Query Logging enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_62",
+        "name": "Ensure S3 buckets should have event notifications enabled",
+        "file": "/infra/platform/bootstrap-templates/main.tf",
+        "resource": "aws_s3_bucket.templates",
+        "lines": [
+          60,
+          62
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_62",
+        "name": "Ensure S3 buckets should have event notifications enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_s3_bucket.docs",
+        "lines": [
+          427,
+          437
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_11",
+        "name": "Ensure VPC flow logging is enabled in all VPCs",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_vpc.this",
+        "lines": [
+          87,
+          92
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_42",
+        "name": "Ensure AWS CloudFront distribution uses custom SSL certificate",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_32",
+        "name": "Ensure CloudFront distribution has a response headers policy attached",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_6",
+        "name": "Ensure that S3 bucket has a Public Access block",
+        "file": "/infra/platform/bootstrap-templates/main.tf",
+        "resource": "aws_s3_bucket.templates",
+        "lines": [
+          60,
+          62
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_20",
+        "name": "Ensure that ALB redirects HTTP requests into HTTPS ones",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lb.this",
+        "lines": [
+          196,
+          215
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_47",
+        "name": "Ensure AWS CloudFront attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_cloudfront_distribution.this",
+        "lines": [
+          353,
+          411
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_60",
+        "name": "Ensure RDS instance with copy tags to snapshots is enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_db_instance.vectors",
+        "lines": [
+          736,
+          763
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_61",
+        "name": "Ensure that an S3 bucket has a lifecycle configuration",
+        "file": "/infra/platform/bootstrap-templates/main.tf",
+        "resource": "aws_s3_bucket.templates",
+        "lines": [
+          60,
+          62
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_18",
+        "name": "Ensure the S3 bucket has access logging enabled",
+        "file": "/infra/platform/bootstrap-templates/main.tf",
+        "resource": "aws_s3_bucket.templates",
+        "lines": [
+          60,
+          62
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_18",
+        "name": "Ensure the S3 bucket has access logging enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_s3_bucket.docs",
+        "lines": [
+          427,
+          437
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_103",
+        "name": "Ensure that load balancer is using at least TLS 1.2",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lb_listener.http",
+        "lines": [
+          260,
+          284
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_57",
+        "name": "Ensure Secrets Manager secrets should have automatic rotation enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_secretsmanager_secret.vectors",
+        "lines": [
+          767,
+          773
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_144",
+        "name": "Ensure that S3 bucket has cross-region replication enabled",
+        "file": "/infra/platform/bootstrap-templates/main.tf",
+        "resource": "aws_s3_bucket.templates",
+        "lines": [
+          60,
+          62
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_144",
+        "name": "Ensure that S3 bucket has cross-region replication enabled",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_s3_bucket.docs",
+        "lines": [
+          427,
+          437
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_378",
+        "name": "Ensure AWS Load Balancer doesn't use HTTP protocol",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lb_target_group.this",
+        "lines": [
+          218,
+          235
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_378",
+        "name": "Ensure AWS Load Balancer doesn't use HTTP protocol",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lb_target_group.frontend",
+        "lines": [
+          238,
+          255
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV2_AWS_28",
+        "name": "Ensure public facing ALB are protected by WAF",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_lb.this",
+        "lines": [
+          196,
+          215
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_145",
+        "name": "Ensure that S3 buckets are encrypted with KMS by default",
+        "file": "/infra/platform/bootstrap-templates/main.tf",
+        "resource": "aws_s3_bucket.templates",
+        "lines": [
+          60,
+          62
+        ]
+      },
+      {
+        "framework": "terraform",
+        "id": "CKV_AWS_145",
+        "name": "Ensure that S3 buckets are encrypted with KMS by default",
+        "file": "/infra/terraform/main.tf",
+        "resource": "aws_s3_bucket.docs",
+        "lines": [
+          427,
+          437
+        ]
+      }
+    ]
+  },
+  "zizmor": {
+    "total": 176,
+    "counts": {
+      "Medium | artipacked | confidence Low": 4,
+      "High | template-injection | confidence High": 92,
+      "Informational | template-injection | confidence Low": 61,
+      "High | unpinned-uses | confidence High": 19
+    },
+    "injection": {
+      "deploy-tenant-azure.yml": {
+        "steps": 12,
+        "inputs": [
+          "deployment_id",
+          "tenant_id",
+          "tenant_slug",
+          "your_ecr_image",
+          "your_frontend_ecr_image"
+        ],
+        "secrets": [
+          "PLATFORM_BASE_URL",
+          "PLATFORM_WEBHOOK_SECRET"
+        ]
+      },
+      "deploy-tenant.yml": {
+        "steps": 34,
+        "inputs": [
+          "acm_certificate_arn",
+          "aws_account_id",
+          "aws_region",
+          "chatbot_version",
+          "deployment_id",
+          "docs_signer_secret_arn",
+          "domain",
+          "enable_cdn",
+          "llm_model",
+          "llm_provider",
+          "llm_secret_arn",
+          "pinecone_secret_arn",
+          "retrieval_min_score",
+          "s3_docs_prefix",
+          "tenant_slug",
+          "vector_store",
+          "your_ecr_image",
+          "your_frontend_ecr_image"
+        ],
+        "secrets": [
+          "PLATFORM_BASE_URL",
+          "PLATFORM_WEBHOOK_SECRET"
+        ]
+      },
+      "destroy-tenant-azure.yml": {
+        "steps": 6,
+        "inputs": [
+          "deployment_id",
+          "tenant_slug"
+        ],
+        "secrets": [
+          "PLATFORM_BASE_URL",
+          "PLATFORM_WEBHOOK_SECRET"
+        ]
+      },
+      "destroy-tenant.yml": {
+        "steps": 33,
+        "inputs": [
+          "aws_account_id",
+          "aws_region",
+          "chatbot_version",
+          "deployment_id",
+          "docs_signer_secret_arn",
+          "domain",
+          "llm_model",
+          "llm_provider",
+          "llm_secret_arn",
+          "pinecone_secret_arn",
+          "s3_docs_prefix",
+          "tenant_slug",
+          "vector_store"
+        ],
+        "secrets": [
+          "PLATFORM_BASE_URL",
+          "PLATFORM_WEBHOOK_SECRET"
+        ]
+      },
+      "verify-tenant-aws.yml": {
+        "steps": 3,
+        "inputs": [
+          "aws_region",
+          "deployment_role_arn",
+          "tenant_id",
+          "tenant_slug"
+        ],
+        "secrets": []
+      },
+      "verify-tenant-azure.yml": {
+        "steps": 4,
+        "inputs": [
+          "azure_client_id",
+          "azure_subscription_id",
+          "tenant_id",
+          "tenant_slug"
+        ],
+        "secrets": []
+      }
+    }
+  }
+}

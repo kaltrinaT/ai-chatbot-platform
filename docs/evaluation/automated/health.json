@@ -1,0 +1,43 @@
+{
+  "extracted_at": "2026-10-11T03:55:01.049Z",
+  "method": "Three immediate rounds of GET /api/health, 10-second timeout, no redirects; HTTP 200 is reachability, not answer correctness or long-term availability.",
+  "eligible_tenants": 1,
+  "results": [
+    {
+      "tenant_id": "fb1fdd0f-5a45-482e-9e72-839010f14c63",
+      "cloud": "azure",
+      "vector_store": "pgvector",
+      "latest_status": "succeeded",
+      "round": 1,
+      "at": "2026-10-11T03:55:00.950Z",
+      "host": "chatbot-hr-chatbot-1.calmground-488f4633.swedencentral.azurecontainerapps.io",
+      "latency_ms": 89,
+      "outcome": "request_failed",
+      "error": "ENOTFOUND"
+    },
+    {
+      "tenant_id": "fb1fdd0f-5a45-482e-9e72-839010f14c63",
+      "cloud": "azure",
+      "vector_store": "pgvector",
+      "latest_status": "succeeded",
+      "round": 2,
+      "at": "2026-10-11T03:55:01.042Z",
+      "host": "chatbot-hr-chatbot-1.calmground-488f4633.swedencentral.azurecontainerapps.io",
+      "latency_ms": 4,
+      "outcome": "request_failed",
+      "error": "ENOTFOUND"
+    },
+    {
+      "tenant_id": "fb1fdd0f-5a45-482e-9e72-839010f14c63",
+      "cloud": "azure",
+      "vector_store": "pgvector",
+      "latest_status": "succeeded",
+      "round": 3,
+      "at": "2026-10-11T03:55:01.046Z",
+      "host": "chatbot-hr-chatbot-1.calmground-488f4633.swedencentral.azurecontainerapps.io",
+      "latency_ms": 3,
+      "outcome": "request_failed",
+      "error": "ENOTFOUND"
+    }
+  ]
+}

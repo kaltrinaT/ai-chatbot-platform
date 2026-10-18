@@ -1,0 +1,18 @@
+{
+  "_about": "Reviewed gitleaks findings, keyed by gitleaks Fingerprint. Each entry was checked against the flagged line in its commit. A finding absent from this file is reported as unreviewed and fails S6 until someone looks at it.",
+  "c07316651018734ca06a0a46d890cf2a20c2945f:infra/bootstrap/azure/tenant-bootstrap.json:generic-api-key:135": "Azure's built-in role definition ID for User Access Administrator (18d7d88d-...), a public constant published by Microsoft.",
+  "c07316651018734ca06a0a46d890cf2a20c2945f:src/lib/bootstrapLinks.test.ts:generic-api-key:38": "Test fixture: llmApiKey \"sk-1234567890\".",
+  "943d2a8a1582ab661161c89cb41fc621f86be75e:src/lib/tenantInput.test.ts:generic-api-key:10": "Test fixture: llmApiKey \"sk-1234567890\".",
+  "943d2a8a1582ab661161c89cb41fc621f86be75e:src/lib/tenantInput.test.ts:generic-api-key:23": "Test fixture: llmApiKey \"sk-1234567890\".",
+  "943d2a8a1582ab661161c89cb41fc621f86be75e:src/lib/tenantInput.test.ts:generic-api-key:66": "Test fixture: pineconeApiKey \"pc-1234567890\".",
+  "098687f5bc00dd5d861269c0e85f424645d9ed2b:src/app/tenants/new/actions.test.ts:generic-api-key:50": "Test fixture: llmApiKey \"sk-1234567890\".",
+  "098687f5bc00dd5d861269c0e85f424645d9ed2b:src/app/tenants/new/actions.test.ts:generic-api-key:53": "Test fixture: pineconeApiKey \"pc-1234567890\".",
+  "b2da3908080c3fd6669cc52c2e96dfe6243d10f2:infra/terraform/azure/main.tf:hashicorp-tf-password:106": "The name of a Container App secret (password_secret_name = \"acr-password\"), not its value.",
+  "ada0d673016a86c8fcacfb51418b53ccdab7bf67:infra/terraform/variables.tf:generic-api-key:68": "An example ARN in a validation error message (account 123456789012, AWS's documentation placeholder).",
+  "/work/logs/36552145469/0_verify.txt:generic-api-key:52": "Entra ID error AADSTS70025 'Trace ID: <uuid>', a per-request diagnostic identifier, not a credential.",
+  "/work/logs/36552310047/0_verify.txt:generic-api-key:52": "Entra ID error AADSTS70025 'Trace ID: <uuid>', a per-request diagnostic identifier, not a credential.",
+  "/work/logs/36556401440/0_verify.txt:generic-api-key:52": "Entra ID error AADSTS70025 'Trace ID: <uuid>', a per-request diagnostic identifier, not a credential.",
+  "/work/logs/36562166047/0_verify.txt:generic-api-key:52": "Entra ID error AADSTS70025 'Trace ID: <uuid>', a per-request diagnostic identifier, not a credential.",
+  "/work/logs/36563745139/0_verify.txt:generic-api-key:52": "Entra ID error AADSTS70025 'Trace ID: <uuid>', a per-request diagnostic identifier, not a credential.",
+  "/work/logs/36573178973/0_verify.txt:generic-api-key:52": "Entra ID error AADSTS70025 'Trace ID: <uuid>', a per-request diagnostic identifier, not a credential."
+}

@@ -1,0 +1,1160 @@
+{
+  "generated": "2026-10-18T05:16:16.407Z",
+  "commit": "61de49007640",
+  "dirty": true,
+  "node": "v24.16.0",
+  "baseline": {
+    "passed": 1073,
+    "total": 1073
+  },
+  "minutes": 5.6,
+  "score": {
+    "killed": 45,
+    "of": 45
+  },
+  "byClass": {
+    "control": {
+      "killed": 27,
+      "of": 27
+    },
+    "regression": {
+      "killed": 6,
+      "of": 6
+    },
+    "attack": {
+      "killed": 8,
+      "of": 8
+    },
+    "harness": {
+      "killed": 4,
+      "of": 4
+    }
+  },
+  "layeredSurvivors": 3,
+  "unexpected": [],
+  "mutants": [
+    {
+      "id": "M01",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Redeploy checks the tenant's owner",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · operator A cannot operate on tenant B > redeploy",
+        "SEC-E2E-01 · a manipulated tenant ID > Bob's ID upper-cased reaches no tenant",
+        "SEC-E2E-01 · concurrent operations > a burst of cross-tenant requests is refused every time"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ]
+    },
+    {
+      "id": "M02",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Teardown checks the tenant's owner",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · operator A cannot operate on tenant B > teardown"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ]
+    },
+    {
+      "id": "M03",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Redeploy excludes deleted tenants",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · a manipulated tenant ID > a deleted tenant of Alice's own cannot be acted on"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/actions.ts"
+      ]
+    },
+    {
+      "id": "M04",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Document actions check the tenant's owner",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · operator A cannot operate on tenant B > document actions"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ]
+    },
+    {
+      "id": "M05",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Upload authorization checks the tenant's owner",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · operator A cannot operate on tenant B > upload authorization",
+        "SEC-E2E-01 · a manipulated tenant ID > Bob's ID upper-cased reaches no tenant"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/[id]/documents/actions.ts"
+      ]
+    },
+    {
+      "id": "M06",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Deployment API checks the tenant's owner",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · operator A cannot operate on tenant B > deployment API"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/progress/route.ts"
+      ]
+    },
+    {
+      "id": "M07",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Database allows one active deployment per tenant",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · concurrent operations > a double-clicked redeploy starts exactly one deployment",
+        "SEC-E2E-01 · concurrent operations > a redeploy racing a teardown of the same tenant lets only one run"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "drizzle/0015_one_active_deployment_per_tenant.sql"
+      ]
+    },
+    {
+      "id": "M08",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Webhook refuses a finished deployment (read check only)",
+      "expect": "survives",
+      "because": "The conditional UPDATE still matches only an active row, so the replay is refused with 409. M10 removes both.",
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 22,
+      "killingTests": [],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ]
+    },
+    {
+      "id": "M09",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Webhook writes only to a still-active row (conditional UPDATE)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · deployment webhooks > concurrent terminal callbacks: the first to commit stands"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ]
+    },
+    {
+      "id": "M10",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Webhook: both forward-only checks (M08 + M09)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · deployment webhooks > a duplicate terminal callback is applied once",
+        "SEC-E2E-01 · deployment webhooks > concurrent terminal callbacks: the first to commit stands"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ]
+    },
+    {
+      "id": "M11",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Docs-signer URL must be this tenant's host (shape check only)",
+      "expect": "survives",
+      "because": "A URL already on record cannot be replaced, so the redirect is still refused. M12 removes both.",
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 22,
+      "killingTests": [],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ]
+    },
+    {
+      "id": "M12",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Docs-signer URL: both checks (M11 + no-replacement)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · deployment webhooks > refuses a near-miss secret and a docs-signer URL on another host"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/docsSigner.ts"
+      ]
+    },
+    {
+      "id": "M13",
+      "class": "control",
+      "scenario": "SEC-E2E-01",
+      "unit": null,
+      "control": "Webhook secret compared in full",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 22,
+      "killingTests": [
+        "SEC-E2E-01 · deployment webhooks > refuses a near-miss secret and a docs-signer URL on another host"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ]
+    },
+    {
+      "id": "M14",
+      "class": "control",
+      "scenario": "SEC-E2E-02",
+      "unit": null,
+      "control": "AWS signer may only write and delete",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 10,
+      "killingTests": [
+        "SEC-E2E-02 · the docs-signer can write but never read > AWS: the signer's S3 policy"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "infra/terraform/main.tf"
+      ]
+    },
+    {
+      "id": "M15",
+      "class": "control",
+      "scenario": "SEC-E2E-02",
+      "unit": null,
+      "control": "Azure signer role has no blob read",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 10,
+      "killingTests": [
+        "SEC-E2E-02 · the docs-signer can write but never read > Azure: the signer's custom role"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "infra/terraform/azure/main.tf"
+      ]
+    },
+    {
+      "id": "M16",
+      "class": "control",
+      "scenario": "SEC-E2E-02",
+      "unit": null,
+      "control": "Onboarding role (which the platform assumes) reaches only secrets",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 10,
+      "killingTests": [
+        "SEC-E2E-02 · AWS: the control plane cannot read a document > no path to a document runs through OnboardingRole",
+        "SEC-E2E-02 · AWS: the control plane cannot read a document > the onboarding role the platform does assume can neither read a secret back nor reach another tenant's"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "infra/bootstrap/aws/tenant-bootstrap.yaml"
+      ]
+    },
+    {
+      "id": "M17",
+      "class": "control",
+      "scenario": "SEC-E2E-02",
+      "unit": null,
+      "control": "Platform role may assume onboarding roles only",
+      "expect": "survives",
+      "because": "The deployment role trusts GitHub alone, so the wider grant reaches no role that admits the platform. M18 removes both.",
+      "outcome": "survived",
+      "caughtBy": null,
+      "testsRun": 10,
+      "killingTests": [],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "infra/platform/control-plane/main.tf"
+      ]
+    },
+    {
+      "id": "M18",
+      "class": "control",
+      "scenario": "SEC-E2E-02, SEC-E2E-03",
+      "unit": null,
+      "control": "Platform role scope and deployment-role trust (M17 + platform trusted)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 61,
+      "killingTests": [
+        "SEC-E2E-02 · AWS: the control plane cannot read a document > no path to a document runs through DeploymentRole",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses the platform's AWS account outright"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "infra/platform/control-plane/main.tf",
+        "infra/bootstrap/aws/tenant-bootstrap.yaml"
+      ]
+    },
+    {
+      "id": "M19",
+      "class": "control",
+      "scenario": "SEC-E2E-03",
+      "unit": null,
+      "control": "Deployment role matches the GitHub subject exactly",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 51,
+      "killingTests": [
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from tenant B's environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from a prefix of A's environment"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "infra/bootstrap/aws/tenant-bootstrap.yaml"
+      ]
+    },
+    {
+      "id": "M20",
+      "class": "control",
+      "scenario": "SEC-E2E-03",
+      "unit": null,
+      "control": "Onboarding role requires this tenant's ExternalId",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 51,
+      "killingTests": [
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > refuses tenant B's ExternalId",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > refuses no ExternalId",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > refuses A's ExternalId upper-cased",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > refuses A's ExternalId with a suffix"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "infra/bootstrap/aws/tenant-bootstrap.yaml"
+      ]
+    },
+    {
+      "id": "M21",
+      "class": "control",
+      "scenario": "SEC-E2E-03",
+      "unit": null,
+      "control": "Azure federated credential names the tenant's environment",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 51,
+      "killingTests": [
+        "SEC-E2E-03 · Entra ID: tenant A's credential refuses tenant B's run > control: the template's credential is the one the platform tells the customer to create, and admits A's run",
+        "SEC-E2E-03 · Entra ID: tenant A's credential refuses tenant B's run > refuses a token from the deploy branch"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "infra/bootstrap/azure/tenant-bootstrap.json"
+      ]
+    },
+    {
+      "id": "M22",
+      "class": "control",
+      "scenario": "SEC-E2E-03",
+      "unit": null,
+      "control": "Secrets release checks the token's subject",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 51,
+      "killingTests": [
+        "SEC-E2E-03 · the platform releases a tenant's secrets to that tenant's run only > refuses B's run, for A's deployment, and leaves the deployment unclaimed",
+        "SEC-E2E-03 · the platform releases a tenant's secrets to that tenant's run only > refuses A's run, for B's deployment, and leaves the deployment unclaimed"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ]
+    },
+    {
+      "id": "M23",
+      "class": "control",
+      "scenario": "SEC-E2E-03",
+      "unit": null,
+      "control": "Secrets release checks the workflow and ref",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 51,
+      "killingTests": [
+        "SEC-E2E-03 · the platform releases a tenant's secrets to that tenant's run only > refuses the connection check in A's environment, and leaves the deployment unclaimed",
+        "SEC-E2E-03 · the platform releases a tenant's secrets to that tenant's run only > refuses A's workflow from a feature branch, and leaves the deployment unclaimed"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ]
+    },
+    {
+      "id": "M24",
+      "class": "control",
+      "scenario": "SEC-E2E-03",
+      "unit": null,
+      "control": "Secrets release checks the repository",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 51,
+      "killingTests": [
+        "SEC-E2E-03 · the platform releases a tenant's secrets to that tenant's run only > refuses a fork's run naming A's environment, and leaves the deployment unclaimed"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ]
+    },
+    {
+      "id": "M25",
+      "class": "control",
+      "scenario": "SEC-E2E-03",
+      "unit": null,
+      "control": "Secrets are released once per deployment",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 51,
+      "killingTests": [
+        "SEC-E2E-03 · the platform releases a tenant's secrets to that tenant's run only > refuses a second run after the first has claimed, and a replay by the first"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ]
+    },
+    {
+      "id": "M26",
+      "class": "control",
+      "scenario": "SEC-E2E-04",
+      "unit": null,
+      "control": "Deploy refuses inputs containing line breaks",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 81,
+      "killingTests": [
+        "SEC-E2E-04 · the line-break guard on every deploy and teardown > .github/workflows/deploy-tenant.yml refuses an input with a line break, and passes a clean one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        ".github/workflows/deploy-tenant.yml"
+      ]
+    },
+    {
+      "id": "M27",
+      "class": "control",
+      "scenario": "SEC-E2E-04",
+      "unit": null,
+      "control": "Azure config parser refuses line breaks",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 81,
+      "killingTests": [
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a heredoc opener is refused before any output is written"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        ".github/workflows/deploy-tenant-azure.yml"
+      ]
+    },
+    {
+      "id": "M28",
+      "class": "control",
+      "scenario": "SEC-E2E-04",
+      "unit": null,
+      "control": "Inputs reach scripts only through env:",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 81,
+      "killingTests": [
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > control: a well-formed config flows through both steps",
+        "SEC-E2E-04 · no script is built from an input > no run: script in any workflow pastes an input, a step output or the event payload"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        ".github/workflows/deploy-tenant-azure.yml"
+      ]
+    },
+    {
+      "id": "M29",
+      "class": "control",
+      "scenario": "SEC-E2E-04",
+      "unit": null,
+      "control": "Inputs are quoted, never evaluated",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 81,
+      "killingTests": [
+        "SEC-E2E-04 · AWS deploy: Replicate images to client ECR > a shell payload in your_ecr_image > command substitution reaches docker and aws as one argument, never as code",
+        "SEC-E2E-04 · AWS deploy: Replicate images to client ECR > a shell payload in your_ecr_image > backticks reaches docker and aws as one argument, never as code",
+        "SEC-E2E-04 · AWS deploy: Replicate images to client ECR > a shell payload in your_ecr_image > breaking out of double quotes reaches docker and aws as one argument, never as code",
+        "SEC-E2E-04 · AWS deploy: Replicate images to client ECR > a shell payload in your_ecr_image > breaking out of single quotes reaches docker and aws as one argument, never as code",
+        "SEC-E2E-04 · AWS deploy: Replicate images to client ECR > a shell payload in your_ecr_image > a command list reaches docker and aws as one argument, never as code",
+        "SEC-E2E-04 · AWS deploy: Replicate images to client ECR > a shell payload in your_ecr_image > a pipe reaches docker and aws as one argument, never as code",
+        "SEC-E2E-04 · AWS deploy: Replicate images to client ECR > a shell payload in your_ecr_image > IFS word splitting reaches docker and aws as one argument, never as code"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        ".github/workflows/deploy-tenant.yml"
+      ]
+    },
+    {
+      "id": "M30",
+      "class": "control",
+      "scenario": "SEC-E2E-04",
+      "unit": null,
+      "control": "AWS teardown refuses inputs containing line breaks",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 81,
+      "killingTests": [
+        "SEC-E2E-04 · the line-break guard on every deploy and teardown > .github/workflows/destroy-tenant.yml refuses an input with a line break, and passes a clean one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        ".github/workflows/destroy-tenant.yml"
+      ]
+    },
+    {
+      "id": "R01",
+      "class": "regression",
+      "scenario": null,
+      "unit": [
+        "src/lib/tenantInput.test.ts"
+      ],
+      "control": "#16 Free-text dispatch fields accept any character again (chatbot version, model, Azure region)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 142,
+      "killingTests": [
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses a command separator",
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses command substitution",
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses backtick substitution",
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses a pipe",
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses a new output line",
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses a carriage return",
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses a NUL byte",
+        "workflow injection through a dispatched field > chatbotVersion on aws > refuses an oversized value",
+        "workflow injection through a dispatched field > llmModel on aws > refuses a command separator",
+        "workflow injection through a dispatched field > llmModel on aws > refuses command substitution",
+        "workflow injection through a dispatched field > llmModel on aws > refuses backtick substitution",
+        "workflow injection through a dispatched field > llmModel on aws > refuses a pipe",
+        "workflow injection through a dispatched field > llmModel on aws > refuses a new output line",
+        "workflow injection through a dispatched field > llmModel on aws > refuses a carriage return",
+        "workflow injection through a dispatched field > llmModel on aws > refuses a NUL byte",
+        "workflow injection through a dispatched field > llmModel on aws > refuses an oversized value",
+        "workflow injection through a dispatched field > azureRegion on azure > refuses a command separator",
+        "workflow injection through a dispatched field > azureRegion on azure > refuses command substitution",
+        "workflow injection through a dispatched field > azureRegion on azure > refuses backtick substitution",
+        "workflow injection through a dispatched field > azureRegion on azure > refuses a pipe",
+        "workflow injection through a dispatched field > azureRegion on azure > refuses a new output line",
+        "workflow injection through a dispatched field > azureRegion on azure > refuses a carriage return",
+        "workflow injection through a dispatched field > azureRegion on azure > refuses a NUL byte",
+        "workflow injection through a dispatched field > azureRegion on azure > refuses an oversized value",
+        "workflow injection through a dispatched field > chatbotVersion on azure > refuses a command separator",
+        "workflow injection through a dispatched field > chatbotVersion on azure > refuses command substitution",
+        "workflow injection through a dispatched field > chatbotVersion on azure > refuses backtick substitution",
+        "workflow injection through a dispatched field > chatbotVersion on azure > refuses a pipe",
+        "workflow injection through a dispatched field > chatbotVersion on azure > refuses a new output line",
+        "workflow injection through a dispatched field > chatbotVersion on azure > refuses a carriage return",
+        "workflow injection through a dispatched field > chatbotVersion on azure > refuses a NUL byte",
+        "workflow injection through a dispatched field > chatbotVersion on azure > refuses an oversized value",
+        "workflow injection through a dispatched field > llmModel on azure > refuses a command separator",
+        "workflow injection through a dispatched field > llmModel on azure > refuses command substitution",
+        "workflow injection through a dispatched field > llmModel on azure > refuses backtick substitution",
+        "workflow injection through a dispatched field > llmModel on azure > refuses a pipe",
+        "workflow injection through a dispatched field > llmModel on azure > refuses a new output line",
+        "workflow injection through a dispatched field > llmModel on azure > refuses a carriage return",
+        "workflow injection through a dispatched field > llmModel on azure > refuses a NUL byte",
+        "workflow injection through a dispatched field > llmModel on azure > refuses an oversized value"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantInput.ts"
+      ]
+    },
+    {
+      "id": "R02",
+      "class": "regression",
+      "scenario": null,
+      "unit": [
+        "src/lib/crypto.test.ts"
+      ],
+      "control": "#17 decryptSecret accepts an authentication tag shorter than 16 bytes",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 21,
+      "killingTests": [
+        "crypto > a blob altered by someone with write access to the database > refuses the real tag truncated to 4 bytes",
+        "crypto > a blob altered by someone with write access to the database > refuses the real tag truncated to 8 bytes",
+        "crypto > a blob altered by someone with write access to the database > refuses the real tag truncated to 12 bytes",
+        "crypto > a blob altered by someone with write access to the database > refuses the real tag truncated to 15 bytes"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ]
+    },
+    {
+      "id": "R03",
+      "class": "regression",
+      "scenario": null,
+      "unit": [
+        "src/lib/crypto.test.ts"
+      ],
+      "control": "#17 decryptSecret ignores a fourth blob segment",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 21,
+      "killingTests": [
+        "crypto > a blob altered by someone with write access to the database > refuses a blob with a fourth segment rather than ignoring it"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/crypto.ts"
+      ]
+    },
+    {
+      "id": "R04",
+      "class": "regression",
+      "scenario": null,
+      "unit": [
+        "src/app/tenantIsolation.test.ts"
+      ],
+      "control": "S10.5 A connection check may name another operator's tenant",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 13,
+      "killingTests": [
+        "S10.5 — another operator's ID put into a request > S10.5 a connection check naming another operator's tenant is refused"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/tenants/connectionActions.ts"
+      ]
+    },
+    {
+      "id": "R05",
+      "class": "regression",
+      "scenario": "SEC-E2E-04",
+      "unit": null,
+      "control": "#16 Azure deploy workflow as found: no line-break guard and no parser check",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 81,
+      "killingTests": [
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · the line-break guard on every deploy and teardown > .github/workflows/deploy-tenant-azure.yml refuses an input with a line break, and passes a clean one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        ".github/workflows/deploy-tenant-azure.yml"
+      ]
+    },
+    {
+      "id": "R06",
+      "class": "regression",
+      "scenario": "SEC-E2E-04",
+      "unit": null,
+      "control": "#16 Azure teardown workflow as found: no line-break guard and no parser check",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 81,
+      "killingTests": [
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > the teardown's config parser refuses the same line break",
+        "SEC-E2E-04 · the line-break guard on every deploy and teardown > .github/workflows/destroy-tenant-azure.yml refuses an input with a line break, and passes a clean one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        ".github/workflows/destroy-tenant-azure.yml"
+      ]
+    },
+    {
+      "id": "A01",
+      "class": "attack",
+      "scenario": null,
+      "unit": [
+        "src/lib/deploymentSecrets.test.ts"
+      ],
+      "control": "OIDC: the token's audience is checked",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 41,
+      "killingTests": [
+        "releaseDeploymentSecrets > the token > is refused when minted for the audience api://AzureADTokenExchange",
+        "releaseDeploymentSecrets > the token > is refused when minted for the audience sts.amazonaws.com",
+        "releaseDeploymentSecrets > a near-miss token > is refused for an audience it shares a prefix with",
+        "releaseDeploymentSecrets > a near-miss token > is refused for no audience the platform names"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ]
+    },
+    {
+      "id": "A02",
+      "class": "attack",
+      "scenario": null,
+      "unit": [
+        "src/lib/deploymentSecrets.test.ts"
+      ],
+      "control": "OIDC: the token's issuer is checked",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 41,
+      "killingTests": [
+        "releaseDeploymentSecrets > the token > must come from GitHub's issuer",
+        "releaseDeploymentSecrets > a near-miss token > is refused from a lookalike host as issuer",
+        "releaseDeploymentSecrets > a near-miss token > is refused from a trailing slash as issuer",
+        "releaseDeploymentSecrets > a near-miss token > is refused from plain http as issuer",
+        "releaseDeploymentSecrets > a near-miss token > is refused from GitHub Enterprise's issuer form as issuer"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ]
+    },
+    {
+      "id": "A03",
+      "class": "attack",
+      "scenario": null,
+      "unit": [
+        "src/lib/deploymentSecrets.test.ts"
+      ],
+      "control": "OIDC: the claims that identify a run must be strings",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 41,
+      "killingTests": [
+        "releaseDeploymentSecrets > the token > must carry the claims that identify a run",
+        "releaseDeploymentSecrets > a near-miss token > is refused when a claim has the wrong type"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/deploymentSecrets.ts"
+      ]
+    },
+    {
+      "id": "A04",
+      "class": "attack",
+      "scenario": null,
+      "unit": [
+        "src/app/api/deployments/[id]/status/route.test.ts"
+      ],
+      "control": "Webhook: no secret configured means no callback is accepted",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > authorization > rejects when DEPLOY_WEBHOOK_SECRET is not configured, even with a matching header"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ]
+    },
+    {
+      "id": "A05",
+      "class": "attack",
+      "scenario": null,
+      "unit": [
+        "src/app/api/deployments/[id]/status/route.test.ts"
+      ],
+      "control": "Webhook: a run can never move a deployment back to pending",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 62,
+      "killingTests": [
+        "POST /api/deployments/[id]/status > status transitions > never lets a run move a deployment back to pending"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/app/api/deployments/[id]/status/route.ts"
+      ]
+    },
+    {
+      "id": "A06",
+      "class": "attack",
+      "scenario": null,
+      "unit": [
+        "src/auth.test.ts"
+      ],
+      "control": "Proxy: only the two callback routes pass unauthenticated",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 16,
+      "killingTests": [
+        "the proxy's exception for workflow callbacks > does not let /api/deployments/dep-1/status/extra through without a session",
+        "the proxy's exception for workflow callbacks > does not let /api/deployments/dep-1/statusx through without a session",
+        "the proxy's exception for workflow callbacks > does not let /api/deployments/dep-1/secrets-all through without a session",
+        "the proxy's exception for workflow callbacks > does not let /api/deployments/a/b/status through without a session"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/auth.ts"
+      ]
+    },
+    {
+      "id": "A07",
+      "class": "attack",
+      "scenario": null,
+      "unit": [
+        "src/auth.test.ts"
+      ],
+      "control": "Sign-in stores no GitHub token",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 16,
+      "killingTests": [
+        "a new GitHub sign-in > stores no token GitHub hands back"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/auth.ts"
+      ]
+    },
+    {
+      "id": "A08",
+      "class": "attack",
+      "scenario": null,
+      "unit": [
+        "src/lib/tenantErasure.test.ts"
+      ],
+      "control": "Teardown erases every encrypted column",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "unit tests",
+      "testsRun": 4,
+      "killingTests": [
+        "deletedTenantUpdate > nulls every encrypted column on the tenants table"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/lib/tenantErasure.ts"
+      ]
+    },
+    {
+      "id": "H01",
+      "class": "harness",
+      "scenario": "SEC-E2E-02, SEC-E2E-03",
+      "unit": null,
+      "control": "IAM evaluator applies Condition blocks (ignoring them would admit any ExternalId and subject)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 61,
+      "killingTests": [
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from tenant B's environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from the deploy branch, no environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from a pull request",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from a fork naming A's environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from a prefix of A's environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from A's environment upper-cased",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from Azure's audience",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > refuses a token from the platform's own audience",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > refuses a token from tenant B's environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > refuses a token from the deploy branch, no environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > refuses a token from a pull request",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > refuses a token from a fork naming A's environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > refuses a token from a prefix of A's environment",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > refuses a token from A's environment upper-cased",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > refuses a token from Azure's audience",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > refuses a token from the platform's own audience",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > refuses tenant B's ExternalId",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > refuses no ExternalId",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > refuses A's ExternalId upper-cased",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > refuses A's ExternalId with a suffix",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > policy the wizard shows > refuses tenant B's ExternalId",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > policy the wizard shows > refuses no ExternalId",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > policy the wizard shows > refuses A's ExternalId upper-cased",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > policy the wizard shows > refuses A's ExternalId with a suffix"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "scripts/lib/security-model.cjs"
+      ]
+    },
+    {
+      "id": "H02",
+      "class": "harness",
+      "scenario": "SEC-E2E-02, SEC-E2E-03",
+      "unit": null,
+      "control": "IAM evaluator can answer Allow (one that only denies makes every denial test pass)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 61,
+      "killingTests": [
+        "SEC-E2E-02 · AWS: the control plane cannot read a document > the onboarding role the platform does assume can neither read a secret back nor reach another tenant's",
+        "SEC-E2E-02 · AWS: the control plane cannot read a document > control: the evaluator does report a read where the policy grants one",
+        "SEC-E2E-02 · the docs-signer can write but never read > AWS: the signer's S3 policy",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > bootstrap template > control: tenant A's own run signs in",
+        "SEC-E2E-03 · AWS STS: tenant A's role refuses tenant B's run > policy the wizard shows > control: tenant A's own run signs in",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > bootstrap template > control: the platform with A's ExternalId",
+        "SEC-E2E-03 · AWS STS: the onboarding role's ExternalId > policy the wizard shows > control: the platform with A's ExternalId"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "scripts/lib/security-model.cjs"
+      ]
+    },
+    {
+      "id": "H03",
+      "class": "harness",
+      "scenario": "SEC-E2E-03",
+      "unit": null,
+      "control": "Entra matcher can accept a token (one that refuses all makes every refusal test pass)",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 51,
+      "killingTests": [
+        "SEC-E2E-03 · Entra ID: tenant A's credential refuses tenant B's run > control: the template's credential is the one the platform tells the customer to create, and admits A's run"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "scripts/lib/security-model.cjs"
+      ]
+    },
+    {
+      "id": "H04",
+      "class": "harness",
+      "scenario": "SEC-E2E-04",
+      "unit": null,
+      "control": "Workflow runner executes the committed step script",
+      "expect": "killed",
+      "because": null,
+      "outcome": "killed",
+      "caughtBy": "security scenarios",
+      "testsRun": 81,
+      "killingTests": [
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > control: a well-formed config flows through both steps",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.azure_region > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.llm_model > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.chatbot_version > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a new line overriding the subscription is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a carriage return is refused before any output is written",
+        "SEC-E2E-04 · Azure deploy: Parse tenant config → Compute resource names > a line break in config.domain > with a heredoc opener is refused before any output is written",
+        "SEC-E2E-04 · AWS deploy: Replicate images to client ECR > control: well-formed inputs tag and push the tenant's images",
+        "SEC-E2E-04 · the line-break guard on every deploy and teardown > .github/workflows/deploy-tenant.yml refuses an input with a line break, and passes a clean one",
+        "SEC-E2E-04 · the line-break guard on every deploy and teardown > .github/workflows/destroy-tenant.yml refuses an input with a line break, and passes a clean one",
+        "SEC-E2E-04 · the line-break guard on every deploy and teardown > .github/workflows/deploy-tenant-azure.yml refuses an input with a line break, and passes a clean one",
+        "SEC-E2E-04 · the line-break guard on every deploy and teardown > .github/workflows/destroy-tenant-azure.yml refuses an input with a line break, and passes a clean one"
+      ],
+      "error": null,
+      "asExpected": true,
+      "targets": [
+        "src/test/workflow-runner.ts"
+      ]
+    }
+  ]
+}

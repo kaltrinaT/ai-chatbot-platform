@@ -1,0 +1,1263 @@
+{
+  "generated_at": "2026-10-11T04:17:28.597Z",
+  "head": "61de490076406567376e10fba567be5184c5421f",
+  "workspace_note": "Includes existing uncommitted source changes; file hashes identify evaluated files.",
+  "test_statuses": {
+    "passed": 672
+  },
+  "test_files": 28,
+  "groups": {
+    "Onboarding, documents and utilities": {
+      "passed": 275,
+      "skipped": 0
+    },
+    "Security and configuration": {
+      "passed": 237,
+      "skipped": 0
+    },
+    "Deployment and recovery": {
+      "passed": 160,
+      "skipped": 0
+    }
+  },
+  "coverage_scope": "src/lib/**, src/app/**/actions.ts, src/app/api/**/route.ts; excludes most UI components, db/auth modules and external backend.",
+  "coverage": {
+    "lines": {
+      "total": 815,
+      "covered": 744,
+      "skipped": 0,
+      "pct": 91.28
+    },
+    "statements": {
+      "total": 889,
+      "covered": 805,
+      "skipped": 0,
+      "pct": 90.55
+    },
+    "functions": {
+      "total": 171,
+      "covered": 155,
+      "skipped": 0,
+      "pct": 90.64
+    },
+    "branches": {
+      "total": 733,
+      "covered": 654,
+      "skipped": 0,
+      "pct": 89.22
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "selected_modules": [
+    {
+      "module": "awsTrust.ts",
+      "lines": 95,
+      "branches": 100
+    },
+    {
+      "module": "azureFederation.ts",
+      "lines": 100,
+      "branches": 100
+    },
+    {
+      "module": "crypto.ts",
+      "lines": 100,
+      "branches": 100
+    },
+    {
+      "module": "deploy.ts",
+      "lines": 100,
+      "branches": 82.85
+    },
+    {
+      "module": "deploymentSecrets.ts",
+      "lines": 93.93,
+      "branches": 100
+    },
+    {
+      "module": "docsSigner.ts",
+      "lines": 97.72,
+      "branches": 92.85
+    },
+    {
+      "module": "githubOidc.ts",
+      "lines": 100,
+      "branches": 50
+    },
+    {
+      "module": "reconcile.ts",
+      "lines": 100,
+      "branches": 97.22
+    },
+    {
+      "module": "verifyConnection.ts",
+      "lines": 16.66,
+      "branches": 9.09
+    }
+  ],
+  "audit": {
+    "info": 0,
+    "low": 1,
+    "moderate": 5,
+    "high": 12,
+    "critical": 4,
+    "total": 22
+  },
+  "production_audit": {
+    "info": 0,
+    "low": 0,
+    "moderate": 1,
+    "high": 4,
+    "critical": 4,
+    "total": 9
+  },
+  "lint": {
+    "exit_code": 1,
+    "errors": 11,
+    "warnings": 1,
+    "files": [
+      {
+        "file": "src\\auth.ts",
+        "messages": [
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 85,
+            "column": 15,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 85,
+            "endColumn": 18,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    3267,
+                    3270
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    3267,
+                    3270
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 86,
+            "column": 13,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 86,
+            "endColumn": 16,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    3284,
+                    3287
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    3284,
+                    3287
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 87,
+            "column": 14,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 87,
+            "endColumn": 17,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    3302,
+                    3305
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    3302,
+                    3305
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 88,
+            "column": 11,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 88,
+            "endColumn": 14,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    3317,
+                    3320
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    3317,
+                    3320
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 174,
+            "column": 9,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 174,
+            "endColumn": 12,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    6340,
+                    6343
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    6340,
+                    6343
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "file": "src\\db\\index.ts",
+        "messages": [
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 8,
+            "column": 10,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 8,
+            "endColumn": 13,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    222,
+                    225
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    222,
+                    225
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": null,
+            "message": "Unused eslint-disable directive (no problems were reported from 'no-console').",
+            "line": 20,
+            "column": 2,
+            "severity": 1,
+            "nodeType": null,
+            "fix": {
+              "range": [
+                742,
+                780
+              ],
+              "text": " "
+            }
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 23,
+            "column": 30,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 23,
+            "endColumn": 33,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    900,
+                    903
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    900,
+                    903
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 23,
+            "column": 57,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 23,
+            "endColumn": 60,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    927,
+                    930
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    927,
+                    930
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 31,
+            "column": 28,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 31,
+            "endColumn": 31,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    1113,
+                    1116
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    1113,
+                    1116
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 35,
+            "column": 27,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 35,
+            "endColumn": 30,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    1233,
+                    1236
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    1233,
+                    1236
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          },
+          {
+            "ruleId": "@typescript-eslint/no-explicit-any",
+            "severity": 2,
+            "message": "Unexpected any. Specify a different type.",
+            "line": 41,
+            "column": 7,
+            "nodeType": "TSAnyKeyword",
+            "messageId": "unexpectedAny",
+            "endLine": 41,
+            "endColumn": 10,
+            "suggestions": [
+              {
+                "messageId": "suggestUnknown",
+                "fix": {
+                  "range": [
+                    1488,
+                    1491
+                  ],
+                  "text": "unknown"
+                },
+                "desc": "Use `unknown` instead, this will force you to explicitly, and safely assert the type is correct."
+              },
+              {
+                "messageId": "suggestNever",
+                "fix": {
+                  "range": [
+                    1488,
+                    1491
+                  ],
+                  "text": "never"
+                },
+                "desc": "Use `never` instead, this is useful when instantiating generic type parameters that you don't need to know the type of."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "health": {
+    "extracted_at": "2026-10-11T03:55:01.049Z",
+    "method": "Three immediate rounds of GET /api/health, 10-second timeout, no redirects; HTTP 200 is reachability, not answer correctness or long-term availability.",
+    "eligible_tenants": 1,
+    "results": [
+      {
+        "tenant_id": "fb1fdd0f-5a45-482e-9e72-839010f14c63",
+        "cloud": "azure",
+        "vector_store": "pgvector",
+        "latest_status": "succeeded",
+        "round": 1,
+        "at": "2026-10-11T03:55:00.950Z",
+        "host": "chatbot-hr-chatbot-1.calmground-488f4633.swedencentral.azurecontainerapps.io",
+        "latency_ms": 89,
+        "outcome": "request_failed",
+        "error": "ENOTFOUND"
+      },
+      {
+        "tenant_id": "fb1fdd0f-5a45-482e-9e72-839010f14c63",
+        "cloud": "azure",
+        "vector_store": "pgvector",
+        "latest_status": "succeeded",
+        "round": 2,
+        "at": "2026-10-11T03:55:01.042Z",
+        "host": "chatbot-hr-chatbot-1.calmground-488f4633.swedencentral.azurecontainerapps.io",
+        "latency_ms": 4,
+        "outcome": "request_failed",
+        "error": "ENOTFOUND"
+      },
+      {
+        "tenant_id": "fb1fdd0f-5a45-482e-9e72-839010f14c63",
+        "cloud": "azure",
+        "vector_store": "pgvector",
+        "latest_status": "succeeded",
+        "round": 3,
+        "at": "2026-10-11T03:55:01.046Z",
+        "host": "chatbot-hr-chatbot-1.calmground-488f4633.swedencentral.azurecontainerapps.io",
+        "latency_ms": 3,
+        "outcome": "request_failed",
+        "error": "ENOTFOUND"
+      }
+    ]
+  },
+  "source_manifest": [
+    {
+      "file": "src/app/(dashboard)/actions.ts",
+      "sha256": "b23ff09ea58fd8ef43be9eff2170e3c1ce76d61f680e4de32946808f9b304fe0"
+    },
+    {
+      "file": "src/app/(dashboard)/activity/page.tsx",
+      "sha256": "e67b8f01fe4bfa2ec0fd2e56eb611eb9530f50cbcbfab13b2d06dd6b523f4dd8"
+    },
+    {
+      "file": "src/app/(dashboard)/chatbots/page.tsx",
+      "sha256": "3818c033ab6d7af1f93227a0b997bed50173d8006df4a81d2e8609e988927c8a"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/cloud-prerequisites/CloudPrerequisitesContent.tsx",
+      "sha256": "e7c11f9fcc33e5d1bfe38b4807304ff60dd293fb42d943b9a2dc0652ddadd8b7"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/cloud-prerequisites/page.tsx",
+      "sha256": "70e302c6eba676f861acc453918ec7275c343a6acda2bf833ca3af8fec0b1244"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/deployment-guide/page.tsx",
+      "sha256": "023b345d3f7c13427a23b3fcba10640285a35f3b6ddc31d4e8d2bf361a0b0edf"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/getting-started/page.tsx",
+      "sha256": "0fce870634b608daf70fc23b37315bd2b5c37ac390d602b9e202c0dca28ee05b"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/GuideBreadcrumb.tsx",
+      "sha256": "7d8776924171c010abde3bab763100a66a842d551f721375be70c6f65d2cd057"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/GuideHeader.tsx",
+      "sha256": "282325820d9ea5fc8677451ec225ab41bb1f210fdf45a0edd36cad69bafc2771"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/GuidesNav.tsx",
+      "sha256": "743927537cdae1be402198ef3b0172f690907117993b9aea77af996c25af22b6"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/layout.tsx",
+      "sha256": "ca356157edb6a692a7881cb7a3bd7ec3108ff940170572ae6e93ba7ddf62a0ec"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/PrintButton.tsx",
+      "sha256": "9ca458ce8b48577191343bc9cfbeba40f02f7f4ee1ac1f150aa68ec64ae7d900"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/SectionHeading.tsx",
+      "sha256": "63ba5f420caba299dca79013146c029befae8cac042c47b9bffce58b4cecd021"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/secure-document-handling-rag/page.tsx",
+      "sha256": "bcf79f6b84b4f8a4fe1538955b074e475f5668d153a8d4e967d703f3d653519f"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/(article)/security-isolation/page.tsx",
+      "sha256": "6081fb770c57987cf529fd0bcc4167500c0ac11368b4fb8d3ccba93beb67939d"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/categories.ts",
+      "sha256": "854e9a89a21e04dce5f0b6e6838f22f3fec42d4e7ebbe6f98d884db5a4d88e2e"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/GuidesGrid.tsx",
+      "sha256": "2bf530d2a9a448a01e50402fdfda9d12e29ca817ee29b19d355059c8a9c76437"
+    },
+    {
+      "file": "src/app/(dashboard)/guides/page.tsx",
+      "sha256": "99cd2a802d8598282fc97405ccfa2b022662efe6139b8b6afbc17f6fc61eb7cc"
+    },
+    {
+      "file": "src/app/(dashboard)/issues/page.tsx",
+      "sha256": "f787219a2d2c5eb69e47205cd0129410153a9a10de5fc580cd67f40c7d1827be"
+    },
+    {
+      "file": "src/app/(dashboard)/page.tsx",
+      "sha256": "1b3bb04008775a4d485b7c49b51e9265ab15ab8cbcb1b198baadc3cb03c63465"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/ActivityList.tsx",
+      "sha256": "a2926fd4510c7e33c37ad373ab718ba8ded6736e7c012e2269375f4fdfbdc59b"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/AttentionList.tsx",
+      "sha256": "edc273edceebdd766c8a9cd2c0ea2a64248391b154d99cce99c140f8df378f3e"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/ChatbotsFilterBar.tsx",
+      "sha256": "ce67aa633398653772c96ff7d045961a0ae84b58e160e3891646c5a37ca8059c"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/ChatbotsGrid.tsx",
+      "sha256": "4564cd1098e68dcc7a862937096d8fc043020bc3e90ea55c7a24862054172714"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/ChatbotsStatsRow.tsx",
+      "sha256": "51f3907fe6d610511cf1d8f4689075b532d041fbf708152bb565f7bdbd59b16b"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/ChatbotsTable.tsx",
+      "sha256": "497e0dca1ea117cc67ec4af67970cd1afe609916da1f87785dd176124715a8b8"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/DashboardShell.tsx",
+      "sha256": "df176a78af4893db4c19f10032ac58e469d76062e173bd0574521c72108e78e9"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/DashboardSidebar.tsx",
+      "sha256": "fd31292fbb29167dc2e0585945bd6eec66f1b3faaef9d8a90fbfce4eab48debd"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/DraftsCard.tsx",
+      "sha256": "70f244322b7e12a4b7444a9c36a437b0496a18d551a008ec92dc8b2fa49b685d"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/GettingStarted.tsx",
+      "sha256": "8702be10f5c5a72c8c10ba23e7a1be97a25d8006dfa1232babab237076886e1f"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/ProviderLogo.tsx",
+      "sha256": "27dd14c743dfffbf3554e517dca654184063e114acf91ea0cd922e1c509a42ae"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/QuickActions.tsx",
+      "sha256": "772b124d5e5f75de4d726b4c380651a865edf7eecbb888cee3937e24d1d2ae2a"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/StatsRow.tsx",
+      "sha256": "fadcd103d92d8cf1e50e96521eb723dee3ec1947c00d3ca7b092b857bd40ce09"
+    },
+    {
+      "file": "src/app/(dashboard)/_components/StatTile.tsx",
+      "sha256": "b8531bc39adb0a90f44ada8bc18c1e0175a27ad0c611d9bb7f762dde54f6cd00"
+    },
+    {
+      "file": "src/app/(dashboard)/_data/queries.ts",
+      "sha256": "1ce8d556f451caa5b16151d1b35f68862717bcc768171ece73ceb3aad45a068d"
+    },
+    {
+      "file": "src/app/(dashboard)/_data/selectors.test.ts",
+      "sha256": "73594e9d42eb0a6049d161667e729705aa65347e092a60597045c73c26ea7bc2"
+    },
+    {
+      "file": "src/app/(dashboard)/_data/selectors.ts",
+      "sha256": "4126ced1fc74a0374ffbfc6c5fb8b535bda72cd9fc7c0648e2bdf3baa6596264"
+    },
+    {
+      "file": "src/app/api/auth/[...nextauth]/route.ts",
+      "sha256": "c3e8185d66af3fe7019dd236a463365cce7e1e8dcaea2a7c3b8f0b103e930ce4"
+    },
+    {
+      "file": "src/app/api/deployments/[id]/progress/route.test.ts",
+      "sha256": "c0824d9bf54ee547da6a8bdb9aa6533e9f71ccbd8eab981117341d15306344d9"
+    },
+    {
+      "file": "src/app/api/deployments/[id]/progress/route.ts",
+      "sha256": "9183d0df40a73fe48f2ea1c22f3c2edbe735424d66dbc407815f4bab6d866cbb"
+    },
+    {
+      "file": "src/app/api/deployments/[id]/secrets/route.ts",
+      "sha256": "fcb193a9dd4d9d4a38a5cfb22872d1ca83ecaa75502ed93d330ff7da25934a55"
+    },
+    {
+      "file": "src/app/api/deployments/[id]/status/route.test.ts",
+      "sha256": "a04c4f09d8003408e5a9195a654d02752175c2283c272a9a7a554fdbb78584a2"
+    },
+    {
+      "file": "src/app/api/deployments/[id]/status/route.ts",
+      "sha256": "1e1b68e7b32bac6ac627756285af9ea3cde11da96de9ae79f915b1807b02cab4"
+    },
+    {
+      "file": "src/app/Badge.tsx",
+      "sha256": "4be50a25b3cbef16b3e6bb9e018b1cfecedf3efcd9bed6b693f4bcb48cf93a05"
+    },
+    {
+      "file": "src/app/layout.tsx",
+      "sha256": "16ed9b814d8ae593e971969aa2ad5cbe501cad66635fc4c117c685f6c2ad76bd"
+    },
+    {
+      "file": "src/app/signin/page.tsx",
+      "sha256": "0d71a4d493968bfbf478fb9c78a970a3448b54c1a7aa3c6f8585da2ce2488640"
+    },
+    {
+      "file": "src/app/tenants/connectionActions.ts",
+      "sha256": "bbdd5930aa324c260889b96faca94f7db5e4d39e657158ea6121f6d1cf9b6280"
+    },
+    {
+      "file": "src/app/tenants/new/actions.test.ts",
+      "sha256": "f8c1f987a64dfccccb5b466f8420c0e600a1486a1dd12466837fa7ce678fa75d"
+    },
+    {
+      "file": "src/app/tenants/new/actions.ts",
+      "sha256": "7f88c721c76e1a5938588a760ab39ed57378f4b99f6277268aab67c2dab9092c"
+    },
+    {
+      "file": "src/app/tenants/new/page.tsx",
+      "sha256": "e0cccfa9bf6c1c76688d14a26ecb8e1b363d9c96e9b995a6438066772398b785"
+    },
+    {
+      "file": "src/app/tenants/new/TenantForm.tsx",
+      "sha256": "e4cc1991e6119b224d0a6b9752fc231a83a7b25c496ece12a3524b5d310668c4"
+    },
+    {
+      "file": "src/app/tenants/new/wizard/BootstrapPanel.tsx",
+      "sha256": "ea772d43ec995859d3ec7a4349aa6e0377e62f1cc6a4d9bb962133818b95b965"
+    },
+    {
+      "file": "src/app/tenants/new/wizard/fields.tsx",
+      "sha256": "35e981a2a14f27fd5976e5da419e4112f8f1890e17236eaa7606cf2eef984d6c"
+    },
+    {
+      "file": "src/app/tenants/new/wizard/StepBodies.tsx",
+      "sha256": "1a308aace876ecf6a179b296997678113cfb98d0d0463df7bf31c5d9d318fa5c"
+    },
+    {
+      "file": "src/app/tenants/new/wizard/steps.test.ts",
+      "sha256": "5d737be6b1d12313fc6a3a53f008217a9d1e8de8d9d187831668f9c5fa2b627e"
+    },
+    {
+      "file": "src/app/tenants/new/wizard/steps.ts",
+      "sha256": "06ff6f4e0600b20935546e1a5ae44187b4bc4b14eaccab0defd386f3916f95be"
+    },
+    {
+      "file": "src/app/tenants/new/wizard/useAvailability.ts",
+      "sha256": "e2f09d5b291512134615f3c109960bfdd4e1a41389f096cad90d32190cd8b3dd"
+    },
+    {
+      "file": "src/app/tenants/[id]/actions.test.ts",
+      "sha256": "fa9f45b577d532f640cda0db5451e3dbcc2bd327a72a993fa3e284769a17710f"
+    },
+    {
+      "file": "src/app/tenants/[id]/actions.ts",
+      "sha256": "946a3bf311a272dc97d1d23c15fac7e4b6a311265d540ee4fefd488b1057f600"
+    },
+    {
+      "file": "src/app/tenants/[id]/audit/AuditLogFilterBar.tsx",
+      "sha256": "5278b9cbb3b9f0967744d3e368e49972c022900395596641e631db6302689ddf"
+    },
+    {
+      "file": "src/app/tenants/[id]/audit/AuditLogSection.tsx",
+      "sha256": "ca1cb68e3987439cee55243d713651b48e0ea0befc314adbaeebec1f32631b59"
+    },
+    {
+      "file": "src/app/tenants/[id]/audit/AuditLogTable.tsx",
+      "sha256": "f6819e6879a0be90f37108a6e22427496162d3b34897b1f1c0cdb7bac18f08a5"
+    },
+    {
+      "file": "src/app/tenants/[id]/audit/utils.ts",
+      "sha256": "adf084a80e4788da8458609a39892ae5e3d61f9824531ec74cc98e61ecfc46dc"
+    },
+    {
+      "file": "src/app/tenants/[id]/CostEstimateCard.tsx",
+      "sha256": "2f2d5d9f738fea7732c5acdca0b84d89cd2819ea85de75b5de39313e60abc3e7"
+    },
+    {
+      "file": "src/app/tenants/[id]/DeleteTenantButton.tsx",
+      "sha256": "33828aeb8b8e8680901fc55d719a1ab40eae4d2578ff94a2b3d03aa371754006"
+    },
+    {
+      "file": "src/app/tenants/[id]/DeploymentProgress.tsx",
+      "sha256": "1aee3bece0899f01259ff0b000784511e47fc1452a4c6f02ffb23b9c09df1a35"
+    },
+    {
+      "file": "src/app/tenants/[id]/deployments/DeploymentDetailsPanel.tsx",
+      "sha256": "fd660f02784a70394842823df6d8894f3f3dc550acd2872a306179efb53f607a"
+    },
+    {
+      "file": "src/app/tenants/[id]/deployments/DeploymentsFilterBar.tsx",
+      "sha256": "b9b9a4af547f7decb96cc70e70e70b921f55b6a8ee37a7a8ecc6fa75f8ddcbe0"
+    },
+    {
+      "file": "src/app/tenants/[id]/deployments/DeploymentsSection.tsx",
+      "sha256": "8b9dc19fff3a5022eaaef7d76c8a002b90781a40c1faa0664190ddb245dbb7f8"
+    },
+    {
+      "file": "src/app/tenants/[id]/deployments/DeploymentsStatsRow.tsx",
+      "sha256": "8511fe7ae1a753b3dcc57bbd35ab19fe0b4955392704c3acad71c6638c07b6f8"
+    },
+    {
+      "file": "src/app/tenants/[id]/deployments/DeploymentsTable.tsx",
+      "sha256": "928c5683d9f1718e6fdef8a253f4f01f4b79fa72957dc3c52fd12f10bf84d1b9"
+    },
+    {
+      "file": "src/app/tenants/[id]/deployments/utils.ts",
+      "sha256": "4c0bed4b532a12ccde8fbc821342c220fe608778a7f93a1da8ec74c119495fcd"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/actions.test.ts",
+      "sha256": "672c9d05ea9457134a5d2289acfd65d0174688560791cececf288591670f7065"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/actions.ts",
+      "sha256": "23bae4e0e38d1e7fdc7e7355d70cc0853845e178d09fe72142d96cbba614e409"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/DeleteDocumentButton.tsx",
+      "sha256": "dfa9bb81f61692019d1df6d8f92a740ceb3863b27ef9cb9d3f2a4016904e1f34"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/DocumentActionsMenu.tsx",
+      "sha256": "e46a9eb0a10e10957a8d04215fc537b7a10fa5e45d161b8b55757ecf2e2883af"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/DocumentsFilterBar.tsx",
+      "sha256": "80a43e7c5425df63a558d2ad9de77be6728e58bab4046fc06d7353f5b9a190e6"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/DocumentsSection.tsx",
+      "sha256": "dece924604ea8856a4e996c559b29d9ec54456692a5183ca31575263d4b3d1ac"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/DocumentsStatsRow.tsx",
+      "sha256": "7b6e3a87d295efe894c122769adae72323269ce0d469d2d601cb6d5454fa95dc"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/DocumentsTable.tsx",
+      "sha256": "35b698c5a361f327b25c05ad7805e7d3a7a6097cc14cc45d247e9aa6fe4694f4"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/UploadDocumentForm.tsx",
+      "sha256": "74b7625f404e83eefa9a8c2c92b612f0eabf2a3254fccb01164b122064352f4d"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/utils.test.ts",
+      "sha256": "eb243e7d3ce58dfdb24689fe81b388b8fcba137c310190e04c6ca545f111c41c"
+    },
+    {
+      "file": "src/app/tenants/[id]/documents/utils.ts",
+      "sha256": "61625c94e05a1e67b781d551bd565aa6e07b8ce13c11e134eadd661fdc353336"
+    },
+    {
+      "file": "src/app/tenants/[id]/page.tsx",
+      "sha256": "d6214c1909aff49af09f2d7eda7168d9a2e0078b1fe67c9c0dff2318587092a5"
+    },
+    {
+      "file": "src/app/tenants/[id]/RedeployButton.tsx",
+      "sha256": "0b1d2a25298b397b99b91bf1643e5d170235d7efc03eaa9ff78007c447610f74"
+    },
+    {
+      "file": "src/app/tenants/[id]/_components/Pagination.tsx",
+      "sha256": "6233eed35abc37309a9e0b32d476c8b0a272abf36c3563a02c1a464d2332e801"
+    },
+    {
+      "file": "src/auth.ts",
+      "sha256": "e6929bb45aef31be703fe291b9be6deedb13f5bd3bdef15d283f58385dfc242b"
+    },
+    {
+      "file": "src/db/index.ts",
+      "sha256": "5b0ad47e961fd82bd1a041027b018d8f9f3c6d7f9af0ad2c983e2c834a669578"
+    },
+    {
+      "file": "src/db/schema.ts",
+      "sha256": "c6435a806875214fbd2b90a2c59cc7350e0a9fb6d077fc5c7d19845ac75151ce"
+    },
+    {
+      "file": "src/lib/aws.test.ts",
+      "sha256": "1f772b438365cdc8052abf6ed16973c2cc7ec49fa6bcf5dab85f3339b3214be0"
+    },
+    {
+      "file": "src/lib/aws.ts",
+      "sha256": "94309ef6123c60185f776c1395128a99dc15c746ac53ba6b831d61def919b9e2"
+    },
+    {
+      "file": "src/lib/awsTrust.test.ts",
+      "sha256": "ffa171be65ca4f5af94af2ffd673b1f1e712d52f28ff242a546313cb29babf1f"
+    },
+    {
+      "file": "src/lib/awsTrust.ts",
+      "sha256": "f981f5759326389ddb1527e1cba893d0733ce61fe9e81ae58cd3bf62525dd7a8"
+    },
+    {
+      "file": "src/lib/azure.test.ts",
+      "sha256": "074448c51309f64c1ace4ebbec53c7b720cf226f3610df7698f62e0e93beb621"
+    },
+    {
+      "file": "src/lib/azure.ts",
+      "sha256": "c5ff71af072814ca1263c4e24a1f9cc20795a02f76a7f535a09efaa9b1f785b1"
+    },
+    {
+      "file": "src/lib/azureFederation.test.ts",
+      "sha256": "70c6ab13ba2751574740ef8b7fc826bada0141c5bdff61f88efeaddfbc6a10fb"
+    },
+    {
+      "file": "src/lib/azureFederation.ts",
+      "sha256": "b0cbcc66397383d122e186f291a3ce5ec249c1935ef49c332a0cb055fdcae05e"
+    },
+    {
+      "file": "src/lib/bootstrapLinks.test.ts",
+      "sha256": "9e1fea2fb824b9a03d0fe8fce2d9f3e2b88499f01745d82d9fc499214b8ff015"
+    },
+    {
+      "file": "src/lib/bootstrapLinks.ts",
+      "sha256": "d61f6bb6f89bce4dd9474baae5c610e8dd42f68a0c4b5e3ed8c1eeb5bf5a0c78"
+    },
+    {
+      "file": "src/lib/clientBoundary.test.ts",
+      "sha256": "393eaf42077211f8235bf6bec1a25bc8cb59694a0d453ea1d027c6956498b267"
+    },
+    {
+      "file": "src/lib/connectionCheck.ts",
+      "sha256": "a0cc2561d5fbd03fb951c8cfaea5a1e9b4eb6838c2d379e0723f933622429bc8"
+    },
+    {
+      "file": "src/lib/crypto.test.ts",
+      "sha256": "70bee06be780c436f804014b1b8083852ad64a5202cda1760cabd24fb5e52530"
+    },
+    {
+      "file": "src/lib/crypto.ts",
+      "sha256": "6061bf37caa53f17872a8a75d8cab0af6bb3163da77ab40beacf5bb3fe485142"
+    },
+    {
+      "file": "src/lib/deploy.test.ts",
+      "sha256": "2a73399eb5f79a21f0dd08c458f7586761b0a8a9260b2a86e229c7c4d98abbed"
+    },
+    {
+      "file": "src/lib/deploy.ts",
+      "sha256": "e791682a4dbddbc79db48512d4d0b898ca0d59bcd444a3fa23b544fee87a1d0e"
+    },
+    {
+      "file": "src/lib/deploymentSecrets.test.ts",
+      "sha256": "5afcf883a58d7331c0881b642c777374b1ce29005b5513c9050cbee50f54a538"
+    },
+    {
+      "file": "src/lib/deploymentSecrets.ts",
+      "sha256": "a54768bcdf674f157f67ef12ed7a6ddd8fc124c7210e1a777d09058fc7c92e24"
+    },
+    {
+      "file": "src/lib/deployPipeline.test.ts",
+      "sha256": "46187d1d1f035ee89759201de1fd6eb2ad248e4df6f7cbfa25aee6908a7a2adb"
+    },
+    {
+      "file": "src/lib/docsSigner.test.ts",
+      "sha256": "e76dcf56c83d560ee73382cdcb7b43f1cbc582e1a560f4ba3a8a4d5b4a433aa7"
+    },
+    {
+      "file": "src/lib/docsSigner.ts",
+      "sha256": "3d35e0deb46737de307ac1ecdad9c033d521e5e11e4bc9db7ef5f4077a2e4135"
+    },
+    {
+      "file": "src/lib/github.test.ts",
+      "sha256": "06283c09954d76c1228eafb00e317b228ced6d12feb299212a3562252404fd58"
+    },
+    {
+      "file": "src/lib/github.ts",
+      "sha256": "5e27a99e23a83204b9a6ca66cfeb26c8ffdb53083d5985d86ad87628fa8743ac"
+    },
+    {
+      "file": "src/lib/githubOidc.ts",
+      "sha256": "5a2f4ab41dee9f7d2c9c0df2807a2d5dd6291b4116c7b5dc510b3785073beb83"
+    },
+    {
+      "file": "src/lib/nameAvailability.test.ts",
+      "sha256": "01fec43dfa4508ab63a8ddbf4f1d69d82f1dbd061d1cd96c3844f8e7b1cbb50d"
+    },
+    {
+      "file": "src/lib/nameAvailability.ts",
+      "sha256": "0d23d51447e5c4a95765afde6753b4c5fdeeafe2366912e10d0701e3180fbfa8"
+    },
+    {
+      "file": "src/lib/operators.test.ts",
+      "sha256": "8dab1278ad7930ce81aed73acd53233aa51a01a3e4b778b1da1c8d402bcc9a86"
+    },
+    {
+      "file": "src/lib/operators.ts",
+      "sha256": "68e231cbfd840a03e6e5301192d876163695fdba53252241ff7a3aad3ea16eab"
+    },
+    {
+      "file": "src/lib/pricing.test.ts",
+      "sha256": "8ef801c09ec7a0f0cfb88f43f88143c42c23820bb4d3912d73464a9bebdc2c33"
+    },
+    {
+      "file": "src/lib/pricing.ts",
+      "sha256": "369972220bcc779428cf4097c8808c5c9409e18ad0f0264d94dd387e95ea52cf"
+    },
+    {
+      "file": "src/lib/reconcile.ts",
+      "sha256": "fa8d87adf0ac120d7f4bd8717ad8f40c0dd5a2c0ae630efa8ca01b0156a5ac80"
+    },
+    {
+      "file": "src/lib/reindex.test.ts",
+      "sha256": "c3427ef097816c561419bb15eb79cd56926dfcfeee24f2277299d7788ac831b2"
+    },
+    {
+      "file": "src/lib/reindex.ts",
+      "sha256": "f9a8acf937fef8c76d6b2720a48da1eb28852fde083fc65ac83a91ca8e4b0811"
+    },
+    {
+      "file": "src/lib/resourceNames.test.ts",
+      "sha256": "7eb7f352b6f3159dda85e7869d02c48dc622a5e3c60513d3e5e2449321e66262"
+    },
+    {
+      "file": "src/lib/resourceNames.ts",
+      "sha256": "d5613edf937e4a5513065e43b9231c38a48a13d562435de54cdac6172a40978c"
+    },
+    {
+      "file": "src/lib/tenantErasure.ts",
+      "sha256": "e3cdb4f90439001835da8399506661d45b20e794a457612d56b5360e1155d454"
+    },
+    {
+      "file": "src/lib/tenantInput.test.ts",
+      "sha256": "17b1c82bc751475a29758c8867145a5adb761740cadcafcff2139727452831a5"
+    },
+    {
+      "file": "src/lib/tenantInput.ts",
+      "sha256": "45b4c39f1f3439403cc8b93b963f0d9d9567cc6de646e5d3ac7f4753e7c76ff3"
+    },
+    {
+      "file": "src/lib/terraformInit.test.ts",
+      "sha256": "b59b1cfde4f602946c082b1dce5f0e817ce33775764dec51b6b086e0e03d8374"
+    },
+    {
+      "file": "src/lib/verifyConnection.test.ts",
+      "sha256": "c6a633581fa4cced37ee597acdaf7171212bb0b69ee85b02ca1a8c8d872c05f1"
+    },
+    {
+      "file": "src/lib/verifyConnection.ts",
+      "sha256": "9beedb09cd31777150c356b6bfc4b6af1fb5759a3b997f5f1c5102d7a33a5e9a"
+    },
+    {
+      "file": "src/proxy.ts",
+      "sha256": "16fa6f50386f806fb60f4bd02981c7b91448e33090d14656638d17755a1e72d9"
+    },
+    {
+      "file": "src/test/db-chains.ts",
+      "sha256": "9cddfe1bb482f54b18fda7e568039f02c7e6cbe0b628e1a3a17aea0a1c78586a"
+    },
+    {
+      "file": "src/test/form-data.ts",
+      "sha256": "4501453260fc36d9b9754214d4861ea0dcd9268c157793038ea5d186702a30a4"
+    },
+    {
+      "file": "infra/azure-functions/docs-signer/host.json",
+      "sha256": "de117b4e3de05e1964354bf12532ec8848eda8ab6e00cb3f14525b623dfa6441"
+    },
+    {
+      "file": "infra/azure-functions/docs-signer/local.settings.json",
+      "sha256": "8b1d0ab2fc536a46f592679eac1d642c2e4eaec28b9d103f8a21dbba76133fa0"
+    },
+    {
+      "file": "infra/azure-functions/docs-signer/package-lock.json",
+      "sha256": "bb346114b9e905ebf69ce0600551860a4c62bd59b2a28ba4b432f0e3b6952180"
+    },
+    {
+      "file": "infra/azure-functions/docs-signer/package.json",
+      "sha256": "89f56329d5f58ec1e27ea82317610ebce6ee8517129fbf6b448537b07bd9c1b6"
+    },
+    {
+      "file": "infra/azure-functions/docs-signer/src/functions/docsSigner.js",
+      "sha256": "10749d75a3f8e1c84af032c4aaf8b2264469cfb083b558c5fa3173ddc64a6ead"
+    },
+    {
+      "file": "infra/azure-functions/docs-signer/src/index.js",
+      "sha256": "c786a65f5e32d90c61cd573b163bf7c391d1f0ea85fc48ac5a5d9269e7d6112f"
+    },
+    {
+      "file": "infra/bootstrap/aws/tenant-bootstrap.yaml",
+      "sha256": "95d3c646e5895d3475ce18a05b24512bd0a87169da818ff26a7d5356aa42bb9f"
+    },
+    {
+      "file": "infra/bootstrap/azure/tenant-bootstrap.json",
+      "sha256": "875df34556d3dbc15274ad5ea77872d16c079af8651b4a38ae287c9d328fc3a1"
+    },
+    {
+      "file": "infra/lambda/docs-signer/index.mjs",
+      "sha256": "f81bf6964f18232cc6d530028a06e7a59082950855b6f22ed7ec874e1e311ea3"
+    },
+    {
+      "file": "infra/lambda/docs-signer/package.json",
+      "sha256": "2a816f6e4265e092c4d2490a3556c9133618c5d63a73696b70f1067aa139f484"
+    },
+    {
+      "file": "infra/platform/bootstrap-templates/main.tf",
+      "sha256": "d70788a6ed2533e60e5480526fd0e87f5f2f51b0f32745237827a30301f9cca5"
+    },
+    {
+      "file": "infra/platform/bootstrap-templates/outputs.tf",
+      "sha256": "81e728ec2689b1a706e1ba69d66ffd2d1ec792d179077b00509cfae6512c22b1"
+    },
+    {
+      "file": "infra/platform/bootstrap-templates/variables.tf",
+      "sha256": "0c8205fd227fe3c7cdd6d9b133287c0c9fba19ce7ef922f580ec1adeaea8eb6e"
+    },
+    {
+      "file": "infra/platform/control-plane/main.tf",
+      "sha256": "bbebf3cdef3d16bed23edbb9889fd46559e45a05feee4a828af1379f9a0e01fc"
+    },
+    {
+      "file": "infra/platform/control-plane/outputs.tf",
+      "sha256": "8985484600e288bb22c21cfda31defbd4b5e4d822668822621a2557e6b09fb4d"
+    },
+    {
+      "file": "infra/platform/control-plane/variables.tf",
+      "sha256": "d613a3b943187e8bbcbb339fb32900deb1e6381a567d8becfc95f520336ba1d4"
+    },
+    {
+      "file": "infra/platform/github-oidc/main.tf",
+      "sha256": "5002d548aa5bce21b6cbef453e2e4ffeb7bd7a5db25b17f989cb335d4f35cf8b"
+    },
+    {
+      "file": "infra/platform/github-oidc/outputs.tf",
+      "sha256": "abd61ff2aceb2dda51428e4091f560dd26f8e656876bba5881c75b0bd9e8ece6"
+    },
+    {
+      "file": "infra/platform/github-oidc/variables.tf",
+      "sha256": "a4bde7bab820c05a04159546e815b6ec601283c5c92a4bdedf56cd0760d8aa24"
+    },
+    {
+      "file": "infra/terraform/azure/backend.tf",
+      "sha256": "297ce53269aa13201340771da42578fde7fa67b52bd740014307a839ab8b677b"
+    },
+    {
+      "file": "infra/terraform/azure/main.tf",
+      "sha256": "e4285f53d90ec6484d2c757b867ad1490baad232246500cea6ecbe6ee9419e1b"
+    },
+    {
+      "file": "infra/terraform/azure/outputs.tf",
+      "sha256": "399a5067fb7ef1619911c9d3de6a768af0070f8b25fba29241b7209934cb1c78"
+    },
+    {
+      "file": "infra/terraform/azure/variables.tf",
+      "sha256": "21a9f1cb8979659941ed924afe0386e1c1d526eef9c53476e87f76b37d0ff4db"
+    },
+    {
+      "file": "infra/terraform/backend.tf",
+      "sha256": "7dcf6d12ce9a1cb820aa0bef0b5de268df3c1c902bb9153a87fd47a7db567191"
+    },
+    {
+      "file": "infra/terraform/main.tf",
+      "sha256": "a2d75290ea49531554b85772f8b5e92c492a4e51b624eb5d49362d377ed9ae9c"
+    },
+    {
+      "file": "infra/terraform/outputs.tf",
+      "sha256": "177b4b67623c0fca66afb3c30a50b8afdb239247f01eaa2f33300aad3e133fa8"
+    },
+    {
+      "file": "infra/terraform/variables.tf",
+      "sha256": "a1276b56197d996454f776912f5db23ba4c647a8d29842423948eadcc26e1317"
+    },
+    {
+      "file": ".github/scripts/empty-docs-bucket.mjs",
+      "sha256": "3603086eb32032c5c3ff4588af2e3162de8151e3c556b38487f7e34199ef02b7"
+    },
+    {
+      "file": ".github/scripts/terraform-init-aws.sh",
+      "sha256": "545e6e77e769457a5036eb154c0c2d8144f8e9b3cb7c1b6e29a22cff90c7398f"
+    },
+    {
+      "file": ".github/scripts/terraform-init-azure.sh",
+      "sha256": "5d001c8facede4d0f99b197e931f69569a2486bd76329754604428db13aa9493"
+    },
+    {
+      "file": ".github/workflows/deploy-tenant-azure.yml",
+      "sha256": "085157ddff322b896ba0f7697ef794ac00548228d8034f04c8bef29c537d2b99"
+    },
+    {
+      "file": ".github/workflows/deploy-tenant.yml",
+      "sha256": "ec66167bbad89979dc3b84684960468170b5c1793081dadc36c2b462cd4bad2f"
+    },
+    {
+      "file": ".github/workflows/destroy-tenant-azure.yml",
+      "sha256": "ed783c3b5ed71c5dda763d04ac073e9ffb9dadf3a16c5391946779ae267cc2d0"
+    },
+    {
+      "file": ".github/workflows/destroy-tenant.yml",
+      "sha256": "a6a3781b4d9aaeae686da9e18265a55352aeee1a9812832387b7504611ecbd37"
+    },
+    {
+      "file": ".github/workflows/verify-tenant-aws.yml",
+      "sha256": "63a5bc856a0a60b763b7057ca349784091a523fa7090f290dbba88743c712039"
+    },
+    {
+      "file": ".github/workflows/verify-tenant-azure.yml",
+      "sha256": "da8131931dd0c5fdd0b2d5b8fbd619b8b2710f58f29d3a49f7111d6fb68d533b"
+    }
+  ],
+  "supplementary_tests": {
+    "passed": 7,
+    "failed": 0,
+    "additional_distinct_passes": 0,
+    "total_distinct_passes": 672
+  }
+}

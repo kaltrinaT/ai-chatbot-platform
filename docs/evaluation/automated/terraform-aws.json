@@ -1,0 +1,7 @@
+{
+  "name": "terraform-aws",
+  "at": "2026-10-11T03:52:12.744Z",
+  "exit_code": 0,
+  "stdout": "{\n  \"format_version\": \"1.0\",\n  \"valid\": true,\n  \"error_count\": 0,\n  \"warning_count\": 0,\n  \"diagnostics\": []\n}\n",
+  "stderr": ""
+}

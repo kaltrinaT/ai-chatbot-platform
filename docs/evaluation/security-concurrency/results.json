@@ -1,0 +1,122 @@
+{
+  "generated": "2026-10-18T02:13:51.134Z",
+  "overall": "PASS",
+  "environment": {
+    "postgres": "16.14 (Debian 16.14-1.pgdg12+1)",
+    "isolation": "read committed",
+    "image": "pgvector/pgvector:pg16",
+    "parallel": 25,
+    "rounds": 20,
+    "node": "v24.16.0",
+    "platform": "Windows_NT 10.0.26300",
+    "commit": "61de49007640"
+  },
+  "leaks": 0,
+  "observations": [
+    {
+      "test": "SEC-CONC · real PostgreSQL, parallel transactions > 25 simultaneous redeploys of one tenant start exactly one deployment, every round",
+      "kind": "attack",
+      "step": "25 parallel redeploys × 20 rounds",
+      "held": true,
+      "expected": "every round: one dispatched, the rest refused as in progress, one active row",
+      "actual": {
+        "rounds": 20,
+        "parallel": 25,
+        "roundsBroken": 0,
+        "refusedAsInProgress": 480,
+        "otherErrors": []
+      },
+      "refused": true
+    },
+    {
+      "test": "SEC-CONC · real PostgreSQL, parallel transactions > negative control: with the unique index dropped, the same race starts many deployments",
+      "kind": "control",
+      "step": "The same race without the index (negative control)",
+      "held": true,
+      "expected": "duplicates appear, showing the index is what prevents them",
+      "actual": {
+        "activeRowsPerRound": [
+          25,
+          25,
+          25,
+          25,
+          25
+        ]
+      },
+      "allowed": true
+    },
+    {
+      "test": "SEC-CONC · real PostgreSQL, parallel transactions > 25 simultaneous terminal callbacks finish a deployment once, every round",
+      "kind": "attack",
+      "step": "25 parallel terminal callbacks × 20 rounds",
+      "held": true,
+      "expected": "every round: exactly one callback applied",
+      "actual": {
+        "roundsBroken": 0,
+        "stoppedByAtomicWrite": 479,
+        "stoppedByReadCheck": 1,
+        "roundsWithOverlap": 20
+      },
+      "refused": true
+    },
+    {
+      "test": "SEC-CONC · real PostgreSQL, parallel transactions > 25 simultaneous secrets claims for one deployment release once, every round",
+      "kind": "attack",
+      "step": "25 parallel secrets claims × 20 rounds",
+      "held": true,
+      "expected": "every round: secrets released to exactly one run, which the row names",
+      "actual": {
+        "roundsBroken": 0,
+        "releasedPerRound": [
+          1
+        ]
+      },
+      "refused": true
+    },
+    {
+      "test": "SEC-CONC · real PostgreSQL, parallel transactions > an attacker's parallel burst neither reaches a foreign tenant nor blocks its owner",
+      "kind": "attack",
+      "step": "25 parallel cross-tenant redeploys beside the owner's × 20 rounds",
+      "held": true,
+      "expected": "every round: all attacker requests refused, the owner's one deployment dispatched",
+      "actual": {
+        "roundsBroken": 0
+      },
+      "refused": true
+    },
+    {
+      "test": "SEC-CONC · real PostgreSQL, parallel transactions > an attacker's parallel burst neither reaches a foreign tenant nor blocks its owner",
+      "kind": "control",
+      "step": "The owner's own redeploy during the burst",
+      "held": true,
+      "expected": "succeeds every round",
+      "actual": {
+        "ownerSucceededRounds": 20,
+        "rounds": 20
+      },
+      "allowed": true
+    }
+  ],
+  "tests": [
+    {
+      "name": "25 simultaneous redeploys of one tenant start exactly one deployment, every round",
+      "status": "passed"
+    },
+    {
+      "name": "negative control: with the unique index dropped, the same race starts many deployments",
+      "status": "passed"
+    },
+    {
+      "name": "25 simultaneous terminal callbacks finish a deployment once, every round",
+      "status": "passed"
+    },
+    {
+      "name": "25 simultaneous secrets claims for one deployment release once, every round",
+      "status": "passed"
+    },
+    {
+      "name": "an attacker's parallel burst neither reaches a foreign tenant nor blocks its owner",
+      "status": "passed"
+    }
+  ]
+}
