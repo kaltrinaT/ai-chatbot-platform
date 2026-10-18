@@ -1,11 +1,11 @@
 import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
+import { drizzle, type NeonDatabase } from "drizzle-orm/neon-serverless";
 import ws from "ws";
 import * as schema from "./schema";
 
 neonConfig.webSocketConstructor = ws;
 
-let _db: any;
+let _db: NeonDatabase<typeof schema>;
 
 if (process.env.DATABASE_URL) {
 	const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -17,10 +17,10 @@ if (process.env.DATABASE_URL) {
 	// NOTE: This returns empty results for selects and harmless responses
 	// for insert/update/delete operations.
 	// For real usage, set DATABASE_URL in .env.local.
-	// eslint-disable-next-line no-console
 	console.warn("No DATABASE_URL found — using empty fallback DB for local development.");
 
-	const thenableEmpty = (arr: any) => ({ then: (resolve: any) => resolve(arr) });
+	type Resolve = (rows: unknown[]) => unknown;
+	const thenableEmpty = (arr: unknown[]) => ({ then: (resolve: Resolve) => resolve(arr) });
 
 	_db = {
 		select: () => ({
@@ -28,16 +28,16 @@ if (process.env.DATABASE_URL) {
 				where: () => ({
 					orderBy: () => thenableEmpty([]),
 					limit: async () => [],
-					then: async (resolve: any) => resolve([]),
+					then: async (resolve: Resolve) => resolve([]),
 				}),
 				orderBy: () => thenableEmpty([]),
 				limit: async () => [],
-				then: async (resolve: any) => resolve([]),
+				then: async (resolve: Resolve) => resolve([]),
 			}),
 		}),
 		insert: () => ({ into: () => ({ values: async () => ({ rowCount: 0 }) }) }),
 		update: () => ({ set: async () => ({ rowCount: 0 }) }),
 		delete: () => ({ from: () => ({ where: async () => ({ rowCount: 0 }) }) }),
-	} as any;
+	} as unknown as NeonDatabase<typeof schema>;
 }
 export const db = _db;

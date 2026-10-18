@@ -81,6 +81,9 @@ import {
   retrievalMinScore,
 } from "./deploy";
 
+// db is the mock above; this view of it exposes the vi.fn() properties.
+const mockedDb = db as unknown as Record<"insert", ReturnType<typeof vi.fn>>;
+
 /**
  * The input names a workflow accepts. A dispatch carrying anything else is
  * rejected by GitHub, so the platform's inputs and the workflow file have to
@@ -605,7 +608,7 @@ describe("triggerTenantDestroy", () => {
     await triggerTenantDestroy({ tenantId: destroyTenant.id, triggeredByUserId: "u1" });
 
     expect(dbInsertReturning).toHaveBeenCalled();
-    const insertedValues = db.insert.mock.results[0].value.values.mock.calls[0][0];
+    const insertedValues = mockedDb.insert.mock.results[0].value.values.mock.calls[0][0];
     expect(insertedValues).toMatchObject({ kind: "destroy", status: "pending" });
 
     expect(createWorkflowDispatch).toHaveBeenCalledWith(

@@ -171,7 +171,7 @@ export async function triggerDeployment({
   return deployment;
 }
 
-type TenantRow = Awaited<ReturnType<typeof db.select>>["0"] & { cloudProvider: string };
+type TenantRow = typeof tenants.$inferSelect;
 
 type DestroyInput = {
   tenantId: string;
@@ -355,7 +355,7 @@ function cdnEnabled(): boolean {
 }
 
 function buildAwsInputs(
-  tenant: Awaited<ReturnType<typeof db.select>>["0"] & { cloudProvider: string },
+  tenant: TenantRow,
   deploymentId: string,
   chatbotVersion: string,
   imageBase: string,
@@ -413,7 +413,7 @@ function buildAwsInputs(
  * own OIDC token (see src/lib/deploymentSecrets.ts).
  */
 function buildAzureInputs(
-  tenant: Awaited<ReturnType<typeof db.select>>["0"] & { cloudProvider: string },
+  tenant: TenantRow,
   deploymentId: string,
   chatbotVersion: string,
   imageBase: string,
