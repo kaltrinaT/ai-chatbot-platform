@@ -1,7 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 # ──────────────────────────────────────────────────────────────────────
-# One chatbot's deployment identity, inside the customer's own AWS account.
+# One chatbot's deployment identity, inside the customer's own AWS account:
+# a deployment role only GitHub Actions can assume, and a separate, write-only
+# onboarding role, the one thing here the platform itself can assume.
 #
 # Applied by the CUSTOMER, once per chatbot, from a Quick Create link the
 # onboarding wizard builds (see src/lib/bootstrapLinks.ts). Every parameter
@@ -16,7 +18,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 # wrong.
 #
 # The stack is also the revocation and teardown handle: deleting it removes
-# the role, after which every deploy for this chatbot fails to authenticate.
+# both roles, after which every deploy for this chatbot fails to authenticate.
 # The chatbot's Terraform state bucket outlives the stack on purpose (see
 # TerraformStateBucket) and is yours to delete once the chatbot is gone.
 #
@@ -27,9 +29,10 @@ AWSTemplateFormatVersion: "2010-09-09"
 
 Description: >-
   Deployment identity for one AI chatbot tenant. Creates an IAM role that
-  GitHub Actions assumes through OIDC to run Terraform in this account, and
-  the bucket that keeps that Terraform's state here rather than with the
-  platform. No access key is created, and no credential leaves this account.
+  GitHub Actions assumes through OIDC to run Terraform in this account, a
+  write-only role the platform uses once to store the chatbot's API keys, and
+  the bucket that keeps Terraform's state here rather than with the platform.
+  No access key is created, and no credential leaves this account.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -130,6 +133,74 @@ Resources:
       ClientIdList:
         - sts.amazonaws.com
 
+  # The most any role a deployment creates can ever do. The deployment role
+  # may create roles for the chatbot's own runtime — the ECS tasks and the
+  # docs-signer Lambda — and attach policies to them, which is a privilege
+  # escalation path unless something outside its own reach caps the result.
+  # This boundary is that cap: IAM grants a role the intersection of its own
+  # policies and its boundary, so a role carrying it holds no more than what is
+  # listed here, whatever policy is later attached. The deployment role cannot
+  # create a role without it, cannot remove it, and cannot edit it (see the
+  # IamForTaskRoles* and BoundaryIsFixed statements below).
+  #
+  # Scoped to this chatbot's own resources by name — the images under
+  # <slug>/, the secrets under <slug>/, its log groups and its documents
+  # bucket — which is everything the three runtime roles in
+  # infra/terraform/main.tf use, and nothing else. A new runtime need means
+  # a change here first; the stack update then runs before the deploy that
+  # uses it.
+  RuntimeRoleBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "chatbot-${TenantSlug}-runtime-boundary"
+      Description: !Sub >-
+        Permissions boundary for the roles the '${TenantSlug}' AI chatbot's
+        deployments create. Caps them at pulling this chatbot's images, writing
+        its logs, reading its secrets and using its documents bucket.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Registry login has no resource of its own to scope to.
+          - Sid: RegistryLogin
+            Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: "*"
+          - Sid: PullChatbotImages
+            Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+            Resource: !Sub "arn:${AWS::Partition}:ecr:*:${AWS::AccountId}:repository/${TenantSlug}/*"
+          - Sid: WriteChatbotLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/ecs/chatbot-${TenantSlug}"
+              - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/ecs/chatbot-${TenantSlug}:*"
+              - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/chatbot-${TenantSlug}-docs-signer"
+              - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/chatbot-${TenantSlug}-docs-signer:*"
+          # The trailing slash keeps one chatbot's secrets apart from another
+          # whose slug starts the same way (acme/ versus acme-corp/).
+          - Sid: ReadChatbotSecrets
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub "arn:${AWS::Partition}:secretsmanager:*:${AWS::AccountId}:secret:${TenantSlug}/*"
+          - Sid: ListChatbotDocuments
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub "arn:${AWS::Partition}:s3:::chatbot-${TenantSlug}-docs"
+          - Sid: UseChatbotDocuments
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub "arn:${AWS::Partition}:s3:::chatbot-${TenantSlug}-docs/*"
+
   DeploymentRole:
     Type: AWS::IAM::Role
     Properties:
@@ -170,27 +241,9 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:environment:tenant-${TenantId}"
 
-          # ── Onboarding only ──
-          # The platform writes this chatbot's LLM key, vector-database key and
-          # document-signing secret straight into your Secrets Manager, before
-          # any workflow exists. That is what keeps those values out of GitHub
-          # Actions entirely — only the resulting ARNs are ever sent to a
-          # workflow. The platform makes that call itself, so it needs to be
-          # trusted for it.
-          #
-          # The ExternalId is what stops that trust covering anything else.
-          # Without it this statement would trust every request the platform
-          # makes, for any customer: someone who knew this role's ARN — which
-          # is not secret — could have the platform write into your account on
-          # their behalf. The condition binds it to this one chatbot.
-          - Sid: PlatformOnboarding
-            Effect: Allow
-            Principal:
-              AWS: !Sub "arn:${AWS::Partition}:iam::${PlatformAccountId}:root"
-            Action: sts:AssumeRole
-            Condition:
-              StringEquals:
-                sts:ExternalId: !Ref TenantId
+          # Nothing else. This role builds infrastructure, so it can read your
+          # documents bucket and secrets; the platform therefore has no way
+          # into it. The platform's own access is OnboardingRole below.
 
       Policies:
         - PolicyName: chatbot-terraform-deploy
@@ -245,28 +298,150 @@ Resources:
                 Action: "cloudfront:*"
                 Resource: "*"
               # The task and Lambda execution roles Terraform creates for the
-              # chatbot's own runtime. Narrower than the services above on
-              # purpose: this is the only grant that could be used to widen
-              # the role's own reach, so it lists actions rather than iam:*,
-              # and it cannot touch users, groups or policies.
-              - Sid: IamForTaskRoles
+              # chatbot's own runtime. This is the only grant here that could
+              # widen the role's own reach — create a role, attach
+              # AdministratorAccess to it, pass it to a Lambda — so it is
+              # narrowed three ways:
+              #
+              #   - only roles named chatbot-<slug>-*, which is how
+              #     infra/terraform/main.tf names all three;
+              #   - every action that grants a permission requires the role to
+              #     carry RuntimeRoleBoundary, so whatever is attached is
+              #     capped by it;
+              #   - those roles can be passed only to ECS tasks and Lambda.
+              #
+              # Reading, detaching and deleting are not conditioned: they can
+              # only take permissions away, and conditioning them would leave
+              # a teardown unable to remove roles created before the boundary
+              # existed.
+              - Sid: IamForTaskRolesReadAndRemove
                 Effect: Allow
                 Action:
-                  - iam:CreateRole
-                  - iam:DeleteRole
                   - iam:GetRole
-                  - iam:AttachRolePolicy
-                  - iam:DetachRolePolicy
-                  - iam:PutRolePolicy
-                  - iam:DeleteRolePolicy
                   - iam:GetRolePolicy
                   - iam:ListRolePolicies
                   - iam:ListAttachedRolePolicies
                   - iam:ListInstanceProfilesForRole
                   - iam:TagRole
-                  - iam:PassRole
-                  - iam:CreateServiceLinkedRole
+                  - iam:DetachRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:DeleteRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/chatbot-${TenantSlug}-*"
+              - Sid: IamForTaskRolesGrantWithinBoundary
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:PutRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:PutRolePermissionsBoundary
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/chatbot-${TenantSlug}-*"
+                Condition:
+                  StringEquals:
+                    iam:PermissionsBoundary: !Ref RuntimeRoleBoundary
+              - Sid: IamForTaskRolesPass
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/chatbot-${TenantSlug}-*"
+                Condition:
+                  StringEquals:
+                    iam:PassedToService:
+                      - ecs-tasks.amazonaws.com
+                      - lambda.amazonaws.com
+              # ECS, the load balancer and RDS each create their own role the
+              # first time they are used in an account. Their policies are
+              # defined by AWS and cannot be changed, so this grants nothing
+              # the services do not already hold.
+              - Sid: ServiceLinkedRoles
+                Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/*"
+              # Lets the deploy and the connection check confirm the boundary
+              # exists before Terraform needs it, so an out-of-date stack is
+              # reported as one rather than as a failed CreateRole.
+              - Sid: ReadRuntimeRoleBoundary
+                Effect: Allow
+                Action: iam:GetPolicy
+                Resource: !Ref RuntimeRoleBoundary
+              # Explicit, so no other grant — here or added to this role later
+              # — can undo the cap: the boundary cannot be taken off a role or
+              # rewritten.
+              - Sid: BoundaryIsFixed
+                Effect: Deny
+                Action:
+                  - iam:DeleteRolePermissionsBoundary
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicy
+                  - iam:DeletePolicyVersion
+                  - iam:SetDefaultPolicyVersion
                 Resource: "*"
+              # The chatbot-<slug>-* pattern above covers every deployment and
+              # onboarding role whenever the slug is "client"
+              # (chatbot-client-deploy-*, chatbot-client-onboard-*). A role able
+              # to change its own policies could lift every limit here, and one
+              # able to widen the onboarding role could hand the platform what
+              # this split takes away. The boundary condition already refuses
+              # both — neither role carries it — but they are kept out of reach
+              # outright rather than by that coincidence.
+              - Sid: DeploymentRolesAreOffLimits
+                Effect: Deny
+                Action: "iam:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/chatbot-client-deploy-*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/chatbot-client-onboard-*"
+
+  # ── The platform's only way into this account ──
+  # Before any workflow exists, the platform writes this chatbot's LLM key,
+  # vector-database key and document-signing secret straight into your Secrets
+  # Manager. That is what keeps those values out of GitHub Actions entirely —
+  # only the resulting ARNs are ever sent to a workflow. The platform makes
+  # that call itself, so it needs a role it is trusted to assume.
+  #
+  # This is that role, kept apart from DeploymentRole on purpose. It may create
+  # and overwrite secrets under <slug>/ and nothing else: it cannot read a
+  # secret back, cannot see a document, and cannot change any infrastructure.
+  # The platform's own IAM policy may assume only roles named
+  # chatbot-client-onboard-*, so DeploymentRole stays out of its reach too.
+  #
+  # The ExternalId is what stops this trust covering anything else. Without it
+  # the statement would trust every request the platform makes, for any
+  # customer: someone who knew this role's ARN — which is not secret — could
+  # have the platform write into your account on their behalf. The condition
+  # binds it to this one chatbot.
+  OnboardingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "chatbot-client-onboard-${TenantSlug}"
+      Description: !Sub >-
+        Lets the AI chatbot platform store the '${TenantSlug}' chatbot's API
+        keys in this account's Secrets Manager during onboarding. Write-only:
+        it cannot read secrets or documents.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PlatformOnboarding
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${PlatformAccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref TenantId
+      Policies:
+        - PolicyName: chatbot-onboarding-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # UpdateSecret because an onboarding retried after a failure finds
+              # its secrets already there. The trailing slash keeps one
+              # chatbot's secrets apart from another whose slug starts the same
+              # way (acme/ versus acme-corp/).
+              - Sid: WriteChatbotSecrets
+                Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:UpdateSecret
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:*:${AWS::AccountId}:secret:${TenantSlug}/*"
 
   # Where this chatbot's Terraform state lives: in your account, next to the
   # infrastructure it describes, rather than in the platform's. State records
@@ -348,6 +523,12 @@ Outputs:
       Paste this back into the platform's onboarding form. It identifies the
       role but is not a credential — it grants nothing on its own.
     Value: !GetAtt DeploymentRole.Arn
+
+  OnboardingRoleArn:
+    Description: >-
+      The one role the platform may assume here, to store this chatbot's API
+      keys. The platform derives it from DeploymentRoleArn; nothing to copy.
+    Value: !GetAtt OnboardingRole.Arn
 
   AccountId:
     Description: This AWS account's ID, which the onboarding form also asks for.

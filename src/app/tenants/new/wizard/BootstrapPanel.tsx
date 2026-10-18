@@ -25,7 +25,13 @@ import {
   azureManagedIdentityCredentialCommand,
   type GithubRepo,
 } from "@/lib/azureFederation";
-import { awsExternalId, awsFederatedSubject, awsTrustPolicy } from "@/lib/awsTrust";
+import {
+  awsExternalId,
+  awsFederatedSubject,
+  awsOnboardingPermissions,
+  awsOnboardingTrustPolicy,
+  awsTrustPolicy,
+} from "@/lib/awsTrust";
 import {
   awsQuickCreateUrl,
   awsStateBucketCommands,
@@ -120,8 +126,8 @@ export function AwsBootstrapPanel({
   awsRegion: string;
   /**
    * The tenant already exists, so its stack does too. A stack created before
-   * the template gained the Terraform state bucket has to be updated, which a
-   * Quick Create link cannot do.
+   * the template gained the Terraform state bucket or the runtime-role
+   * permissions boundary has to be updated, which a Quick Create link cannot do.
    */
   existingStack?: boolean;
   /** False while the wizard has not yet confirmed the slug is free. */
@@ -159,13 +165,14 @@ export function AwsBootstrapPanel({
 
       {existingStack && templateBaseUrl && tenantSlug && awsRegion && (
         <div className="mt-3">
-          <p className="font-medium text-gray-900">Bootstrapped before the state bucket existed?</p>
+          <p className="font-medium text-gray-900">Bootstrapped with an older template?</p>
           <p className="mt-1">
             The template now also creates the bucket that keeps this chatbot&apos;s Terraform state in
-            this account instead of with the platform. Update the existing stack once with this
-            command, which keeps every value it was created with. Deploys refuse to run without the
-            bucket, and <span className="font-medium">Test connection</span> confirms it exists
-            before then.
+            this account instead of with the platform, and a permissions boundary that caps every
+            role a deployment creates, so the deployment role can no longer grant itself more access
+            than the chatbot needs. Update the existing stack with this command, which keeps every
+            value it was created with. Deploys refuse to run without either, and{" "}
+            <span className="font-medium">Test connection</span> confirms both exist before then.
           </p>
           <dl className="mt-2 space-y-2">
             <CopyableValue
@@ -225,29 +232,48 @@ export function AwsBootstrapPanel({
 
       <details className="mt-3">
         <summary className="cursor-pointer font-medium text-blue-700">
-          Or create the role by hand
+          Or create the roles by hand
         </summary>
         <p className="mt-2">
-          Create an IAM role named{" "}
-          <span className="font-mono">chatbot-client-deploy-{tenantSlug || "<slug>"}</span> with this
-          trust policy and the permissions listed in the deployment guide. The first statement lets
-          this chatbot&apos;s deployments in; the second lets the platform store this chatbot&apos;s
-          API keys in your Secrets Manager during onboarding, and nothing else.
+          Create two IAM roles. The first,{" "}
+          <span className="font-mono">chatbot-client-deploy-{tenantSlug || "<slug>"}</span>, runs this
+          chatbot&apos;s deployments: give it this trust policy and the permissions listed in the
+          deployment guide. Only this chatbot&apos;s deployments can sign in to it — the platform
+          cannot.
         </p>
         <dl className="mt-3 space-y-2">
           <CopyableValue
-            label="Trust policy"
+            label="Deployment role trust policy"
             value={awsTrustPolicy({
-              platformAccountId,
               customerAccountId: awsAccountId || null,
               githubRepo,
               tenantId,
             })}
           />
-          <CopyableValue label="External ID" value={awsExternalId(tenantId)} />
           {githubRepo && (
             <CopyableValue label="Federated subject" value={awsFederatedSubject(githubRepo, tenantId)} />
           )}
+        </dl>
+        <p className="mt-3">
+          The second,{" "}
+          <span className="font-mono">chatbot-client-onboard-{tenantSlug || "<slug>"}</span>, lets
+          the platform store this chatbot&apos;s API keys in your Secrets Manager during onboarding.
+          It can write those secrets and nothing else: it cannot read them back or see your
+          documents.
+        </p>
+        <dl className="mt-3 space-y-2">
+          <CopyableValue
+            label="Onboarding role trust policy"
+            value={awsOnboardingTrustPolicy({ platformAccountId, tenantId })}
+          />
+          <CopyableValue
+            label="Onboarding role permissions"
+            value={awsOnboardingPermissions({
+              customerAccountId: awsAccountId || null,
+              tenantSlug: tenantSlug || "<slug>",
+            })}
+          />
+          <CopyableValue label="External ID" value={awsExternalId(tenantId)} />
         </dl>
         <p className="mt-3">
           Deployments also keep this chatbot&apos;s Terraform state in a bucket in your account. Its

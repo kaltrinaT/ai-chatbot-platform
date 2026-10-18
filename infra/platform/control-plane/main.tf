@@ -3,8 +3,13 @@
 #
 # Applied ONCE by the platform operator, like infra/platform/github-oidc. The
 # application makes one AWS call as the platform: onboarding's sts:AssumeRole
-# into a customer's chatbot-client-deploy-* role. Everything after that runs
-# as the customer's role, so this role is allowed nothing else.
+# into a customer's chatbot-client-onboard-* role, which can write that
+# tenant's secrets and nothing else. Everything after that runs as the
+# customer's role, so this role is allowed nothing else.
+#
+# Not chatbot-client-deploy-*: that role builds infrastructure and can read
+# the customer's documents, so the platform must not be able to reach it even
+# if a customer's trust policy named the platform. See src/lib/awsTrust.ts.
 #
 # Two ways in, and no access key for either.
 #
@@ -139,18 +144,18 @@ data "aws_iam_policy_document" "trust" {
 
 resource "aws_iam_role" "control_plane" {
   name                 = var.role_name
-  description          = "Assumed by the platform application, from its host's workload identity or an operator sign-in session, for onboarding's sts:AssumeRole into customer deployment roles. Nothing else."
+  description          = "Assumed by the platform application, from its host's workload identity or an operator sign-in session, for onboarding's sts:AssumeRole into customer onboarding roles. Nothing else."
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = 3600
 }
 
 data "aws_iam_policy_document" "permissions" {
-  # The same restriction as the GitHub Actions role, and the name customers are
-  # told to give their role (see SECURITY.md).
+  # The write-only role each customer's bootstrap stack creates beside their
+  # deployment role (see SECURITY.md).
   statement {
-    sid       = "AssumeCustomerDeploymentRoles"
+    sid       = "AssumeCustomerOnboardingRoles"
     actions   = ["sts:AssumeRole"]
-    resources = ["arn:aws:iam::*:role/chatbot-client-deploy-*"]
+    resources = ["arn:aws:iam::*:role/chatbot-client-onboard-*"]
   }
 }
 

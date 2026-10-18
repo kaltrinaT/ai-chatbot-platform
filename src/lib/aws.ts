@@ -118,7 +118,8 @@ function platformCredentials(region: string): PlatformCredentialProvider | undef
 }
 
 /**
- * Assume a customer's deployment role.
+ * Assume a customer's onboarding role, the one role the platform may assume
+ * (see awsTrust.ts). It can write that tenant's secrets and do nothing else.
  *
  * `externalId` is what makes the role's trust specific to one tenant rather
  * than to the platform as a whole — see awsTrust.ts for why that matters. It is

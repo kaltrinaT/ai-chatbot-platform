@@ -5,6 +5,9 @@ import {
   PLATFORM_ACCOUNT_PLACEHOLDER,
   awsExternalId,
   awsFederatedSubject,
+  awsOnboardingPermissions,
+  awsOnboardingRoleArn,
+  awsOnboardingTrustPolicy,
   awsTrustPolicy,
 } from "./awsTrust";
 
@@ -37,7 +40,6 @@ describe("awsTrustPolicy", () => {
   ) =>
     JSON.parse(
       awsTrustPolicy({
-        platformAccountId: "123456789012",
         customerAccountId: "210987654321",
         githubRepo: repo,
         tenantId,
@@ -48,11 +50,11 @@ describe("awsTrustPolicy", () => {
   const statement = (tenantId: string, sid: string, overrides = {}) =>
     policy(tenantId, overrides).Statement.find((s: { Sid: string }) => s.Sid === sid);
 
-  it("carries exactly the two statements the two callers need", () => {
-    expect(policy(tenantA).Statement.map((s: { Sid: string }) => s.Sid)).toEqual([
-      "GitHubActionsDeploy",
-      "PlatformOnboarding",
-    ]);
+  // This role can read every document in the account, so the platform must
+  // have no way into it: GitHub, for this tenant's runs, is the only principal.
+  it("trusts GitHub and nothing else", () => {
+    expect(policy(tenantA).Statement.map((s: { Sid: string }) => s.Sid)).toEqual(["GitHubActionsDeploy"]);
+    expect(JSON.stringify(policy(tenantA))).not.toContain(":root");
   });
 
   describe("the GitHub statement — deploys and teardowns", () => {
@@ -96,30 +98,8 @@ describe("awsTrustPolicy", () => {
     });
   });
 
-  describe("the platform statement — onboarding secret writes", () => {
-    it("conditions on this tenant's ExternalId", () => {
-      expect(statement(tenantA, "PlatformOnboarding").Condition).toEqual({
-        StringEquals: { "sts:ExternalId": awsExternalId(tenantA) },
-      });
-    });
-
-    it("trusts the platform account as principal", () => {
-      expect(statement(tenantA, "PlatformOnboarding")).toMatchObject({
-        Effect: "Allow",
-        Action: "sts:AssumeRole",
-        Principal: { AWS: "arn:aws:iam::123456789012:root" },
-      });
-    });
-  });
-
   describe("unknown values", () => {
     it("shows a visible placeholder rather than a wrong account", () => {
-      expect(
-        statement(tenantA, "PlatformOnboarding", { platformAccountId: null }).Principal.AWS,
-      ).toContain(PLATFORM_ACCOUNT_PLACEHOLDER);
-      expect(
-        statement(tenantA, "PlatformOnboarding", { platformAccountId: "  " }).Principal.AWS,
-      ).toContain(PLATFORM_ACCOUNT_PLACEHOLDER);
       expect(
         statement(tenantA, "GitHubActionsDeploy", { customerAccountId: null }).Principal.Federated,
       ).toContain(CUSTOMER_ACCOUNT_PLACEHOLDER);
@@ -134,5 +114,56 @@ describe("awsTrustPolicy", () => {
 
       expect(subject).toBe(`repo:<owner>/<repo>:environment:tenant-${tenantA}`);
     });
+  });
+});
+
+describe("the onboarding role", () => {
+  const trust = (platformAccountId: string | null = "123456789012") =>
+    JSON.parse(awsOnboardingTrustPolicy({ platformAccountId, tenantId: tenantA })).Statement;
+  const permissions = (customerAccountId: string | null = "210987654321") =>
+    JSON.parse(awsOnboardingPermissions({ customerAccountId, tenantSlug: "acme" })).Statement;
+
+  it("is found beside the deployment role, under the same slug", () => {
+    expect(awsOnboardingRoleArn("arn:aws:iam::210987654321:role/chatbot-client-deploy-acme")).toBe(
+      "arn:aws:iam::210987654321:role/chatbot-client-onboard-acme",
+    );
+  });
+
+  // Anything else would leave the platform guessing at a role name, and the
+  // guess would be refused by its own IAM policy anyway.
+  it("refuses a deployment role without the required prefix", () => {
+    expect(() => awsOnboardingRoleArn("arn:aws:iam::210987654321:role/deploy")).toThrow();
+  });
+
+  it("trusts the platform account only for this tenant's ExternalId", () => {
+    expect(trust()).toEqual([
+      {
+        Sid: "PlatformOnboarding",
+        Effect: "Allow",
+        Principal: { AWS: "arn:aws:iam::123456789012:root" },
+        Action: "sts:AssumeRole",
+        Condition: { StringEquals: { "sts:ExternalId": awsExternalId(tenantA) } },
+      },
+    ]);
+  });
+
+  // The control-plane boundary in practice: the one role the platform can
+  // assume creates and overwrites this tenant's secrets. It cannot read one
+  // back, and it reaches nothing outside Secrets Manager.
+  it("may only write this tenant's secrets", () => {
+    expect(permissions()).toEqual([
+      {
+        Sid: "WriteChatbotSecrets",
+        Effect: "Allow",
+        Action: ["secretsmanager:CreateSecret", "secretsmanager:UpdateSecret"],
+        Resource: "arn:aws:secretsmanager:*:210987654321:secret:acme/*",
+      },
+    ]);
+  });
+
+  it("shows a visible placeholder rather than a wrong account", () => {
+    expect(trust(null)[0].Principal.AWS).toContain(PLATFORM_ACCOUNT_PLACEHOLDER);
+    expect(trust("  ")[0].Principal.AWS).toContain(PLATFORM_ACCOUNT_PLACEHOLDER);
+    expect(permissions(null)[0].Resource).toContain(CUSTOMER_ACCOUNT_PLACEHOLDER);
   });
 });

@@ -55,6 +55,13 @@ locals {
 
   llm_model = var.llm_model != "" ? var.llm_model : local.llm_default_model
 
+  # Created by the customer's bootstrap stack, not here: the deployment role
+  # may only create or extend a chatbot-<slug>-* role that carries it, and
+  # cannot edit it (RuntimeRoleBoundary in
+  # infra/bootstrap/aws/tenant-bootstrap.yaml). Every aws_iam_role below sets
+  # it, or IAM refuses the role.
+  runtime_role_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${local.name}-runtime-boundary"
+
   use_pinecone = var.vector_store == "pinecone"
   use_pgvector = var.vector_store == "pgvector"
 
@@ -526,9 +533,10 @@ data "aws_iam_policy_document" "assume_lambda" {
 }
 
 resource "aws_iam_role" "docs_signer" {
-  name               = "${local.name}-docs-signer"
-  assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
-  tags               = local.common_tags
+  name                 = "${local.name}-docs-signer"
+  assume_role_policy   = data.aws_iam_policy_document.assume_lambda.json
+  permissions_boundary = local.runtime_role_boundary_arn
+  tags                 = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "docs_signer_logs" {
@@ -792,9 +800,10 @@ data "aws_iam_policy_document" "assume_ecs_task" {
 }
 
 resource "aws_iam_role" "execution" {
-  name               = "${local.name}-execution"
-  assume_role_policy = data.aws_iam_policy_document.assume_ecs_task.json
-  tags               = local.common_tags
+  name                 = "${local.name}-execution"
+  assume_role_policy   = data.aws_iam_policy_document.assume_ecs_task.json
+  permissions_boundary = local.runtime_role_boundary_arn
+  tags                 = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "execution_managed" {
@@ -820,9 +829,10 @@ resource "aws_iam_role_policy" "execution_secret_read" {
 }
 
 resource "aws_iam_role" "task" {
-  name               = "${local.name}-task"
-  assume_role_policy = data.aws_iam_policy_document.assume_ecs_task.json
-  tags               = local.common_tags
+  name                 = "${local.name}-task"
+  assume_role_policy   = data.aws_iam_policy_document.assume_ecs_task.json
+  permissions_boundary = local.runtime_role_boundary_arn
+  tags                 = local.common_tags
 }
 
 resource "aws_iam_role_policy" "task_s3_docs" {

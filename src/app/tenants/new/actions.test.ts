@@ -134,7 +134,7 @@ const validAws = {
   pineconeApiKey: "pc-1234567890",
   awsAccountId: "123456789012",
   awsRegion: "us-east-1",
-  deploymentRoleArn: "arn:aws:iam::123456789012:role/deploy",
+  deploymentRoleArn: "arn:aws:iam::123456789012:role/chatbot-client-deploy-acme",
   s3DocsPrefix: "docs/",
 };
 
@@ -626,7 +626,7 @@ describe("createTenantAndDeploy", () => {
   });
 
   describe("successful submission", () => {
-    it("assumes the tenant role and writes both secrets for an AWS + pinecone tenant, then returns the deployment", async () => {
+    it("assumes the onboarding role and writes both secrets for an AWS + pinecone tenant, then returns the deployment", async () => {
       const result = await createTenantAndDeploy(null, formData(validAws));
       expect(result?.deployed).toEqual({
         tenantId: "tenant-1",
@@ -634,12 +634,13 @@ describe("createTenantAndDeploy", () => {
         startedAt: "2026-01-01T00:00:00.000Z",
       });
 
+      const onboardingRole = "arn:aws:iam::123456789012:role/chatbot-client-onboard-acme";
       expect(assumeTenantRole).toHaveBeenCalledWith(
-        expect.objectContaining({ roleArn: validAws.deploymentRoleArn, region: "us-east-1" }),
+        expect.objectContaining({ roleArn: onboardingRole, region: "us-east-1" }),
       );
       expect(writeTenantSecret).toHaveBeenCalledTimes(2); // llm key + pinecone key
       expect(ensureDocsSignerSecret).toHaveBeenCalledWith(
-        expect.objectContaining({ roleArn: validAws.deploymentRoleArn, slug: "acme-co" }),
+        expect.objectContaining({ roleArn: onboardingRole, slug: "acme-co" }),
       );
       expect(generateDocsSignerSecret).not.toHaveBeenCalled();
       expect(triggerDeployment).toHaveBeenCalledWith(
@@ -690,6 +691,20 @@ describe("createTenantAndDeploy", () => {
       expect(ensureDocsSignerSecret).toHaveBeenCalledWith(
         expect.objectContaining({ externalId: validAws.tenantId }),
       );
+    });
+
+    // The deployment role can read every document in the account. The
+    // platform signs in only to the onboarding role beside it, which can
+    // write this tenant's secrets and nothing else.
+    it("signs in to the onboarding role, never the deployment role", async () => {
+      await createTenantAndDeploy(null, formData(validAws));
+
+      const onboardingRole = "arn:aws:iam::123456789012:role/chatbot-client-onboard-acme";
+      expect(assumeTenantRole).toHaveBeenCalledWith(expect.objectContaining({ roleArn: onboardingRole }));
+      expect(ensureDocsSignerSecret).toHaveBeenCalledWith(expect.objectContaining({ roleArn: onboardingRole }));
+      for (const call of [...vi.mocked(assumeTenantRole).mock.calls, ...vi.mocked(ensureDocsSignerSecret).mock.calls]) {
+        expect(call[0].roleArn).not.toContain("chatbot-client-deploy-");
+      }
     });
 
     // The customer's trust policy names the ID the wizard showed them. A row

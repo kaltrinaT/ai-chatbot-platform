@@ -52,12 +52,12 @@ const PREREQS = {
     ["Deployment region", "The AWS region where the chatbot will be deployed (e.g. eu-central-1)."],
     [
       "IAM deployment role",
-      "An IAM role with permissions to provision resources. Its name must start with chatbot-client-deploy- — the platform can only assume roles matching that prefix.",
+      "An IAM role with permissions to provision resources, named chatbot-client-deploy-<slug>. Only this chatbot's deployments can assume it; the platform cannot.",
     ],
     ["Role ARN", "The Amazon Resource Name (ARN) of that deployment role."],
     [
-      "Required trust relationship",
-      "The role's trust policy must allow this platform's AWS account to assume it, with an sts:ExternalId condition naming this chatbot. The next step shows the exact policy, with the value filled in.",
+      "Onboarding role",
+      "A second role, chatbot-client-onboard-<slug>, that the platform assumes once to store this chatbot's API keys in your Secrets Manager. It can write those secrets and nothing else, and trusts the platform only with an sts:ExternalId condition naming this chatbot. The setup creates both roles; the next step shows their policies if you build them by hand.",
     ],
     ["LLM API key", "API key for the chosen LLM provider (OpenAI, Anthropic or OpenRouter)."],
     ["Pinecone API key (if selected)", "Only needed when Pinecone is the vector store."],
@@ -419,7 +419,7 @@ export function StepCloudConfig({
               hint="The DeploymentRoleArn output of the setup stack below."
               error={errors.deploymentRoleArn}
               autoComplete="off"
-              tooltip="The platform's IAM policy only permits assuming roles with the chatbot-client-deploy- prefix."
+              tooltip="Must start with chatbot-client-deploy-. The platform finds the onboarding role beside it under the same name, chatbot-client-onboard-…, and never assumes this one."
             />
             <Field
               label="S3 Prefix (Optional)"
@@ -765,8 +765,8 @@ export function StepReview({
                     </span>
                     <span className="mt-1 block text-xs text-gray-500">
                       Used once, by the platform itself, to store this chatbot&apos;s API keys in
-                      the customer&apos;s Secrets Manager. Without the matching condition on the
-                      role, onboarding cannot write them.
+                      the customer&apos;s Secrets Manager through the write-only onboarding role.
+                      Without the matching condition on that role, onboarding cannot write them.
                     </span>
                   </SummaryRow>
                   {values.s3DocsPrefix && (

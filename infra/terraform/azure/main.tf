@@ -177,7 +177,7 @@ resource "azurerm_role_assignment" "chatbot_acr_pull" {
 }
 
 # ──────────────────────────────────────────────────────────────────────
-# Key Vault — stores LLM API key; Container App reads it at runtime
+# Key Vault — a copy of the app secrets; the Container App never reads it
 # ──────────────────────────────────────────────────────────────────────
 
 // Only the deploying identity gets data-plane access, and it is declared

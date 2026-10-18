@@ -21,7 +21,7 @@ const AWS_STEPS: Step[] = [
   {
     title: "Run the one-click setup",
     detail:
-      "Configure AWS account opens CloudFormation with every value filled in. The stack registers GitHub as an identity provider (if your account already has it, the form offers to reuse it), creates the role chatbot-client-deploy-<slug> with the trust policy and permissions below, and creates the state bucket tfstate-<slug>-<account>-<region>-an. Run it before submitting the form, since onboarding writes your keys into your Secrets Manager immediately.",
+      "Configure AWS account opens CloudFormation with every value filled in. The stack registers GitHub as an identity provider (if your account already has it, the form offers to reuse it), creates the role chatbot-client-deploy-<slug> with the trust policy and permissions below, a write-only role chatbot-client-onboard-<slug> that the platform uses to store your keys, and the state bucket tfstate-<slug>-<account>-<region>-an. Run it before submitting the form, since onboarding writes your keys into your Secrets Manager immediately.",
   },
   {
     title: "Copy the role's ARN and test the connection",
@@ -69,7 +69,15 @@ const AWS_TRUST_POLICY = `{
           "token.actions.githubusercontent.com:sub": "repo:OWNER/REPO:environment:tenant-CHATBOT_ID"
         }
       }
-    },
+    }
+  ]
+}`;
+
+// The second role, chatbot-client-onboard-SLUG. Mirrors OnboardingRole in
+// infra/bootstrap/aws/tenant-bootstrap.yaml.
+const AWS_ONBOARDING_TRUST_POLICY = `{
+  "Version": "2012-10-17",
+  "Statement": [
     {
       "Sid": "PlatformOnboarding",
       "Effect": "Allow",
@@ -78,6 +86,18 @@ const AWS_TRUST_POLICY = `{
       "Condition": {
         "StringEquals": { "sts:ExternalId": "CHATBOT_ID" }
       }
+    }
+  ]
+}`;
+
+const AWS_ONBOARDING_PERMISSIONS_POLICY = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WriteChatbotSecrets",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:CreateSecret", "secretsmanager:UpdateSecret"],
+      "Resource": "arn:aws:secretsmanager:*:YOUR_ACCOUNT_ID:secret:SLUG/*"
     }
   ]
 }`;
@@ -96,17 +116,106 @@ const AWS_PERMISSIONS_POLICY = `{
     { "Sid": "Database", "Effect": "Allow", "Action": "rds:*", "Resource": "*" },
     { "Sid": "Cdn", "Effect": "Allow", "Action": "cloudfront:*", "Resource": "*" },
     {
-      "Sid": "IamForTaskRoles",
+      "Sid": "IamForTaskRolesReadAndRemove",
       "Effect": "Allow",
       "Action": [
-        "iam:CreateRole", "iam:DeleteRole", "iam:GetRole",
-        "iam:AttachRolePolicy", "iam:DetachRolePolicy",
-        "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
-        "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
-        "iam:ListInstanceProfilesForRole",
-        "iam:TagRole", "iam:PassRole", "iam:CreateServiceLinkedRole"
+        "iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole",
+        "iam:TagRole", "iam:DetachRolePolicy", "iam:DeleteRolePolicy", "iam:DeleteRole"
+      ],
+      "Resource": "arn:aws:iam::YOUR_ACCOUNT_ID:role/chatbot-SLUG-*"
+    },
+    {
+      "Sid": "IamForTaskRolesGrantWithinBoundary",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole", "iam:PutRolePolicy",
+        "iam:AttachRolePolicy", "iam:PutRolePermissionsBoundary"
+      ],
+      "Resource": "arn:aws:iam::YOUR_ACCOUNT_ID:role/chatbot-SLUG-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::YOUR_ACCOUNT_ID:policy/chatbot-SLUG-runtime-boundary"
+        }
+      }
+    },
+    {
+      "Sid": "IamForTaskRolesPass",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::YOUR_ACCOUNT_ID:role/chatbot-SLUG-*",
+      "Condition": {
+        "StringEquals": { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "lambda.amazonaws.com"] }
+      }
+    },
+    {
+      "Sid": "ServiceLinkedRoles",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::YOUR_ACCOUNT_ID:role/aws-service-role/*"
+    },
+    {
+      "Sid": "ReadRuntimeRoleBoundary",
+      "Effect": "Allow",
+      "Action": "iam:GetPolicy",
+      "Resource": "arn:aws:iam::YOUR_ACCOUNT_ID:policy/chatbot-SLUG-runtime-boundary"
+    },
+    {
+      "Sid": "BoundaryIsFixed",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary", "iam:CreatePolicyVersion",
+        "iam:DeletePolicy", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "DeploymentRolesAreOffLimits",
+      "Effect": "Deny",
+      "Action": "iam:*",
+      "Resource": [
+        "arn:aws:iam::YOUR_ACCOUNT_ID:role/chatbot-client-deploy-*",
+        "arn:aws:iam::YOUR_ACCOUNT_ID:role/chatbot-client-onboard-*"
+      ]
+    }
+  ]
+}`;
+
+// Create first, as a customer-managed policy named chatbot-SLUG-runtime-boundary.
+// Mirrors RuntimeRoleBoundary in infra/bootstrap/aws/tenant-bootstrap.yaml.
+const AWS_BOUNDARY_POLICY = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "RegistryLogin", "Effect": "Allow", "Action": "ecr:GetAuthorizationToken", "Resource": "*" },
+    {
+      "Sid": "PullChatbotImages",
+      "Effect": "Allow",
+      "Action": ["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"],
+      "Resource": "arn:aws:ecr:*:YOUR_ACCOUNT_ID:repository/SLUG/*"
+    },
+    {
+      "Sid": "WriteChatbotLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": [
+        "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:/ecs/chatbot-SLUG",
+        "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:/ecs/chatbot-SLUG:*",
+        "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:/aws/lambda/chatbot-SLUG-docs-signer",
+        "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:/aws/lambda/chatbot-SLUG-docs-signer:*"
+      ]
+    },
+    {
+      "Sid": "ReadChatbotSecrets",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:*:YOUR_ACCOUNT_ID:secret:SLUG/*"
+    },
+    { "Sid": "ListChatbotDocuments", "Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::chatbot-SLUG-docs" },
+    {
+      "Sid": "UseChatbotDocuments",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::chatbot-SLUG-docs/*"
     }
   ]
 }`;
@@ -217,9 +326,8 @@ export default function CloudPrerequisitesContent() {
                 <p className="mt-1 text-xs text-gray-500">
                   The setup applies this for you. Only if you build the role by hand: the form shows it with your
                   values filled in, GitHub must be registered as an identity provider with audience sts.amazonaws.com,
-                  and the role name must start with chatbot-client-deploy- — the platform may assume no other role.
-                  The first statement lets this chatbot&apos;s deployments sign in; the second lets the platform
-                  write your keys into your Secrets Manager at onboarding, for this chatbot only.
+                  and the role must be named chatbot-client-deploy-&lt;slug&gt;. It lets this chatbot&apos;s
+                  deployments sign in and nothing else: the platform has no way into this role.
                 </p>
                 <pre className="mt-3 overflow-x-auto rounded-md bg-gray-900 p-3 text-xs text-gray-100">
                   <code>{AWS_TRUST_POLICY}</code>
@@ -227,9 +335,37 @@ export default function CloudPrerequisitesContent() {
               </div>
 
               <div className="mt-6 rounded-lg border bg-gray-50 p-4">
+                <div className="text-sm font-semibold text-gray-900">Onboarding Role</div>
+                <p className="mt-1 text-xs text-gray-500">
+                  A second role, chatbot-client-onboard-&lt;slug&gt;, the only one the platform may assume. It
+                  stores your keys in your Secrets Manager at onboarding, for this chatbot only, and can do nothing
+                  else: it cannot read a secret back or see a document. The setup creates it; by hand, give it this
+                  trust policy and this permissions policy.
+                </p>
+                <pre className="mt-3 overflow-x-auto rounded-md bg-gray-900 p-3 text-xs text-gray-100">
+                  <code>{AWS_ONBOARDING_TRUST_POLICY}</code>
+                </pre>
+                <pre className="mt-3 overflow-x-auto rounded-md bg-gray-900 p-3 text-xs text-gray-100">
+                  <code>{AWS_ONBOARDING_PERMISSIONS_POLICY}</code>
+                </pre>
+              </div>
+
+              <div className="mt-6 rounded-lg border bg-gray-50 p-4">
                 <div className="text-sm font-semibold text-gray-900">Required Permissions</div>
                 <pre className="mt-3 overflow-x-auto rounded-md bg-gray-900 p-3 text-xs text-gray-100">
                   <code>{AWS_PERMISSIONS_POLICY}</code>
+                </pre>
+              </div>
+
+              <div className="mt-6 rounded-lg border bg-gray-50 p-4">
+                <div className="text-sm font-semibold text-gray-900">Permissions Boundary</div>
+                <p className="mt-1 text-sm text-gray-600">
+                  Building the role by hand? Create this first, as a policy named
+                  chatbot-&lt;slug&gt;-runtime-boundary. Every role a deployment creates must carry it, so
+                  whatever is attached to those roles can never exceed it.
+                </p>
+                <pre className="mt-3 overflow-x-auto rounded-md bg-gray-900 p-3 text-xs text-gray-100">
+                  <code>{AWS_BOUNDARY_POLICY}</code>
                 </pre>
               </div>
 

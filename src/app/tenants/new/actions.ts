@@ -10,7 +10,7 @@ import { tenants, tenantDrafts } from "@/db/schema";
 import { triggerDeployment } from "@/lib/deploy";
 import { encryptSecret } from "@/lib/crypto";
 import { assumeTenantRole, writeTenantSecret, ensureDocsSignerSecret } from "@/lib/aws";
-import { awsExternalId } from "@/lib/awsTrust";
+import { awsExternalId, awsOnboardingRoleArn } from "@/lib/awsTrust";
 import { generateDocsSignerSecret } from "@/lib/azure";
 import { sharedAzureName } from "@/lib/resourceNames";
 import { firstTakenGlobalName } from "@/lib/nameAvailability";
@@ -268,8 +268,12 @@ export async function createTenantAndDeploy(
       // already carries the condition is protected during onboarding itself —
       // which is when the platform first writes into their account.
       const externalId = awsExternalId(parsed.tenantId);
+      // The onboarding role, never the deployment role: it can write this
+      // tenant's secrets and nothing else, so the platform's way into the
+      // account reaches no document (see awsTrust.ts).
+      const onboardingRoleArn = awsOnboardingRoleArn(parsed.deploymentRoleArn);
       const creds = await assumeTenantRole({
-        roleArn: parsed.deploymentRoleArn,
+        roleArn: onboardingRoleArn,
         sessionName: `tenant-onboarding-${parsed.slug}`,
         region: parsed.awsRegion,
         externalId,
@@ -293,7 +297,7 @@ export async function createTenantAndDeploy(
         });
       }
       const docsSigner = await ensureDocsSignerSecret({
-        roleArn: parsed.deploymentRoleArn,
+        roleArn: onboardingRoleArn,
         region: parsed.awsRegion,
         slug: parsed.slug,
         sessionName: `tenant-onboarding-docs-${parsed.slug}`,

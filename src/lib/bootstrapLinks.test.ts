@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse, type Tags, type YAMLSeq } from "yaml";
 import {
   AWS_TEMPLATE_OBJECT,
   AZURE_TEMPLATE_OBJECT,
@@ -211,22 +212,57 @@ describe("the templates match the subject the workflows present", () => {
   });
 });
 
-describe("the AWS template's role", () => {
-  // The platform's own IAM policy permits assuming only roles matching this
-  // prefix, so a template that named the role anything else would produce a
-  // role the platform is denied before any trust policy is evaluated.
-  it("names the role with the prefix the platform is allowed to assume", () => {
-    expect(awsTemplate).toContain('RoleName: !Sub "chatbot-client-deploy-${TenantSlug}"');
+describe("the AWS template's roles", () => {
+  const trust = (role: string) => statements(awsResources[role].Properties.AssumeRolePolicyDocument);
+
+  // The form requires the deployment role's prefix, and onboarding derives
+  // the onboarding role's name from it; the platform's own IAM policy may
+  // assume only the onboarding prefix.
+  it("names both roles as the platform derives them", () => {
+    expect(awsResources.DeploymentRole.Properties.RoleName).toEqual({ Sub: "chatbot-client-deploy-${TenantSlug}" });
+    expect(awsResources.OnboardingRole.Properties.RoleName).toEqual({ Sub: "chatbot-client-onboard-${TenantSlug}" });
   });
 
   it("caps sessions at the hour the workflows request", () => {
-    expect(awsTemplate).toContain("MaxSessionDuration: 3600");
+    expect(awsResources.DeploymentRole.Properties.MaxSessionDuration).toBe(3600);
+    expect(awsResources.OnboardingRole.Properties.MaxSessionDuration).toBe(3600);
   });
 
-  // The onboarding statement is the one place the platform account is
-  // trusted, and it is only safe because of this condition.
-  it("conditions the platform's own access on the tenant's ExternalId", () => {
-    expect(awsTemplate).toContain("sts:ExternalId: !Ref TenantId");
+  // The deployment role can read the documents bucket. If the platform's
+  // account were among its principals, the platform could read every
+  // document — what security test S2 found when both trusts shared one role.
+  it("lets only GitHub into the deployment role", () => {
+    expect(trust("DeploymentRole").map((s) => s.Sid)).toEqual(["GitHubActionsDeploy"]);
+    expect(JSON.stringify(trust("DeploymentRole"))).not.toContain("PlatformAccountId");
+  });
+
+  // The one place the platform account is trusted, and it is only safe
+  // because of this condition.
+  it("lets the platform into the onboarding role only for this tenant's ExternalId", () => {
+    expect(trust("OnboardingRole")).toEqual([
+      {
+        Sid: "PlatformOnboarding",
+        Effect: "Allow",
+        Principal: { AWS: { Sub: "arn:${AWS::Partition}:iam::${PlatformAccountId}:root" } },
+        Action: "sts:AssumeRole",
+        Condition: { StringEquals: { "sts:ExternalId": { Ref: "TenantId" } } },
+      },
+    ]);
+  });
+
+  // What the platform can do once inside: write this tenant's secrets.
+  // No GetSecretValue, nothing in S3, nothing else at all.
+  it("lets the onboarding role write this tenant's secrets and nothing else", () => {
+    const policies = awsResources.OnboardingRole.Properties.Policies as { PolicyDocument: unknown }[];
+    expect(policies.flatMap((p) => statements(p.PolicyDocument))).toEqual([
+      {
+        Sid: "WriteChatbotSecrets",
+        Effect: "Allow",
+        Action: ["secretsmanager:CreateSecret", "secretsmanager:UpdateSecret"],
+        Resource: { Sub: "arn:${AWS::Partition}:secretsmanager:*:${AWS::AccountId}:secret:${TenantSlug}/*" },
+      },
+    ]);
+    expect(awsResources.OnboardingRole.Properties.ManagedPolicyArns).toBeUndefined();
   });
 
   // The form and the template used to disagree: the form accepted slugs of
@@ -246,6 +282,143 @@ describe("the AWS template's role", () => {
       expect(template.test(slug), slug).toBe(false);
       expect(validateTenantValues({ ...validAws, slug }).slug, slug).toBeDefined();
     }
+  });
+});
+
+// CloudFormation's short-form intrinsics (!Ref, !Sub, ...) as plain objects, so
+// the template can be read structurally: { Ref: "X" }, { Sub: "..." }.
+const cfnTags: Tags = ["Ref", "Sub", "GetAtt", "Equals", "If"].flatMap((name) => [
+  { tag: `!${name}`, resolve: (value: string) => ({ [name]: value }) },
+  {
+    tag: `!${name}`,
+    collection: "seq" as const,
+    resolve: (seq: YAMLSeq) => ({ [name]: seq.toJSON() }),
+  },
+]);
+
+type PolicyStatement = {
+  Sid: string;
+  Effect: "Allow" | "Deny";
+  Action: string | string[];
+  Resource: unknown;
+  Condition?: Record<string, Record<string, unknown>>;
+};
+
+const awsResources = (parse(awsTemplate, { customTags: cfnTags }) as {
+  Resources: Record<string, { Properties: Record<string, unknown> }>;
+}).Resources;
+
+function statements(policyDocument: unknown): PolicyStatement[] {
+  return (policyDocument as { Statement: PolicyStatement[] }).Statement;
+}
+
+const actions = (s: PolicyStatement) => [s.Action].flat();
+
+const deploymentRoleStatements = statements(
+  (awsResources.DeploymentRole.Properties.Policies as { PolicyDocument: unknown }[])[0].PolicyDocument,
+);
+
+const TASK_ROLES = { Sub: "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/chatbot-${TenantSlug}-*" };
+
+// Creating a role and attaching a policy to it is the deployment role's one
+// way to widen its own reach. The boundary is what caps it, and these tests
+// are what keep every part of that cap in place.
+describe("the AWS template's permissions boundary on the roles a deploy creates", () => {
+  it("defines the boundary under the name Terraform attaches", () => {
+    const boundary = awsResources.RuntimeRoleBoundary;
+    expect(boundary).toBeDefined();
+    expect(boundary.Properties.ManagedPolicyName).toEqual({ Sub: "chatbot-${TenantSlug}-runtime-boundary" });
+
+    const terraform = source("infra/terraform/main.tf");
+    expect(terraform).toContain(
+      'runtime_role_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${local.name}-runtime-boundary"',
+    );
+    expect(terraform).toContain('name = "chatbot-${var.tenant_slug}"');
+  });
+
+  // IAM refuses any role without it, so a role Terraform forgot to bound
+  // would fail the deploy — but only once someone added it.
+  it("is attached to every role Terraform creates", () => {
+    const terraform = source("infra/terraform/main.tf");
+    const roles = [...terraform.matchAll(/resource "aws_iam_role" "(\w+)" \{([\s\S]*?)\n\}/g)];
+
+    expect(roles.map((r) => r[1]).sort()).toEqual(["docs_signer", "execution", "task"]);
+    for (const [, name, body] of roles) {
+      expect(body, name).toMatch(/permissions_boundary\s*=\s*local\.runtime_role_boundary_arn/);
+    }
+  });
+
+  it("grants nothing in IAM and nothing on every action", () => {
+    for (const s of statements(awsResources.RuntimeRoleBoundary.Properties.PolicyDocument)) {
+      expect(s.Effect, s.Sid).toBe("Allow");
+      for (const action of actions(s)) {
+        expect(action, s.Sid).not.toMatch(/^iam:|\*/);
+      }
+    }
+  });
+
+  it("allows no IAM action on every resource", () => {
+    for (const s of deploymentRoleStatements.filter((s) => s.Effect === "Allow")) {
+      if (actions(s).some((a) => a.startsWith("iam:"))) {
+        expect(s.Resource, s.Sid).not.toBe("*");
+      }
+    }
+  });
+
+  it("lets the deployment role act only on the chatbot's own roles", () => {
+    const roleActions = deploymentRoleStatements.filter(
+      (s) => s.Effect === "Allow" && actions(s).some((a) => a.startsWith("iam:") && a !== "iam:CreateServiceLinkedRole" && a !== "iam:GetPolicy"),
+    );
+
+    expect(roleActions.length).toBeGreaterThan(0);
+    for (const s of roleActions) {
+      expect(s.Resource, s.Sid).toEqual(TASK_ROLES);
+    }
+  });
+
+  it("requires the boundary on every action that grants a role a permission", () => {
+    const granting = ["iam:CreateRole", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:PutRolePermissionsBoundary"];
+
+    for (const action of granting) {
+      const allows = deploymentRoleStatements.filter((s) => s.Effect === "Allow" && actions(s).includes(action));
+      expect(allows, action).toHaveLength(1);
+      expect(allows[0].Condition, action).toEqual({
+        StringEquals: { "iam:PermissionsBoundary": { Ref: "RuntimeRoleBoundary" } },
+      });
+    }
+  });
+
+  it("passes the chatbot's roles only to ECS tasks and Lambda", () => {
+    const pass = deploymentRoleStatements.filter((s) => s.Effect === "Allow" && actions(s).includes("iam:PassRole"));
+
+    expect(pass).toHaveLength(1);
+    expect(pass[0].Condition).toEqual({
+      StringEquals: { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "lambda.amazonaws.com"] },
+    });
+  });
+
+  it("denies removing or rewriting the boundary, whatever else is allowed", () => {
+    const fixed = deploymentRoleStatements.find((s) => s.Sid === "BoundaryIsFixed");
+
+    expect(fixed?.Effect).toBe("Deny");
+    expect(actions(fixed!)).toEqual(
+      expect.arrayContaining(["iam:DeleteRolePermissionsBoundary", "iam:CreatePolicyVersion", "iam:SetDefaultPolicyVersion"]),
+    );
+  });
+
+  // chatbot-<slug>-* covers both prefixes when the slug is "client". Widening
+  // the onboarding role would hand the platform what the split takes away.
+  it("keeps every deployment and onboarding role out of its own reach", () => {
+    const offLimits = deploymentRoleStatements.find((s) => s.Sid === "DeploymentRolesAreOffLimits");
+
+    expect(offLimits).toMatchObject({
+      Effect: "Deny",
+      Action: "iam:*",
+      Resource: [
+        { Sub: "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/chatbot-client-deploy-*" },
+        { Sub: "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/chatbot-client-onboard-*" },
+      ],
+    });
   });
 });
 
