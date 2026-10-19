@@ -48,7 +48,9 @@ const githubRepo = { owner: "kaltrinaT", repo: "ai-chatbot-platform" };
 const templateBaseUrl = "https://bootstrap.example.com";
 
 function source(path: string): string {
-  return readFileSync(join(process.cwd(), path), "utf8");
+  // A Windows checkout (core.autocrlf) has CRLF line ends; the assertions
+  // below match the template's text line by line, so compare it as LF.
+  return readFileSync(join(process.cwd(), path), "utf8").replace(/\r\n/g, "\n");
 }
 
 const awsTemplate = source(`infra/bootstrap/aws/tenant-bootstrap.yaml`);

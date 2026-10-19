@@ -24,7 +24,17 @@ const args = process.argv.slice(2);
 const has = name => args.includes(name);
 const option = name => { const i = args.indexOf(name); return i >= 0 ? args[i+1] : undefined; };
 const images = {gitleaks:'zricethezav/gitleaks:v8.30.1', checkov:'bridgecrew/checkov:3.3.19', zizmor:'ghcr.io/zizmorcore/zizmor:1.30.1'};
-const owner = process.env.CHATBOT_REPO_OWNER, repo = process.env.CHATBOT_REPO_NAME;
+// The static tests (S2, S8) only need the template and the token subjects to
+// name the same repository, so without .env the GitHub remote stands in, and
+// failing that a placeholder. The calls that need the real name (the Actions
+// API, S5's forged tokens) run only with credentials, which come with .env.
+function repoFromRemote(){
+  const url = spawnSync('git', ['remote','get-url','origin'], {encoding:'utf8'}).stdout?.trim() ?? '';
+  const m = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(url);
+  return m ? {owner:m[1], repo:m[2]} : {owner:'example-owner', repo:'example-repo'};
+}
+const fromRemote = process.env.CHATBOT_REPO_OWNER && process.env.CHATBOT_REPO_NAME ? null : repoFromRemote();
+const owner = process.env.CHATBOT_REPO_OWNER || fromRemote.owner, repo = process.env.CHATBOT_REPO_NAME || fromRemote.repo;
 const read = file => fs.readFileSync(file,'utf8');
 const mask = text => String(text).replace(/\b\d{12}\b/g,'<account>');
 const results = [];
