@@ -384,7 +384,11 @@ jobs:
           IMAGE_URI: ${{ steps.client_image.outputs.uri }}
           FRONTEND_URI: ${{ steps.client_image.outputs.frontend_uri }}
           EXTRA_CORS_ORIGIN: ${{ vars.EXTRA_CORS_ORIGIN }}
+        # Every secret passed in is marked sensitive, so Terraform hides it;
+        # the filter masks any credential a provider prints unmarked before
+        # it reaches the public log (.github/scripts/redact-secrets.sed).
         run: |
+          set -o pipefail
           terraform apply -auto-approve \
             -var "tenant_slug=${IN_TENANT_SLUG}" \
             -var "aws_region=${IN_AWS_REGION}" \
@@ -402,7 +406,8 @@ jobs:
             -var "enable_cdn=${IN_ENABLE_CDN}" \
             -var "docs_signer_secret_arn=${IN_DOCS_SIGNER_SECRET_ARN}" \
             -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
-            -var "extra_cors_origin=${EXTRA_CORS_ORIGIN}"
+            -var "extra_cors_origin=${EXTRA_CORS_ORIGIN}" \
+            2>&1 | sed -u -E -f "$GITHUB_WORKSPACE/.github/scripts/redact-secrets.sed"
 
       # The one piece of tenant infrastructure Terraform cannot express here.
       #

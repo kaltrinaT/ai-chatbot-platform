@@ -311,7 +311,13 @@ jobs:
           CFG_LLM_MODEL: ${{ steps.cfg.outputs.llm_model }}
           CFG_DOMAIN: ${{ steps.cfg.outputs.domain }}
           CFG_VECTOR_STORE: ${{ steps.cfg.outputs.vector_store }}
+        # Terraform output is redacted on every apply: any plan that shows
+        # the docs-signer's app_settings (a replacement, a drifted setting)
+        # would print the function package URL with its year-long read SAS.
+        # azurerm does not mark app_settings sensitive. The filter masks every
+        # credential format the platform handles (.github/scripts/redact-secrets.sed).
         run: |
+          set -o pipefail
           source "$RUNNER_TEMP/tenant-secrets.env"
           terraform apply -auto-approve \
             -target=azurerm_container_registry.this \
@@ -328,7 +334,8 @@ jobs:
             -var="domain=${CFG_DOMAIN}" \
             -var="vector_store=${CFG_VECTOR_STORE}" \
             -var="image_uri=placeholder" \
-            -var="frontend_image_uri=placeholder"
+            -var="frontend_image_uri=placeholder" \
+            2>&1 | sed -u -E -f "$GITHUB_WORKSPACE/.github/scripts/redact-secrets.sed"
 
       # The bootstrap apply just granted the chatbot identity AcrPull. Azure
       # RBAC is eventually consistent, and the full apply below creates a
@@ -381,7 +388,9 @@ jobs:
           IMAGE_URI: ${{ steps.names.outputs.image_uri }}
           FRONTEND_URI: ${{ steps.names.outputs.frontend_uri }}
           EXTRA_CORS_ORIGIN: ${{ vars.EXTRA_CORS_ORIGIN }}
+        # Redacted like the bootstrap apply above.
         run: |
+          set -o pipefail
           source "$RUNNER_TEMP/tenant-secrets.env"
           terraform apply -auto-approve \
             -var="tenant_slug=${IN_TENANT_SLUG}" \
@@ -398,7 +407,8 @@ jobs:
             -var="frontend_image_uri=${FRONTEND_URI}" \
             -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
             -var="extra_cors_origin=${EXTRA_CORS_ORIGIN}" \
-            -var="revision_suffix=r${{ github.run_id }}-${{ github.run_attempt }}"
+            -var="revision_suffix=r${{ github.run_id }}-${{ github.run_attempt }}" \
+            2>&1 | sed -u -E -f "$GITHUB_WORKSPACE/.github/scripts/redact-secrets.sed"
 
       # Nothing after Terraform needs them. The runner is discarded after the
       # job anyway; this keeps the secrets off disk for the steps that remain,

@@ -218,7 +218,13 @@ jobs:
           CFG_LLM_MODEL: ${{ steps.cfg.outputs.llm_model }}
           CFG_DOMAIN: ${{ steps.cfg.outputs.domain }}
           CFG_VECTOR_STORE: ${{ steps.cfg.outputs.vector_store }}
+        # A destroy prints every attribute it removes. The docs-signer's
+        # app_settings include the function package URL, which carries a
+        # year-long read SAS, and azurerm does not mark app_settings
+        # sensitive, so credentials are redacted before the public log
+        # (.github/scripts/redact-secrets.sed).
         run: |
+          set -o pipefail
           source "$RUNNER_TEMP/tenant-secrets.env"
           rm -f "$RUNNER_TEMP/tenant-secrets.env"
           terraform destroy -auto-approve \
@@ -233,7 +239,8 @@ jobs:
             -var="vector_store=${CFG_VECTOR_STORE}" \
             -var="image_uri=placeholder" \
             -var="frontend_image_uri=placeholder" \
-            -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
+            -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
+            2>&1 | sed -u -E -f "$GITHUB_WORKSPACE/.github/scripts/redact-secrets.sed"
 
       # What Terraform does not own. The resource group and the deployment
       # identity inside it were created by the customer's bootstrap, not by

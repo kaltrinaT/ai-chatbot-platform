@@ -16,8 +16,9 @@ import YAML from "yaml";
  *
  * What is not: commands that would reach a cloud or a registry (aws, docker,
  * az, terraform, curl) are stubs that record every argument they are given
- * and succeed. The harness evaluates only `${{ inputs.* }}`,
- * `${{ steps.<id>.outputs.* }}`, `${{ secrets.* }}` and `${{ github.* }}`, and
+ * and succeed, unless a test scripts what one prints and how it exits. The
+ * harness evaluates only `${{ inputs.* }}`, `${{ steps.<id>.outputs.* }}`,
+ * `${{ secrets.* }}`, `${{ vars.* }}` (as unset) and `${{ github.* }}`, and
  * throws on any other expression rather than guessing. It also refuses to run
  * a step whose script — not its env: — contains an input or a step output,
  * because GitHub would paste that value into the source before bash parsed it,
@@ -34,6 +35,10 @@ type Step = { name?: string; id?: string; run?: string; env?: Record<string, str
 export type StepContext = {
   inputs?: Record<string, string>;
   steps?: Record<string, Record<string, string>>;
+  /** What a stubbed command prints and how it exits; by default it prints nothing and succeeds. */
+  stubs?: Partial<Record<(typeof STUBBED)[number], { stdout?: string; stderr?: string; exitCode?: number }>>;
+  /** Files to create in $RUNNER_TEMP before the step runs, by name. */
+  files?: Record<string, string>;
 };
 
 export type StepRun = {
@@ -49,8 +54,8 @@ export type StepRun = {
 };
 
 const EXPRESSION = /\$\{\{\s*([^}]*?)\s*\}\}/g;
-const STUBBED = ["aws", "docker", "az", "terraform", "curl"];
-const GITHUB = { run_id: "1234567890", server_url: "https://github.com", repository: "acme/platform" };
+const STUBBED = ["aws", "docker", "az", "terraform", "curl"] as const;
+const GITHUB = { run_id: "1234567890", run_attempt: "1", server_url: "https://github.com", repository: "acme/platform" };
 
 export function loadWorkflow(file: string): Workflow {
   return YAML.parse(readFileSync(file, "utf8")) as Workflow;
@@ -78,14 +83,20 @@ export function pastedExpressions(run: string): string[] {
 }
 
 function evaluate(value: unknown, ctx: StepContext): string {
-  return String(value ?? "").replace(EXPRESSION, (_, expr: string) => {
-    let m: RegExpExecArray | null;
-    if ((m = /^inputs\.(\w+)$/.exec(expr))) return ctx.inputs?.[m[1]] ?? "";
-    if ((m = /^steps\.(\w+)\.outputs\.(\w+)$/.exec(expr))) return ctx.steps?.[m[1]]?.[m[2]] ?? "";
-    if ((m = /^secrets\.(\w+)$/.exec(expr))) return `https://platform.invalid/${m[1].toLowerCase()}`;
-    if ((m = /^github\.(\w+)$/.exec(expr)) && m[1] in GITHUB) return GITHUB[m[1] as keyof typeof GITHUB];
-    throw new Error(`The harness does not model the expression \${{ ${expr} }}`);
-  });
+  return String(value ?? "").replace(EXPRESSION, (_, expr: string) => resolve(expr, ctx));
+}
+
+function resolve(expr: string, ctx: StepContext): string {
+  let m: RegExpExecArray | null;
+  // `a || 'literal'`: the literal when a is empty, as GitHub evaluates it.
+  if ((m = /^(.+?)\s*\|\|\s*'([^']*)'$/.exec(expr))) return resolve(m[1], ctx) || m[2];
+  if ((m = /^inputs\.(\w+)$/.exec(expr))) return ctx.inputs?.[m[1]] ?? "";
+  if ((m = /^steps\.(\w+)\.outputs\.(\w+)$/.exec(expr))) return ctx.steps?.[m[1]]?.[m[2]] ?? "";
+  if ((m = /^secrets\.(\w+)$/.exec(expr))) return `https://platform.invalid/${m[1].toLowerCase()}`;
+  // A repository variable that is not set reads as empty, as on GitHub.
+  if (/^vars\.\w+$/.test(expr)) return "";
+  if ((m = /^github\.(\w+)$/.exec(expr)) && m[1] in GITHUB) return GITHUB[m[1] as keyof typeof GITHUB];
+  throw new Error(`The harness does not model the expression \${{ ${expr} }}`);
 }
 
 function bash(): string {
@@ -147,13 +158,23 @@ export function runStep(file: string, stepName: string, ctx: StepContext = {}): 
     // does: one that exited without reading would SIGPIPE the command feeding
     // it, and under pipefail fail the step at random.
     for (const name of STUBBED) {
-      const reply = name === "aws" ? `[ "$1 $2" = "ecr get-login-password" ] && echo stub-password` : "";
+      let reply = name === "aws" ? `[ "$1 $2" = "ecr get-login-password" ] && echo stub-password` : "";
+      let exit = 0;
+      // A scripted reply is read from files, so its text reaches the step byte for byte.
+      const scripted = ctx.stubs?.[name];
+      if (scripted) {
+        writeFileSync(path.join(work, `${name}.stdout`), scripted.stdout ?? "");
+        writeFileSync(path.join(work, `${name}.stderr`), scripted.stderr ?? "");
+        reply = `cat "${posix(path.join(work, `${name}.stdout`))}"; cat "${posix(path.join(work, `${name}.stderr`))}" >&2`;
+        exit = scripted.exitCode ?? 0;
+      }
       writeFileSync(
         path.join(stubs, name),
-        `#!/usr/bin/env bash\n{ printf '%s' "${name}"; for a in "$@"; do printf '\\x1f%s' "$a"; done; printf '\\x1e'; } >> "$HARNESS_CALLS"\n[ -p /dev/stdin ] && cat > /dev/null\n${reply}\nexit 0\n`,
+        `#!/usr/bin/env bash\n{ printf '%s' "${name}"; for a in "$@"; do printf '\\x1f%s' "$a"; done; printf '\\x1e'; } >> "$HARNESS_CALLS"\n[ -p /dev/stdin ] && cat > /dev/null\n${reply}\nexit ${exit}\n`,
         { mode: 0o755 },
       );
     }
+    for (const [name, body] of Object.entries(ctx.files ?? {})) writeFileSync(path.join(work, name), body);
     // Native jq on Windows ends lines with CRLF; -b makes it write what jq on
     // the Linux runner writes. Elsewhere jq is used as installed.
     if (process.platform === "win32") {
@@ -172,6 +193,8 @@ export function runStep(file: string, stepName: string, ctx: StepContext = {}): 
       GITHUB_OUTPUT: posix(outputFile),
       GITHUB_ENV: posix(path.join(work, "github_env")),
       RUNNER_TEMP: posix(work),
+      // The checkout, as on a runner: steps call scripts under .github/scripts.
+      GITHUB_WORKSPACE: posix(process.cwd()),
       HARNESS_CALLS: posix(calls),
     });
     for (const scope of [wf.env, job.env, step.env]) {

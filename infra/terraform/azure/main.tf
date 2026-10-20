@@ -506,6 +506,18 @@ resource "azurerm_linux_function_app" "docs_signer" {
     # Function's environment.
     DOCS_SIGNER_SECRET = var.docs_signer_secret
   }
+
+  # Azure/functions-action adds these two after Terraform runs.
+  # WEBSITE_RUN_FROM_PACKAGE is a blob URL carrying a year-long read SAS.
+  # Without this, every redeploy plans to remove both, printing the SAS
+  # unmasked in the Actions log, and leaves the Function without its code
+  # until the action re-adds it.
+  lifecycle {
+    ignore_changes = [
+      app_settings["WEBSITE_RUN_FROM_PACKAGE"],
+      app_settings["WEBSITE_ENABLE_SYNC_UPDATE_SITE"],
+    ]
+  }
 }
 
 # Grants ONLY what the Function needs on the docs storage account: mint a

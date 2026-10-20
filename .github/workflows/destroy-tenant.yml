@@ -226,7 +226,10 @@ jobs:
         working-directory: infra/terraform
         env:
           TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key || 'unused' }}
+        # A destroy prints every attribute it removes; the filter masks any
+        # credential a provider leaves unmarked (.github/scripts/redact-secrets.sed).
         run: |
+          set -o pipefail
           CLIENT_REGISTRY="${IN_AWS_ACCOUNT_ID}.dkr.ecr.${IN_AWS_REGION}.amazonaws.com"
           terraform destroy -auto-approve \
             -var "tenant_slug=${IN_TENANT_SLUG}" \
@@ -241,7 +244,8 @@ jobs:
             -var "pinecone_secret_arn=${IN_PINECONE_SECRET_ARN}" \
             -var "domain=${IN_DOMAIN}" \
             -var "docs_signer_secret_arn=${IN_DOCS_SIGNER_SECRET_ARN}" \
-            -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}"
+            -var "platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
+            2>&1 | sed -u -E -f "$GITHUB_WORKSPACE/.github/scripts/redact-secrets.sed"
 
       # Created imperatively by deploy-tenant.yml, not Terraform-managed —
       # terraform destroy above never touches these. Best-effort: a tenant

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { PLATFORM_SECRETS_AUDIENCE } from "./githubOidc";
 import { awsStateBucketName, azureStateStorageAccountName } from "./bootstrapLinks";
+import { runStep } from "@/test/workflow-runner";
 
 type Step = { name?: string; uses?: string; with?: Record<string, unknown>; env?: Record<string, string> };
 type Job = {
@@ -684,6 +685,109 @@ describe("infra/terraform/azure — credentials in state cannot be used", () => 
     expect(deploy).toBeDefined();
     expect(deploy!.with).not.toHaveProperty("publish-profile");
   });
+
+  // The action's package URL carries a read SAS. If Terraform tried to
+  // remove it, the plan would print it into the public log.
+  it("leaves the settings the function deploy writes to the action", () => {
+    const ignored = resource("azurerm_linux_function_app", "docs_signer").match(
+      /ignore_changes\s*=\s*\[([\s\S]*?)\]\s*\n/,
+    )?.[1];
+    expect(ignored).toContain('app_settings["WEBSITE_RUN_FROM_PACKAGE"]');
+    expect(ignored).toContain('app_settings["WEBSITE_ENABLE_SYNC_UPDATE_SITE"]');
+  });
+
+});
+
+describe("Terraform output — no credential reaches a public log", () => {
+  // Terraform hides values a provider or a sensitive variable marks. What it
+  // cannot hide is a value a provider leaves unmarked: azurerm printed the
+  // docs-signer's package URL, with its read SAS, in two destroy logs (S6).
+  // Every Terraform run in every deploy and destroy workflow is therefore
+  // piped through one filter, .github/scripts/redact-secrets.sed.
+  const FILTER = `2>&1 | sed -u -E -f "$GITHUB_WORKSPACE/.github/scripts/redact-secrets.sed"`;
+  const WORKFLOWS = ["deploy-tenant.yml", "destroy-tenant.yml", "deploy-tenant-azure.yml", "destroy-tenant-azure.yml"] as const;
+  const terraformSteps = WORKFLOWS.flatMap((file) =>
+    workflow(file)
+      .job.steps.filter((s) => /terraform (apply|destroy|plan)/.test((s as Step & { run?: string }).run ?? ""))
+      .map((s) => [file, s.name!, (s as Step & { run?: string }).run!] as const),
+  );
+
+  it("finds every Terraform step: one per AWS workflow, three across the Azure ones", () => {
+    expect(terraformSteps.map(([f]) => f)).toEqual(["deploy-tenant.yml", "destroy-tenant.yml", "deploy-tenant-azure.yml", "deploy-tenant-azure.yml", "destroy-tenant-azure.yml"]);
+  });
+
+  it.each(terraformSteps)("%s › %s pipes Terraform through the filter with pipefail", (_file, _step, run) => {
+    expect(run).toContain("set -o pipefail");
+    expect(run).toContain(FILTER);
+  });
+
+  // The tests above show the filter is written; these run it. Each Terraform
+  // step runs as committed (src/test/workflow-runner.ts), with terraform
+  // printing one credential of each kind the filter knows: the package URL
+  // from the leaking destroy logs, a presigned S3 URL, a database URL with
+  // its password, and the platform's own key formats. Every value is built
+  // here rather than written out, so the repository's secret scan does not
+  // match this file.
+  const sas = "Zk9vQmFyQmF6".repeat(4) + "%2Bq%2Fw%3D";
+  const amzSignature = "f0e1".repeat(16);
+  const stsSession = "IQoJb3JpZ2luX2Vj".repeat(4);
+  const keyId = "AKIA" + "QZ7X".repeat(4);
+  const password = "Pw" + "x9Qk".repeat(6);
+  const openrouter = "sk-or-v1-" + "0123456789abcdef".repeat(4);
+  const pinecone = "pcsk_" + "Ab3_dE".repeat(6);
+  const github = "ghp_" + "a1B2c3".repeat(6);
+  const packageUrl = "https://cbfnacmert.blob.core.windows.net/scm-releases/Functionapp_202610181420.zip";
+  const printed = [
+    "  # azurerm_linux_function_app.docs_signer will be destroyed",
+    "      - app_settings = {",
+    '          - "DOCS_CONTAINER"           = "documents"',
+    `          - "WEBSITE_RUN_FROM_PACKAGE" = "${packageUrl}?sv=2025-11-05&se=2027-10-18T14%3A20%3A11Z&sr=b&sp=r&sig=${sas}"`,
+    "        } -> null",
+    `      ~ upload_url = "https://chatbot-acme-docs.s3.amazonaws.com/a.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${keyId}%2F20261020%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Security-Token=${stsSession}&X-Amz-Signature=${amzSignature}"`,
+    `      - connection = "postgresql://chatbot:${password}@vectors.c1.us-east-1.rds.amazonaws.com:5432/chatbot"`,
+    `      - keys = "${openrouter} ${pinecone} ${keyId} ${github}"`,
+    "aws_lambda_function_url.docs_signer: https://abc123.lambda-url.us-east-1.on.aws/",
+    "Destroy complete! Resources: 24 destroyed.",
+    "",
+  ].join("\n");
+  const failed = `│ Error: deleting blob "${packageUrl}?sp=r&sig=${sas}&sv=2025-11-05": context deadline exceeded\n`;
+  const secrets = [sas, amzSignature, stsSession, keyId, password, openrouter, pinecone, github];
+
+  it.each(terraformSteps)("%s › %s masks every credential on stdout and stderr and keeps the rest", (file, step) => {
+    const run = runStep(`.github/workflows/${file}`, step, {
+      stubs: { terraform: { stdout: printed, stderr: failed } },
+      files: { "tenant-secrets.env": "" },
+    });
+    expect(run.exitCode).toBe(0);
+    expect(run.calls.some((c) => c[0] === "terraform")).toBe(true);
+    for (const secret of secrets) {
+      expect(run.stdout).not.toContain(secret);
+      expect(run.stdout).not.toContain(secret.slice(0, 16));
+    }
+    expect(run.stdout).toContain(`${packageUrl}?sv=2025-11-05&se=2027-10-18T14%3A20%3A11Z&sr=b&sp=r&sig=***"`);
+    expect(run.stdout).toContain(`?sp=r&sig=***&sv=2025-11-05": context deadline exceeded`);
+    expect(run.stdout).toContain("X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=***&X-Amz-Security-Token=***&X-Amz-Signature=***");
+    expect(run.stdout).toContain("postgresql://chatbot:***@vectors.c1.us-east-1.rds.amazonaws.com:5432/chatbot");
+    expect(run.stdout).toContain('keys = "sk-or-v1-*** pcsk_*** AKIA*** ghp_***"');
+    // What identifies a resource stays readable.
+    expect(run.stdout).toContain('"DOCS_CONTAINER"           = "documents"');
+    expect(run.stdout).toContain("aws_lambda_function_url.docs_signer: https://abc123.lambda-url.us-east-1.on.aws/");
+    expect(run.stdout).toContain("Destroy complete! Resources: 24 destroyed.");
+  }, 30_000);
+
+  // A pipeline takes its last command's exit status unless pipefail is set,
+  // and sed always succeeds: a failed Terraform run would then pass as a
+  // successful deploy or teardown. Three of the four jobs also run bash with
+  // pipefail (`shell: bash`); deploy-tenant-azure.yml has no shell default,
+  // so there the step's own `set -o pipefail` is all there is.
+  it.each(terraformSteps)("%s › %s still fails when Terraform fails", (file, step) => {
+    const run = runStep(`.github/workflows/${file}`, step, {
+      stubs: { terraform: { stderr: failed, exitCode: 1 } },
+      files: { "tenant-secrets.env": "" },
+    });
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stdout).not.toContain(sas);
+  }, 30_000);
 });
 
 describe("drizzle/0012 — stored Azure secrets removed", () => {
