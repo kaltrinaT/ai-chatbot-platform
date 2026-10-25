@@ -22,22 +22,22 @@ variable "aws_region" {
 }
 
 variable "image_uri" {
-  description = "Full ECR image URI INCLUDING tag for the backend (the client-account ECR URI after the workflow pushes it)."
+  description = "Full ECR image URI for the backend in the client account, pinned by digest (repo@sha256:…) so that a new image is a new task definition. A tag is also accepted; the teardown passes one, since the image does not matter there."
   type        = string
 
   validation {
-    condition     = can(regex("^[0-9]{12}\\.dkr\\.ecr\\.[a-z]{2}-[a-z]+-[0-9]\\.amazonaws\\.com/.+:.+$", var.image_uri))
-    error_message = "image_uri must be a full ECR URI with a tag, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/repo/name:tag."
+    condition     = can(regex("^[0-9]{12}\\.dkr\\.ecr\\.[a-z]{2}-[a-z]+-[0-9]\\.amazonaws\\.com/[^:@]+(@sha256:[0-9a-f]{64}|:[^:@]+)$", var.image_uri))
+    error_message = "image_uri must be a full ECR URI with a digest or a tag, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/repo/name@sha256:<64 hex digits>."
   }
 }
 
 variable "frontend_image_uri" {
-  description = "Full ECR image URI INCLUDING tag for the chat UI (client-account ECR URI after the workflow pushes it)."
+  description = "Full ECR image URI for the chat UI in the client account, pinned by digest like image_uri."
   type        = string
 
   validation {
-    condition     = can(regex("^[0-9]{12}\\.dkr\\.ecr\\.[a-z]{2}-[a-z]+-[0-9]\\.amazonaws\\.com/.+:.+$", var.frontend_image_uri))
-    error_message = "frontend_image_uri must be a full ECR URI with a tag."
+    condition     = can(regex("^[0-9]{12}\\.dkr\\.ecr\\.[a-z]{2}-[a-z]+-[0-9]\\.amazonaws\\.com/[^:@]+(@sha256:[0-9a-f]{64}|:[^:@]+)$", var.frontend_image_uri))
+    error_message = "frontend_image_uri must be a full ECR URI with a digest or a tag."
   }
 }
 

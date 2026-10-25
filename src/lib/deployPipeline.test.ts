@@ -407,6 +407,128 @@ describe("deploy-tenant.yml — checks the boundary before changing anything", (
   });
 });
 
+// A mutable tag in the task definition hides a new image from Terraform, so a
+// redeploy would plan no change and leave ECS running the old image.
+describe("deploy-tenant.yml — Terraform is given the pushed images by digest", () => {
+  const PIN = "Pin the pushed images by digest";
+  const inputs = { tenant_slug: "alpha", aws_account_id: "111122223333", aws_region: "eu-central-1", chatbot_version: "latest" };
+  const digest = `sha256:${"0123456789abcdef".repeat(4)}`;
+  const registry = "111122223333.dkr.ecr.eu-central-1.amazonaws.com";
+
+  it("asks ECR for the digest of the tag just pushed and outputs repo@digest", () => {
+    const run = runStep(".github/workflows/deploy-tenant.yml", PIN, { inputs, stubs: { aws: { stdout: `${digest}\n` } } });
+    expect(run.exitCode).toBe(0);
+    expect(run.outputs).toEqual({
+      uri: `${registry}/alpha/chatbot@${digest}`,
+      frontend_uri: `${registry}/alpha/chatbot-frontend@${digest}`,
+    });
+    const asked = run.calls.filter((c) => c[0] === "aws" && c[1] === "ecr" && c[2] === "describe-images");
+    expect(asked.map((c) => c[c.indexOf("--repository-name") + 1])).toEqual(["alpha/chatbot", "alpha/chatbot-frontend"]);
+    expect(asked.every((c) => c.includes("imageTag=latest"))).toBe(true);
+  }, 30_000);
+
+  it.each([["no digest", "None\n"], ["something other than a digest", "sha256:xyz\n"]])(
+    "fails, writing no output, when ECR answers %s",
+    (_label, stdout) => {
+      const run = runStep(".github/workflows/deploy-tenant.yml", PIN, { inputs, stubs: { aws: { stdout } } });
+      expect(run.exitCode).not.toBe(0);
+      expect(run.outputLines).toEqual([]);
+    },
+    30_000,
+  );
+
+  it("feeds Terraform, between the push and the apply", () => {
+    const { job } = workflow("deploy-tenant.yml");
+    const names = job.steps.map((s) => s.name ?? s.uses ?? "");
+    const apply = job.steps.find((s) => s.name === "Terraform apply");
+    expect(apply?.env?.IMAGE_URI).toBe("${{ steps.pinned.outputs.uri }}");
+    expect(apply?.env?.FRONTEND_URI).toBe("${{ steps.pinned.outputs.frontend_uri }}");
+    expect(names.indexOf("Replicate images to client ECR")).toBeLessThan(names.indexOf(PIN));
+    expect(names.indexOf(PIN)).toBeLessThan(names.indexOf("Terraform apply"));
+  });
+
+  it("builds the docs-signer from its committed lockfile", () => {
+    const install = workflow("deploy-tenant.yml").job.steps.find((s) => s.name === "Install docs-signer Lambda dependencies") as Step & { run?: string };
+    expect(install.run?.trim()).toBe("npm ci --omit=dev");
+    const pkg = JSON.parse(source("infra/lambda/docs-signer/package.json"));
+    const lock = JSON.parse(source("infra/lambda/docs-signer/package-lock.json"));
+    expect(lock.packages[""].dependencies).toEqual(pkg.dependencies);
+  });
+
+  it("the Terraform variables accept a digest", () => {
+    const variables = source("infra/terraform/variables.tf");
+    for (const name of ["image_uri", "frontend_image_uri"]) {
+      const block = variables.slice(variables.indexOf(`variable "${name}"`));
+      const pattern = /regex\("(.+?)", var\./.exec(block)![1].replace(/\\\\/g, "\\");
+      expect(new RegExp(pattern).test(`${registry}/alpha/chatbot@${digest}`)).toBe(true);
+      expect(new RegExp(pattern).test(`${registry}/alpha/chatbot:latest`)).toBe(true);
+      expect(new RegExp(pattern).test(`${registry}/alpha/chatbot@sha256:xyz`)).toBe(false);
+    }
+  });
+});
+
+// The Azure twin. The revision suffix used to be the run ID, which started a
+// new revision on every deploy, so no redeploy could plan no change.
+describe("deploy-tenant-azure.yml — a revision starts only when an image or a secret changes", () => {
+  const PIN = "Pin the pushed images by digest";
+  const digest = `sha256:${"fedcba9876543210".repeat(4)}`;
+  const ctx = (stdout: string) => ({
+    inputs: { tenant_slug: "alpha" },
+    steps: { names: { acr_name: "chatbotalpha" }, cfg: { chatbot_version: "latest" } },
+    stubs: { az: { stdout } },
+  });
+
+  it("asks the registry for the digest of the tag just pushed and outputs repo@digest", () => {
+    const run = runStep(".github/workflows/deploy-tenant-azure.yml", PIN, ctx(`${digest}\n`));
+    expect(run.exitCode).toBe(0);
+    expect(run.outputs).toEqual({
+      image_uri: `chatbotalpha.azurecr.io/chatbot-backend@${digest}`,
+      frontend_uri: `chatbotalpha.azurecr.io/chatbot-frontend@${digest}`,
+    });
+    const asked = run.calls.filter((c) => c[0] === "az" && c[1] === "acr" && c[2] === "repository" && c[3] === "show");
+    expect(asked.map((c) => c[c.indexOf("--image") + 1])).toEqual(["chatbot-backend:latest", "chatbot-frontend:latest"]);
+    expect(asked.every((c) => c[c.indexOf("--name") + 1] === "chatbotalpha")).toBe(true);
+  }, 30_000);
+
+  it("fails, writing no output, when the registry gives no digest", () => {
+    const run = runStep(".github/workflows/deploy-tenant-azure.yml", PIN, ctx("\n"));
+    expect(run.exitCode).not.toBe(0);
+    expect(run.outputLines).toEqual([]);
+  }, 30_000);
+
+  it("feeds the full apply, which no longer passes a per-run revision suffix", () => {
+    const { raw, job } = workflow("deploy-tenant-azure.yml");
+    const names = job.steps.map((s) => s.name ?? s.uses ?? "");
+    const apply = job.steps.find((s) => s.name === "Terraform apply — full deploy");
+    expect(apply?.env?.IMAGE_URI).toBe("${{ steps.pinned.outputs.image_uri }}");
+    expect(apply?.env?.FRONTEND_URI).toBe("${{ steps.pinned.outputs.frontend_uri }}");
+    expect(names.indexOf("Retag and push images to tenant ACR")).toBeLessThan(names.indexOf(PIN));
+    expect(names.indexOf(PIN)).toBeLessThan(names.indexOf("Terraform apply — full deploy"));
+    expect(raw).not.toContain("revision_suffix");
+  });
+
+  it("leaves the suffix to Azure and rolls the app when a secret's Key Vault version changes", () => {
+    const main = source("infra/terraform/azure/main.tf");
+    expect(main).not.toMatch(/^\s*revision_suffix\s*=/m);
+    expect(source("infra/terraform/azure/variables.tf")).not.toContain('variable "revision_suffix"');
+    expect(main).toMatch(/name\s*=\s*"SECRETS_VERSION"\s+value\s*=\s*local\.secrets_version/);
+    for (const secret of ["llm_api_key.version", "pinecone_api_key[*].version", "vector_db_url[*].version"]) {
+      expect(main).toContain(`azurerm_key_vault_secret.${secret}`);
+    }
+  });
+});
+
+describe("tenant Terraform roots — provider versions are locked", () => {
+  it.each([
+    ["infra/terraform", ["hashicorp/aws", "hashicorp/archive", "hashicorp/random", "pinecone-io/pinecone"]],
+    ["infra/terraform/azure", ["hashicorp/azurerm", "azure/azapi", "hashicorp/random", "pinecone-io/pinecone"]],
+  ])("%s has a lock file covering every provider", (root, providers) => {
+    const lock = source(`${root}/.terraform.lock.hcl`);
+    for (const p of providers) expect(lock).toMatch(new RegExp(`provider "registry\\.terraform\\.io/${p}" \\{\\s+version\\s+= "\\d+\\.\\d+\\.\\d+"`));
+    expect(source(".gitignore")).toContain(`!${root}/.terraform.lock.hcl`);
+  });
+});
+
 describe("drizzle/0015 — one active deployment per tenant", () => {
   it("adds the partial unique index and does nothing else", () => {
     const statements = source("drizzle/0015_one_active_deployment_per_tenant.sql")

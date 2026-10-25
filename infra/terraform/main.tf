@@ -939,21 +939,16 @@ resource "aws_ecs_service" "this" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
-  # Without this, "redeploy" does not redeploy. Tenant images are tagged by
-  # chatbot_version, which defaults to "latest" — a mutable tag. A deploy
-  # replicates the new image into the tenant's ECR under the same tag, so the
-  # task definition's image string is unchanged, Terraform sees no diff, and
-  # ECS keeps the existing tasks running the code they pulled when they last
-  # started. Observed directly: a tenant kept serving a build from hours
-  # earlier while the fixed image sat unused in its own registry.
-  #
-  # Forcing a new deployment on every apply is the honest behaviour for a
-  # platform whose redeploy button is meant to ship new chatbot code. The
-  # alternative, tagging images by digest or commit so the task definition
-  # changes on its own, is better but means changing how versions are minted.
-  force_new_deployment = true
+  # A redeploy rolls these tasks because the workflow passes each image by
+  # digest (deploy-tenant.yml, "Pin the pushed images by digest"): a new
+  # image is a new task definition revision, which this service deploys. The
+  # tag the image is pushed under, normally "latest", is mutable, and with it
+  # in the task definition Terraform saw no diff and ECS kept running the
+  # old image. force_new_deployment = true did not help: it acts only when
+  # something else about the service changes, so an unchanged-input
+  # redeploy planned no change and left the old tasks running.
 
-  # Without these two, force_new_deployment above is a loaded gun. A broken
+  # Without these two, every new image is a loaded gun. A broken
   # image gets rolled out, the tasks fail their health checks, ECS replaces
   # them forever, and `terraform apply` returns success the moment it has
   # registered the new task definition — so the workflow goes green and the
@@ -1040,10 +1035,7 @@ resource "aws_ecs_service" "frontend" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
-  # Same mutable-tag problem as the backend service above.
-  force_new_deployment = true
-
-  # Same reasoning as the backend service above.
+  # Rolled by digest and guarded like the backend service above.
   deployment_circuit_breaker {
     enable   = true
     rollback = true

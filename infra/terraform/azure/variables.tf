@@ -45,12 +45,12 @@ variable "azure_region" {
 }
 
 variable "image_uri" {
-  description = "Full ACR image URI including tag for the backend, pushed by the workflow."
+  description = "Full ACR image URI for the backend, pushed by the workflow and passed by digest (repo@sha256:…) so that a new image is a new revision. The bootstrap apply and the teardown pass a placeholder."
   type        = string
 }
 
 variable "frontend_image_uri" {
-  description = "Full ACR image URI including tag for the chat UI, pushed by the workflow."
+  description = "Full ACR image URI for the chat UI, passed by digest like image_uri."
   type        = string
 }
 
@@ -152,17 +152,6 @@ variable "docs_signer_secret" {
 variable "platform_origin" {
   description = "Origin (scheme+host) of the platform's own web UI. Used for the docs storage account's CORS rule so the browser can PUT directly to Blob Storage."
   type        = string
-}
-
-variable "revision_suffix" {
-  description = "Unique per-deploy suffix for the Container App revision. Required to roll the app onto a rebuilt image, since the image tag itself doesn't change between deploys. Empty keeps the current revision."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.revision_suffix == "" || can(regex("^[a-z0-9][a-z0-9-]{0,42}[a-z0-9]$", var.revision_suffix))
-    error_message = "revision_suffix must be lowercase alphanumeric with hyphens, not starting or ending with a hyphen."
-  }
 }
 
 variable "extra_cors_origin" {

@@ -325,6 +325,32 @@ jobs:
           echo "uri=$BACKEND_URI" >> "$GITHUB_OUTPUT"
           echo "frontend_uri=$FRONTEND_URI" >> "$GITHUB_OUTPUT"
 
+      # The tag just pushed (chatbot_version, normally `latest`) is mutable,
+      # so Terraform is given the digest instead. With the tag in the task
+      # definition a new image changes nothing Terraform can see: the plan
+      # stays empty, no deployment starts, and ECS keeps running the image it
+      # pulled last, or takes the new one whenever it next restarts a task.
+      # A digest names one image, so a new image is a new task definition and
+      # a rolling deployment, and an unchanged one leaves the plan empty.
+      - name: Pin the pushed images by digest
+        id: pinned
+        run: |
+          CLIENT_REGISTRY="${IN_AWS_ACCOUNT_ID}.dkr.ecr.${IN_AWS_REGION}.amazonaws.com"
+          # $1: the output to write; $2: the repository in the tenant's ECR.
+          pin() {
+            digest="$(aws ecr describe-images --region "$IN_AWS_REGION" \
+              --repository-name "$2" --image-ids imageTag="$IN_CHATBOT_VERSION" \
+              --query 'imageDetails[0].imageDigest' --output text)"
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error title=Pushed image has no digest::ECR gave no digest for the image just pushed to $2 (it answered: ${digest:0:100})."
+              exit 1
+            fi
+            echo "$2: $digest"
+            echo "$1=$CLIENT_REGISTRY/$2@$digest" >> "$GITHUB_OUTPUT"
+          }
+          pin uri "${IN_TENANT_SLUG}/chatbot"
+          pin frontend_uri "${IN_TENANT_SLUG}/chatbot-frontend"
+
       # ─────────────────────────────────────────────────────────────
       # 3. Terraform apply
       # ─────────────────────────────────────────────────────────────
@@ -369,9 +395,14 @@ jobs:
       # runtime only bundles @aws-sdk/client-s3, not s3-presigned-post or
       # client-secrets-manager) — archive_file just zips whatever's on disk,
       # so the deps have to be installed before Terraform runs.
+      #
+      # From the committed lockfile, with npm ci, which refuses a lockfile that
+      # disagrees with package.json. Terraform hashes the zip, so installing
+      # from the ranges in package.json meant that an SDK release between two
+      # deploys changed the hash and the plan with nothing changed here.
       - name: Install docs-signer Lambda dependencies
         working-directory: infra/lambda/docs-signer
-        run: npm install --production
+        run: npm ci --omit=dev
 
       - name: Terraform apply
         working-directory: infra/terraform
@@ -381,8 +412,8 @@ jobs:
           # means no Pinecone resources are actually created and this value
           # is never used for anything real.
           TF_VAR_pinecone_api_key: ${{ steps.pinecone.outputs.key || 'unused' }}
-          IMAGE_URI: ${{ steps.client_image.outputs.uri }}
-          FRONTEND_URI: ${{ steps.client_image.outputs.frontend_uri }}
+          IMAGE_URI: ${{ steps.pinned.outputs.uri }}
+          FRONTEND_URI: ${{ steps.pinned.outputs.frontend_uri }}
           EXTRA_CORS_ORIGIN: ${{ vars.EXTRA_CORS_ORIGIN }}
         # Every secret passed in is marked sensitive, so Terraform hides it;
         # the filter masks any credential a provider prints unmarked before

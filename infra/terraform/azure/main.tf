@@ -680,6 +680,17 @@ resource "azapi_resource" "container_app_environment" {
 # Container App
 # ──────────────────────────────────────────────────────────────────────
 
+# Every write of a Key Vault secret is a new version, so this changes exactly
+# when one of the values the Container App holds as a secret changes. The
+# versions are identifiers, not the values.
+locals {
+  secrets_version = substr(sha256(join(",", concat(
+    [azurerm_key_vault_secret.llm_api_key.version],
+    azurerm_key_vault_secret.pinecone_api_key[*].version,
+    azurerm_key_vault_secret.vector_db_url[*].version,
+  ))), 0, 16)
+}
+
 resource "azurerm_container_app" "this" {
   name                         = local.name
   container_app_environment_id = azapi_resource.container_app_environment.id
@@ -728,13 +739,12 @@ resource "azurerm_container_app" "this" {
 
 
   template {
-    # Tenant images are pushed to a mutable tag (chatbot_version, usually
-    # "latest"), so image_uri is byte-identical across deploys and Terraform
-    # would plan no change — leaving the app serving the digest it first
-    # pulled, however many times the image is rebuilt. Varying the revision
-    # suffix per deploy forces a new revision, which re-pulls the tag.
-    revision_suffix = var.revision_suffix != "" ? var.revision_suffix : null
-
+    # A new revision starts exactly when something the containers run with
+    # changes: the images, which the workflow passes by digest (a new image
+    # is a new template), or a secret (SECRETS_VERSION below). The suffix is
+    # left to Azure. It used to be set from the run ID, which rolled the app
+    # on every deploy and so kept an unchanged redeploy from planning no
+    # change.
     min_replicas = 1
     max_replicas = 3
 
@@ -767,6 +777,14 @@ resource "azurerm_container_app" "this" {
       env {
         name        = "ANTHROPIC_API_KEY"
         secret_name = "llm-api-key"
+      }
+      # Secrets sit outside the template, so a new value alone starts no
+      # revision and the running replicas keep the old one. This changes
+      # whenever one of the app's secrets does, so a re-keyed redeploy rolls
+      # the app and an unchanged one does not.
+      env {
+        name  = "SECRETS_VERSION"
+        value = local.secrets_version
       }
       env {
         name  = "AZURE_STORAGE_ACCOUNT"

@@ -92,11 +92,11 @@ The role must be named `chatbot-client-deploy-*` even when built by hand: the pl
 | 13 | Configure AWS credentials (platform role via OIDC) | Exchanges GitHub's signed OIDC token for one-hour credentials on the platform role, used only to read the source ECR. No stored key. |
 | 14 | Pull source images | `docker pull` of the backend and frontend images. The ECR login uses the region in the image URI, not the tenant's. |
 | 15 | Configure AWS credentials (tenant role via OIDC) | **A second, independent OIDC exchange** into `deployment_role_arn`, with the platform credentials unset first. The customer's role trusts GitHub directly for this tenant's subject; the platform account is not a principal in this sign-in. One-hour session. |
-| 16 | Replicate images to client ECR | Creates `<slug>/chatbot` and `<slug>/chatbot-frontend` if missing (scan on push), then tags and pushes `:<chatbot_version>`. Each push is retried up to three times. |
+| 16 | Replicate images to client ECR | Creates `<slug>/chatbot` and `<slug>/chatbot-frontend` if missing (scan on push), then tags and pushes `:<chatbot_version>`. Each push is retried up to three times. The next step reads each pushed image's digest (`aws ecr describe-images`), and Terraform is given `repo@sha256:…`, never the mutable tag. |
 | 17 | Ensure ECS service-linked role | Idempotent `iam create-service-linked-role` |
 | 18 | Terraform init | Terraform 1.15.3 through `.github/scripts/terraform-init-aws.sh`: the customer's own bucket, key `terraform.tfstate`, S3 lock file. A bucket that is missing or owned by another account stops the run |
 | 19 | Read customer Pinecone key | Pinecone only: reads the value from **the customer's** Secrets Manager under the tenant role and masks it |
-| 20 | Install docs-signer Lambda deps | `npm install --production`, because `archive_file` zips whatever is on disk |
+| 20 | Install docs-signer Lambda deps | `npm ci --omit=dev` from the committed lockfile, because `archive_file` zips whatever is on disk and Terraform hashes the zip |
 | 21 | **Terraform apply** | Single apply; resources are listed below |
 | 22 | Grant the Function URL invoke permission | Imperative `aws lambda add-permission --invoked-via-function-url`. AWS provider `~> 5.60` cannot express this (see §5). |
 | 23 | Read Terraform outputs | `alb_dns_name`, `chatbot_url`, `docs_signer_url` |
@@ -109,7 +109,7 @@ The role must be named `chatbot-client-deploy-*` even when built by hand: the pl
 - **Security groups:** the ALB accepts :80 from anywhere, and :443 only when a certificate is set. Tasks accept only the ALB, on 8000 and 80.
 - **ALB** with idle timeout 180s, two target groups, and a listener rule sending `/api/*` to the backend and everything else to the frontend. With a certificate, there is an HTTPS listener (TLS 1.2/1.3) and a 301 redirect from :80.
 - **CloudFront** (created when there is no certificate and `enable_cdn=true`): caching disabled, `redirect-to-https`, origin is the ALB over HTTP, 60s origin read timeout.
-- **ECS:** one cluster and two Fargate services with `desired_count = 1`. The backend has 1 vCPU / 2 GB and the frontend 0.25 vCPU / 0.5 GB. Both services use `force_new_deployment`, a deployment circuit breaker with rollback, and `wait_for_steady_state`.
+- **ECS:** one cluster and two Fargate services with `desired_count = 1`. The backend has 1 vCPU / 2 GB and the frontend 0.25 vCPU / 0.5 GB. Both services run their image by digest and use a deployment circuit breaker with rollback and `wait_for_steady_state`.
 - **IAM:**
   - The execution role can read only the listed secret ARNs.
   - The task role has `s3:ListBucket` plus `s3:GetObject` on the prefix.
@@ -129,7 +129,7 @@ The role must be named `chatbot-client-deploy-*` even when built by hand: the pl
     - A certificate and domain → `https://<domain>`
     - Otherwise CloudFront → `https://<id>.cloudfront.net`
     - Otherwise → `http://<alb-dns>`
-27. **Redeploy** repeats steps 10–25. `force_new_deployment` makes ECS pull the mutable tag again.
+27. **Redeploy** repeats steps 10–25. The workflow passes Terraform each image by the digest ECR reports for the tag it just pushed, so a new image is a new task definition and ECS rolls it out; an unchanged image leaves the plan empty.
 28. **Destroy** (`destroy-tenant.yml`, 60-minute timeout):
     1. The platform deletes the documents through the signer, best effort.
     2. The run signs in to the tenant role through OIDC, as a deploy does, and empties the bucket, including all object versions. The session starts in the job's first minute and lasts an hour, which is why the 60-minute timeout must not be raised without refreshing credentials.
@@ -184,8 +184,8 @@ Running the setup again for an existing chatbot is safe: every resource is decla
 | 18 | **Terraform apply — bootstrap** | `-target` the ACR, the chatbot's **user-assigned identity** and its **`AcrPull`** grant, with placeholder image URIs. The registry must exist before images are pushed, and the identity must hold `AcrPull` before the app's first revision pulls. The resource group is read, never targeted: the customer's setup created it. |
 | 19 | Allow the AcrPull grant to propagate | A fixed 90-second pause |
 | 20 | Log in to ACR | `az acr login` |
-| 21 | Retag and push images to ACR | `chatbot-backend:<version>`, `chatbot-frontend:<version>`. Each push is retried up to three times, with a growing pause. |
-| 22 | **Terraform apply — full** | Applies everything, with `revision_suffix = r<run_id>-<attempt>` to force a new Container App revision |
+| 21 | Retag and push images to ACR | `chatbot-backend:<version>`, `chatbot-frontend:<version>`. Each push is retried up to three times, with a growing pause. The next step reads each pushed image's digest (`az acr repository show`), and Terraform is given `repo@sha256:…`, never the mutable tag. |
+| 22 | **Terraform apply — full** | Applies everything. A new image or a new secret value starts a new Container App revision; an unchanged redeploy starts none |
 | 23 | Remove tenant secrets from the runner | Always runs, so later steps, including third-party actions, never see them |
 | 24 | Read Terraform outputs | chatbot URL, FQDN, signer URL and app name, resource group, Key Vault name, storage account and container names |
 | 25 | Install docs-signer Function deps | `npm install --production` |
@@ -216,7 +216,7 @@ Running the setup again for an existing chatbot is safe: every resource is decla
 29. **Chatbot URL:**
     - Default → `https://<app>.<env>.<region>.azurecontainerapps.io`, with managed TLS.
     - With a `domain` set → `https://<domain>`. No custom domain or certificate is bound, so this URL will not work until one is (see §5).
-30. **Redeploy** repeats steps 8–28. The new `revision_suffix` forces the app to pull the image tag again.
+30. **Redeploy** repeats steps 8–28. A new image digest changes the template, and a new secret value changes its `SECRETS_VERSION` env value, so either starts a new revision; with neither, the plan is empty.
 31. **Destroy** (`destroy-tenant-azure.yml`, 45-minute timeout):
     1. The platform deletes the documents through the signer, best effort.
     2. The run fetches the Pinecone key from the platform the same way a deploy does, because destroying the index calls Pinecone's own API.
@@ -239,13 +239,13 @@ Running the setup again for an existing chatbot is safe: every resource is decla
 | Credentials to the customer's cloud | GitHub OIDC (per-tenant environment subject) → `sts:AssumeRoleWithWebIdentity` into the tenant role (1 h). Nothing stored | GitHub OIDC (per-tenant environment subject) → customer's federated credential → Entra access token. Nothing stored |
 | Platform's own sign-in to the customer | Once, at onboarding, to write secrets (`ExternalId` = tenant ID) | Never |
 | Terraform version | pinned `1.15.3` | pinned `1.15.3` |
-| Terraform providers (cloud) | `aws ~> 5.60` | `azurerm ~> 3.110`, plus `azapi ~> 2.0` for the Container Apps environment |
+| Terraform providers (cloud) | `aws ~> 5.60`, locked at 5.100.0 by the committed `.terraform.lock.hcl` | `azurerm ~> 3.110` (locked at 3.117.1), plus `azapi ~> 2.0` (2.13.0) for the Container Apps environment |
 | Terraform applies | **1** | **2** (bootstrap `-target` ACR + identity + `AcrPull`, then full) |
 | Registry created by | the workflow's CLI (`aws ecr create-repository`), outside Terraform | Terraform (bootstrap apply) |
 | Steps outside Terraform | ECR repo creation, ECS service-linked role, Lambda `InvokeFunction` permission | Function code deployment (`functions-action`) |
 | Function code packaged by | Terraform `archive_file` → `aws_lambda_function` | `Azure/functions-action` after apply |
 | Rollout gate | ECS circuit breaker + rollback + `wait_for_steady_state` → bad image **fails** the run | Probes on the revision; no circuit breaker or steady-state wait is configured |
-| Force-new-rollout on mutable tag | `force_new_deployment = true` | `revision_suffix = r<run_id>-<attempt>` |
+| New image rolled out on redeploy | Image pinned by digest → new task definition | Image pinned by digest → new revision (and a new secret value → new revision) |
 | Image push | Retried up to 3 times | Retried up to 3 times |
 | Job timeout | 45 min | 45 min |
 | State location | Customer's own bucket `tfstate-<slug>-<account>-<region>-an`, key `terraform.tfstate` | Customer's own storage account `cbtf<slug>`, container `tfstate`, key `terraform.tfstate` |

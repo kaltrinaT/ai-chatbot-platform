@@ -373,6 +373,32 @@ jobs:
           docker tag "$IN_YOUR_FRONTEND_ECR_IMAGE" "$FRONTEND_URI"
           push "$FRONTEND_URI"
 
+      # The tag just pushed (chatbot_version, normally `latest`) is mutable,
+      # so Terraform is given the digest instead, as deploy-tenant.yml does on
+      # AWS. A new image is then a new template and a new revision, and an
+      # unchanged one leaves the plan empty. This replaces a revision suffix
+      # made from the run ID, which rolled the app on every deploy so that no
+      # redeploy could plan no change.
+      - name: Pin the pushed images by digest
+        id: pinned
+        env:
+          ACR_NAME: ${{ steps.names.outputs.acr_name }}
+          CHATBOT_VERSION: ${{ steps.cfg.outputs.chatbot_version }}
+        run: |
+          # $1: the output to write; $2: the repository in the tenant's registry.
+          pin() {
+            digest="$(az acr repository show --name "$ACR_NAME" \
+              --image "$2:$CHATBOT_VERSION" --query digest --output tsv)"
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error title=Pushed image has no digest::The registry gave no digest for the image just pushed to $2 (it answered: ${digest:0:100})."
+              exit 1
+            fi
+            echo "$2: $digest"
+            echo "$1=$ACR_NAME.azurecr.io/$2@$digest" >> "$GITHUB_OUTPUT"
+          }
+          pin image_uri chatbot-backend
+          pin frontend_uri chatbot-frontend
+
       - name: "Terraform apply — full deploy"
         working-directory: ${{ env.TF_DIR }}
         env:
@@ -385,8 +411,8 @@ jobs:
           CFG_DOMAIN: ${{ steps.cfg.outputs.domain }}
           CFG_VECTOR_STORE: ${{ steps.cfg.outputs.vector_store }}
           CFG_RETRIEVAL_MIN_SCORE: ${{ steps.cfg.outputs.retrieval_min_score }}
-          IMAGE_URI: ${{ steps.names.outputs.image_uri }}
-          FRONTEND_URI: ${{ steps.names.outputs.frontend_uri }}
+          IMAGE_URI: ${{ steps.pinned.outputs.image_uri }}
+          FRONTEND_URI: ${{ steps.pinned.outputs.frontend_uri }}
           EXTRA_CORS_ORIGIN: ${{ vars.EXTRA_CORS_ORIGIN }}
         # Redacted like the bootstrap apply above.
         run: |
@@ -407,7 +433,6 @@ jobs:
             -var="frontend_image_uri=${FRONTEND_URI}" \
             -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \
             -var="extra_cors_origin=${EXTRA_CORS_ORIGIN}" \
-            -var="revision_suffix=r${{ github.run_id }}-${{ github.run_attempt }}" \
             2>&1 | sed -u -E -f "$GITHUB_WORKSPACE/.github/scripts/redact-secrets.sed"
 
       # Nothing after Terraform needs them. The runner is discarded after the

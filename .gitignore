@@ -46,6 +46,10 @@ next-env.d.ts
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
+# ...except the tenant roots', which fix the provider versions every deploy
+# and teardown installs (linux_amd64 for the runners, plus developer machines).
+!infra/terraform/.terraform.lock.hcl
+!infra/terraform/azure/.terraform.lock.hcl
 infra/terraform/.build/
 
 # docs-signer lambda deps (installed fresh by the workflow before zipping)

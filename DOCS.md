@@ -417,7 +417,7 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 
 ### Container App config
 - Min 1 replica, max 3 (autoscaling), on the environment's Consumption workload profile
-- Each deploy sets `revision_suffix = r{run_id}-{attempt}`, forcing a new revision that re-pulls the mutable image tag
+- A new revision starts only when something the containers run with changes: the workflow passes both images by digest, so a new image changes the template, and a `SECRETS_VERSION` env value tracks the Key Vault versions of the app's secrets, so a new key does too. An unchanged redeploy starts none
 - Container App secrets: `llm-api-key`, plus `pinecone-api-key` or `vector-db-url` depending on `vector_store`
 - Container App identity: user-assigned `chatbot-{slug}-chatbot-id`, created in the bootstrap apply, holding `AcrPull` on the registry and a custom role on the docs storage account granting `containers/read` and `blobs/read` only — separate from the docs-signer's write-and-delete identity. The registry's admin user is disabled; images are pulled with this identity, and `AZURE_CLIENT_ID` tells the backend's `DefaultAzureCredential` which identity to use
 - **Two containers in one app** (Container Apps has no path-based ingress routing, so both share localhost):
@@ -432,8 +432,8 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 | `tenant_slug` | yes | Max 18 chars (Key Vault naming limit) |
 | `azure_subscription_id`, `azure_tenant_id`, `azure_client_id` | yes | Customer deployment identity, all validated as UUIDs. No secret: the provider authenticates with OIDC |
 | `azure_region` | yes | e.g. `eastus` (default `eastus`) |
-| `image_uri` | yes | Full backend ACR image URI with tag |
-| `frontend_image_uri` | yes | Full frontend (chat UI) ACR image URI with tag |
+| `image_uri` | yes | Full backend ACR image URI, passed by digest (`repo@sha256:…`) |
+| `frontend_image_uri` | yes | Full frontend (chat UI) ACR image URI, passed by digest |
 | `llm_provider` | yes | `openai`, `anthropic`, or `openrouter` |
 | `llm_api_key` | yes | Plain text (sensitive); Terraform writes to Key Vault |
 | `vector_store` | no | `pinecone` or `pgvector`; default `pinecone` |
@@ -445,7 +445,6 @@ Defined in `infra/terraform/azure/main.tf`. Everything is created in the **custo
 | `docs_signer_secret` | yes | Plain text (sensitive); set as the Function App's `DOCS_SIGNER_SECRET` and written to Key Vault |
 | `platform_origin` | yes | `PLATFORM_BASE_URL`; the docs storage's CORS origin |
 | `extra_cors_origin` | no | A second CORS origin, from the `EXTRA_CORS_ORIGIN` repository variable |
-| `revision_suffix` | no | Set per run by the workflow, so every deploy creates a new revision |
 | `retrieval_min_score` | no | Cosine-similarity floor for retrieved chunks; empty leaves the container default |
 | `docs_prefix`, `max_docs_upload_mb` | no | The signer's object prefix, and its upload size limit (default 25) |
 | `domain` | no | Custom hostname. Reported as the URL but not bound — see `LIMITATIONS.md` #27 |
