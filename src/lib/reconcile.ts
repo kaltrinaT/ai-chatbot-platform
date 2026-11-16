@@ -4,6 +4,7 @@ import { deployments, tenants } from "@/db/schema";
 import { fetchDeploymentOutputsArtifact, type RunProgress } from "@/lib/github";
 import { deletedTenantUpdate } from "@/lib/tenantErasure";
 import { acceptDocsSignerUrl } from "@/lib/docsSigner";
+import { albDnsNameProblem, chatbotUrlProblem } from "@/lib/chatbotAddress";
 
 /**
  * Statuses a deployment can still move away from. A write guarded on these
@@ -70,24 +71,36 @@ export async function reconcileCompletedRun(
       const outputs = await fetchDeploymentOutputsArtifact(runId);
 
       // The artifact is written by the same workflow as the webhook, so its
-      // docs-signer URL gets the same check before the platform will ever
-      // send a secret to it (see acceptDocsSignerUrl).
+      // values get the same checks: the docs-signer URL before the platform
+      // will ever send a secret to it (see acceptDocsSignerUrl), and the
+      // chatbot address and load balancer before it sends a reindex there
+      // (see chatbotAddress.ts). A refused value is dropped, the rest kept.
+      let chatbotUrl = outputs?.chatbotUrl;
+      let albDnsName = outputs?.albDnsName;
       let docsSignerUrl = outputs?.docsSignerUrl;
-      if (docsSignerUrl) {
+      if (chatbotUrl || albDnsName || docsSignerUrl) {
         const [tenant] = await db.select().from(tenants).where(eq(tenants.id, updated.tenantId));
-        const problem = tenant ? acceptDocsSignerUrl(tenant, docsSignerUrl) : "tenant not found";
-        if (problem) {
-          console.warn(`[reconcile] ignoring docsSignerUrl from run ${runId}: ${problem}`);
+        const refuse = (field: string, problem: string | null) => {
+          if (problem) console.warn(`[reconcile] ignoring ${field} from run ${runId}: ${problem}`);
+          return Boolean(problem);
+        };
+        if (docsSignerUrl && refuse("docsSignerUrl", tenant ? acceptDocsSignerUrl(tenant, docsSignerUrl) : "tenant not found")) {
           docsSignerUrl = undefined;
+        }
+        if (chatbotUrl && refuse("chatbotUrl", tenant ? chatbotUrlProblem(tenant, chatbotUrl) : "tenant not found")) {
+          chatbotUrl = undefined;
+        }
+        if (albDnsName && refuse("albDnsName", tenant ? albDnsNameProblem(tenant, albDnsName) : "tenant not found")) {
+          albDnsName = undefined;
         }
       }
 
-      if (outputs && (outputs.chatbotUrl || outputs.albDnsName || docsSignerUrl)) {
+      if (chatbotUrl || albDnsName || docsSignerUrl) {
         await db
           .update(tenants)
           .set({
-            ...(outputs.chatbotUrl ? { chatbotUrl: outputs.chatbotUrl } : {}),
-            ...(outputs.albDnsName ? { albDnsName: outputs.albDnsName } : {}),
+            ...(chatbotUrl ? { chatbotUrl } : {}),
+            ...(albDnsName ? { albDnsName } : {}),
             ...(docsSignerUrl ? { docsSignerUrl } : {}),
             updatedAt: new Date(),
           })

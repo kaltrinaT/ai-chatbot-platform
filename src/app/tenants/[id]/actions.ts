@@ -42,8 +42,8 @@ export async function redeployTenant(formData: FormData) {
 }
 
 /**
- * Tears down a tenant's AWS infrastructure and marks it deleted once the
- * destroy workflow succeeds (see triggerTenantDestroy). AWS only for now.
+ * Tears down cloud infrastructure, or explicitly removes an Azure tenant
+ * locally after failed cleanup. Ownership is checked for both paths.
  */
 export async function deleteTenant(formData: FormData) {
   const tenantId = String(formData.get("tenantId") ?? "");
@@ -67,6 +67,7 @@ export async function deleteTenant(formData: FormData) {
   await triggerTenantDestroy({
     tenantId: tenant.id,
     triggeredByUserId: session.user.id,
+    ...(formData.get("removeOnly") === "true" ? { removeOnly: true } : {}),
   });
 
   revalidatePath(`/tenants/${tenantId}`);

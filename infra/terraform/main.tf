@@ -897,6 +897,9 @@ resource "aws_ecs_task_definition" "this" {
       var.retrieval_min_score != "" ? [
         { name = "RETRIEVAL_MIN_SCORE", value = var.retrieval_min_score }
       ] : [],
+      var.chatbot_name != "" ? [
+        { name = "CHATBOT_NAME", value = var.chatbot_name }
+      ] : [],
       local.use_pinecone ? [
         { name = "PINECONE_INDEX", value = pinecone_index.this[0].name }
       ] : [],

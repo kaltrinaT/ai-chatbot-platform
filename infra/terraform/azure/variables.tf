@@ -189,6 +189,12 @@ variable "retrieval_min_score" {
   }
 }
 
+variable "chatbot_name" {
+  description = "The tenant's name, which the chat UI shows as its title. Empty leaves the UI's default."
+  type        = string
+  default     = ""
+}
+
 variable "max_docs_upload_mb" {
   description = "Maximum single-document upload size in MB, enforced by the docs-signer Function's SAS + app-level check."
   type        = number

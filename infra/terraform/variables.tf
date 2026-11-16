@@ -105,6 +105,12 @@ variable "retrieval_min_score" {
   }
 }
 
+variable "chatbot_name" {
+  description = "The tenant's name, which the chat UI shows as its title. Empty leaves the UI's default."
+  type        = string
+  default     = ""
+}
+
 
 variable "vector_store" {
   description = "Where embeddings live: \"pinecone\" (customer's own Pinecone project) or \"pgvector\" (RDS PostgreSQL inside this VPC)."

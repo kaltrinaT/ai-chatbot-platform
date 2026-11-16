@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { deployments, tenants, tenantDocuments } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { deletedTenantUpdate } from "@/lib/tenantErasure";
 import { getChatbotRepo, getDeployWorkflowId, getDestroyWorkflowId, getOctokit } from "@/lib/github";
 import { deleteViaSigner } from "@/lib/docsSigner";
 
@@ -176,6 +177,7 @@ type TenantRow = typeof tenants.$inferSelect;
 type DestroyInput = {
   tenantId: string;
   triggeredByUserId: string;
+  removeOnly?: boolean;
 };
 
 /**
@@ -196,11 +198,21 @@ type DestroyInput = {
  * customer's own revocation step — deleting the CloudFormation stack, or the
  * Azure resource group — and the workflows say so when they finish.
  */
-export async function triggerTenantDestroy({ tenantId, triggeredByUserId }: DestroyInput) {
+export async function triggerTenantDestroy({ tenantId, triggeredByUserId, removeOnly }: DestroyInput) {
   const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
   if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
   if (tenant.deletedAt) {
     throw new Error(`Tenant ${tenant.id} has already been deleted.`);
+  }
+
+  if (removeOnly) {
+    if (tenant.cloudProvider !== "azure") throw new Error("Local removal is only available for Azure tenants.");
+    const failed = await db.select().from(deployments).where(and(
+      eq(deployments.tenantId, tenantId),
+      eq(deployments.kind, "destroy"),
+      eq(deployments.status, "failed"),
+    ));
+    if (!failed.length) throw new Error("Attempt cloud teardown before removing the tenant locally.");
   }
 
   // Claimed before any document is touched, so a teardown refused because a
@@ -212,6 +224,21 @@ export async function triggerTenantDestroy({ tenantId, triggeredByUserId }: Dest
     triggeredByUserId,
     status: "pending",
   });
+
+  if (removeOnly) {
+    // Hold the same deployment slot as normal teardown to exclude concurrent
+    // deploys. Preserve failed cleanup in the audit trail: no cloud success.
+    try {
+      await db.update(tenants).set(deletedTenantUpdate()).where(eq(tenants.id, tenantId));
+    } finally {
+      await db.update(deployments).set({
+        status: "failed",
+        finishedAt: new Date(),
+        errorMessage: "Platform-only removal requested. Cloud cleanup was not performed; remaining Azure and Pinecone resources require manual cleanup.",
+      }).where(eq(deployments.id, deployment.id));
+    }
+    return deployment;
+  }
 
   if (tenant.docsSignerUrl) {
     const docs = await db
@@ -348,6 +375,19 @@ export function retrievalMinScore(config: Record<string, unknown> | null): strin
   return String(value);
 }
 
+/**
+ * The tenant's name as the chat UI shows it.
+ *
+ * Unlike every other dispatch input this is free text, and the wizard holds it
+ * to nothing but a length. Both deploy workflows refuse an input containing a
+ * line break (it would add a line of its own to $GITHUB_OUTPUT), so a name
+ * with one would fail every deploy of that tenant. Collapsing whitespace here
+ * keeps the name and keeps it on one line.
+ */
+export function chatbotName(name: string | null | undefined): string {
+  return (name ?? "").replace(/\s+/g, " ").trim();
+}
+
 /** Whether AWS tenants are fronted by CloudFront. See enable_cdn below. */
 function cdnEnabled(): boolean {
   const configured = process.env.PLATFORM_ENABLE_CDN?.trim().toLowerCase();
@@ -369,6 +409,7 @@ function buildAwsInputs(
     // same way now — see src/lib/githubOidc.ts.
     tenant_id: tenant.id,
     tenant_slug: tenant.slug,
+    chatbot_name: chatbotName(tenant.name),
     aws_account_id: tenant.awsAccountId!,
     aws_region: tenant.awsRegion!,
     deployment_role_arn: tenant.deploymentRoleArn!,
@@ -431,6 +472,7 @@ function buildAzureInputs(
       llm_provider: tenant.llmProvider,
       llm_model: tenant.llmModel ?? "",
       chatbot_version: chatbotVersion,
+      chatbot_name: chatbotName(tenant.name),
       domain: tenant.domain ?? "",
       vector_store: tenant.vectorStore,
       retrieval_min_score: retrievalMinScore(tenant.config),

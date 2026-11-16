@@ -821,6 +821,14 @@ resource "azurerm_container_app" "this" {
       }
 
       dynamic "env" {
+        for_each = var.chatbot_name != "" ? [1] : []
+        content {
+          name  = "CHATBOT_NAME"
+          value = var.chatbot_name
+        }
+      }
+
+      dynamic "env" {
         for_each = local.use_pinecone ? [1] : []
         content {
           name        = "PINECONE_API_KEY"

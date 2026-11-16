@@ -6,6 +6,7 @@ import { deployments, tenants } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { deletedTenantUpdate } from "@/lib/tenantErasure";
 import { acceptDocsSignerUrl } from "@/lib/docsSigner";
+import { albDnsNameProblem, chatbotUrlProblem } from "@/lib/chatbotAddress";
 import { ACTIVE_STATUSES } from "@/lib/reconcile";
 
 const StatusUpdate = z.object({
@@ -52,6 +53,10 @@ function isActive(status: string): boolean {
  *   platform sends the tenant's docs-signer secret to that URL, so accepting
  *   any value would let whoever holds the webhook secret collect every
  *   tenant's docs-signer secret.
+ * - A chatbot address or load balancer name must be one Terraform could have
+ *   built for this tenant (see chatbotAddress.ts). The platform sends reindex
+ *   requests there, so accepting any value would let whoever holds the
+ *   webhook secret aim the control plane at hosts only it can reach.
  *
  * Both are checked before anything is written, and a refusal says why, which
  * the workflow prints in its run log.
@@ -92,6 +97,20 @@ export async function POST(
     const problem = acceptDocsSignerUrl(tenant, parsed.data.docsSignerUrl);
     if (problem) {
       return NextResponse.json({ error: `docsSignerUrl refused: ${problem}` }, { status: 400 });
+    }
+  }
+
+  // Only a success stores these (below), so only a success is held to them: a
+  // failure report is never refused over a field it will not write.
+  if (parsed.data.status === "succeeded") {
+    const refused = (
+      [
+        ["chatbotUrl", parsed.data.chatbotUrl && chatbotUrlProblem(tenant, parsed.data.chatbotUrl)],
+        ["albDnsName", parsed.data.albDnsName && albDnsNameProblem(tenant, parsed.data.albDnsName)],
+      ] as const
+    ).find(([, problem]) => problem);
+    if (refused) {
+      return NextResponse.json({ error: `${refused[0]} refused: ${refused[1]}` }, { status: 400 });
     }
   }
 

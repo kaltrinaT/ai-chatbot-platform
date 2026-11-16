@@ -9,14 +9,17 @@ export default function DeleteTenantButton({
   slug,
   disabled,
   disabledReason,
+  allowLocalRemoval = false,
 }: {
   tenantId: string;
   slug: string;
   disabled?: boolean;
   disabledReason?: string;
+  allowLocalRemoval?: boolean;
 }) {
   const [confirmText, setConfirmText] = useState("");
   const [open, setOpen] = useState(false);
+  const [removeOnly, setRemoveOnly] = useState(false);
   const matches = confirmText === slug;
 
   if (!open) {
@@ -42,10 +45,22 @@ export default function DeleteTenantButton({
       }}
     >
       <input type="hidden" name="tenantId" value={tenantId} />
+      <input type="hidden" name="removeOnly" value={String(removeOnly)} />
       <p className="text-red-800">
-        This permanently tears down the tenant&apos;s AWS infrastructure and cannot be
-        undone. Type <span className="font-mono font-semibold">{slug}</span> to confirm.
+        {removeOnly
+          ? "This removes the tenant from the platform and erases its stored application secrets. It does not delete cloud resources. You must manually clean up remaining Azure resources, bootstrap identities and any Pinecone index."
+          : "This permanently tears down the tenant's cloud infrastructure and cannot be undone."}
+        {" "}Type <span className="font-mono font-semibold">{slug}</span> to confirm.
       </p>
+      {allowLocalRemoval && (
+        <label className="mt-2 flex items-start gap-2 text-red-800">
+          <input type="checkbox" checked={removeOnly} onChange={(e) => {
+            setRemoveOnly(e.target.checked);
+            setConfirmText("");
+          }} />
+          Remove from platform only (cloud teardown failed)
+        </label>
+      )}
       <input
         value={confirmText}
         onChange={(e) => setConfirmText(e.target.value)}

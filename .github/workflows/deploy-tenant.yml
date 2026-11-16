@@ -16,6 +16,11 @@ on:
       tenant_slug:
         required: true
         type: string
+      chatbot_name:
+        required: false
+        type: string
+        default: ""
+        description: "The tenant's name, shown as the chat UI's title. Empty keeps the UI's default."
       aws_account_id:
         required: true
         type: string
@@ -95,6 +100,7 @@ on:
 env:
   IN_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
   IN_TENANT_SLUG: ${{ inputs.tenant_slug }}
+  IN_CHATBOT_NAME: ${{ inputs.chatbot_name }}
   IN_AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
   IN_AWS_REGION: ${{ inputs.aws_region }}
   IN_CHATBOT_VERSION: ${{ inputs.chatbot_version }}
@@ -422,6 +428,7 @@ jobs:
           set -o pipefail
           terraform apply -auto-approve \
             -var "tenant_slug=${IN_TENANT_SLUG}" \
+            -var "chatbot_name=${IN_CHATBOT_NAME}" \
             -var "aws_region=${IN_AWS_REGION}" \
             -var "image_uri=${IMAGE_URI}" \
             -var "frontend_image_uri=${FRONTEND_URI}" \

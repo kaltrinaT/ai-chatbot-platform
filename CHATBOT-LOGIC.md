@@ -217,6 +217,7 @@ either way.
 | `ANTHROPIC_API_KEY` | both | secret | LLM authentication (fallback) |
 | `VECTOR_STORE` | both | Terraform env | `pinecone` or `pgvector` — selects the retrieval backend |
 | `RETRIEVAL_MIN_SCORE` | both | Terraform env | Cosine-similarity floor a chunk must clear to be used as context. Only emitted when the tenant sets `retrieval_min_score` in its `config`; otherwise the container's own default (0.15) applies |
+| `CHATBOT_NAME` | both | Terraform env | The tenant's name, served at `GET /api/config` for the chat UI's title. Only emitted when the name is non-empty; without it the UI shows "RAG Assistant" |
 | `PINECONE_API_KEY` | both | secret | Pinecone authentication (customer's own key) |
 | `PINECONE_INDEX` | both | Terraform env | Pinecone index name (per-tenant: `chatbot-{slug}`) |
 | `PINECONE_ENVIRONMENT` | **Azure only** | Terraform env | Pinecone serverless region. The AWS task definition does not set it |

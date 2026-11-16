@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+const { lookup } = vi.hoisted(() => ({ lookup: vi.fn() }));
+vi.mock("node:dns/promises", () => ({ lookup }));
+
 import { triggerReindex, docsBucketName, controlPlaneUrl } from "./reindex";
 
 describe("controlPlaneUrl", () => {
@@ -43,9 +47,14 @@ describe("docsBucketName", () => {
   });
 });
 
+// What chatbotAddress.ts checks every stored address against.
+const identity = { cloudProvider: "aws" as const, awsRegion: "us-east-1", azureRegion: null, domain: null as string | null };
+const ALB_URL = "http://chatbot-acme-co-123.us-east-1.elb.amazonaws.com";
+
 const tenant = () => ({
+  ...identity,
   slug: "acme-co",
-  chatbotUrl: "http://chatbot.example.com",
+  chatbotUrl: ALB_URL,
   s3DocsBucket: "b",
   s3DocsPrefix: "",
 });
@@ -53,6 +62,8 @@ const tenant = () => ({
 describe("triggerReindex", () => {
   beforeEach(() => {
     global.fetch = vi.fn();
+    lookup.mockReset();
+    lookup.mockResolvedValue([{ address: "52.20.1.2", family: 4 }]);
     // The failure path logs the real error; keep it out of the test output.
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -61,6 +72,7 @@ describe("triggerReindex", () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
 
     await triggerReindex({
+      ...identity,
       slug: "acme-co",
       chatbotUrl: "https://d111111abcdef8.cloudfront.net",
       albDnsName: "chatbot-acme-co-123.us-east-1.elb.amazonaws.com",
@@ -76,8 +88,9 @@ describe("triggerReindex", () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
 
     await triggerReindex({
+      ...identity,
       slug: "acme-co",
-      chatbotUrl: "http://chatbot-acme-co.us-east-1.elb.amazonaws.com",
+      chatbotUrl: ALB_URL,
       s3DocsBucket: null,
       s3DocsPrefix: null,
     });
@@ -92,6 +105,7 @@ describe("triggerReindex", () => {
 
   it("returns ok:false without calling fetch when the tenant has no chatbotUrl", async () => {
     const result = await triggerReindex({
+      ...identity,
       slug: "acme-co",
       chatbotUrl: null,
       s3DocsBucket: "chatbot-acme-co-docs",
@@ -106,14 +120,15 @@ describe("triggerReindex", () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
 
     await triggerReindex({
+      ...identity,
       slug: "acme-co",
-      chatbotUrl: "http://chatbot-acme-co.us-east-1.elb.amazonaws.com",
+      chatbotUrl: ALB_URL,
       s3DocsBucket: "chatbot-acme-co-docs",
       s3DocsPrefix: "docs/",
     });
 
     const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe("http://chatbot-acme-co.us-east-1.elb.amazonaws.com/api/index");
+    expect(url).toBe(`${ALB_URL}/api/index`);
     expect(JSON.parse(init.body)).toEqual({
       tenant_id: "acme-co",
       bucket: "chatbot-acme-co-docs",
@@ -125,8 +140,9 @@ describe("triggerReindex", () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
 
     await triggerReindex({
+      ...identity,
       slug: "acme-co",
-      chatbotUrl: "http://chatbot.example.com",
+      chatbotUrl: ALB_URL,
       s3DocsBucket: "chatbot-acme-co-docs",
       s3DocsPrefix: null,
     });
@@ -138,14 +154,64 @@ describe("triggerReindex", () => {
   it("returns ok:true on a 2xx response", async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
 
-    const result = await triggerReindex({
-      slug: "acme-co",
-      chatbotUrl: "http://chatbot.example.com",
-      s3DocsBucket: "b",
-      s3DocsPrefix: "",
-    });
+    const result = await triggerReindex(tenant());
 
     expect(result).toEqual({ ok: true });
+  });
+
+  // The webhook used to store any address, and a reindex then POSTed there and
+  // showed the operator up to 300 characters of the reply.
+  describe("refuses an address that is not the tenant's own, without sending anything", () => {
+    it.each([
+      ["cloud metadata", "http://169.254.169.254"],
+      ["loopback", "http://127.0.0.1:3000"],
+      ["another tenant's load balancer", "http://chatbot-other-co-999.us-east-1.elb.amazonaws.com"],
+      ["an address with a path", `${ALB_URL}/admin`],
+    ])("%s", async (_, chatbotUrl) => {
+      const result = await triggerReindex({ ...tenant(), chatbotUrl });
+
+      expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Refusing to call /) });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("a CDN tenant whose recorded load balancer is someone else's", async () => {
+      const result = await triggerReindex({
+        ...tenant(),
+        chatbotUrl: "https://d111111abcdef8.cloudfront.net",
+        albDnsName: "internal.example.local",
+      });
+
+      expect(result).toEqual({ ok: false, error: expect.stringContaining("expected chatbot-acme-co-<n>") });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("a custom domain whose DNS names a private address", async () => {
+      lookup.mockResolvedValue([{ address: "10.0.0.7", family: 4 }]);
+
+      const result = await triggerReindex({ ...tenant(), domain: "chat.acme.com", chatbotUrl: "https://chat.acme.com" });
+
+      expect(result).toEqual({ ok: false, error: expect.stringContaining("resolves to a private") });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  it("calls a custom domain that resolves to public addresses", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+
+    const result = await triggerReindex({ ...tenant(), domain: "chat.acme.com", chatbotUrl: "https://chat.acme.com" });
+
+    expect(result).toEqual({ ok: true });
+    expect(lookup).toHaveBeenCalledWith("chat.acme.com", expect.anything());
+  });
+
+  it("does not follow a redirect to a host the checks have not seen", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, status: 302, text: async () => "" });
+
+    const result = await triggerReindex(tenant());
+
+    const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(init.redirect).toBe("manual");
+    expect(result).toEqual({ ok: false, error: "Reindex endpoint returned 302" });
   });
 
   it("returns the status code and the backend's own explanation", async () => {

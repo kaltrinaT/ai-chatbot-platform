@@ -25,9 +25,12 @@ const awsTenant = {
   slug: "acme",
   cloudProvider: "aws",
   awsRegion: "us-east-1",
+  azureRegion: null as string | null,
+  // The custom domain the tests' chatbotUrl names (see chatbotAddress.ts).
+  domain: "chat.acme.com",
   docsSignerUrl: null as string | null,
 };
-const azureTenant = { ...awsTenant, cloudProvider: "azure", awsRegion: null };
+const azureTenant = { ...awsTenant, cloudProvider: "azure", awsRegion: null, azureRegion: "francecentral" };
 const runningDeployment = { id: "dep-1", tenantId: "tenant-1", kind: "deploy", status: "running" };
 
 function lookupReturns(
@@ -289,13 +292,49 @@ describe("POST /api/deployments/[id]/status", () => {
 
     it("updates the tenant row when status is succeeded and albDnsName is provided", async () => {
       await callRoute({
-        body: { status: "succeeded", albDnsName: "alb-123.us-east-1.elb.amazonaws.com" },
+        body: { status: "succeeded", albDnsName: "chatbot-acme-123.us-east-1.elb.amazonaws.com" },
       });
 
       expect(db.update).toHaveBeenCalledTimes(2);
       expect(setArgsForUpdateCall(1)).toMatchObject({
-        albDnsName: "alb-123.us-east-1.elb.amazonaws.com",
+        albDnsName: "chatbot-acme-123.us-east-1.elb.amazonaws.com",
       });
+    });
+
+    it("stores an Azure tenant's own container app address", async () => {
+      lookupReturns(runningDeployment, azureTenant);
+      const fqdn = "chatbot-acme.delightfuldune-ba97a9fe.francecentral.azurecontainerapps.io";
+
+      const res = await callRoute({ body: { status: "succeeded", chatbotUrl: `https://${fqdn}`, albDnsName: fqdn } });
+
+      expect(res.status).toBe(200);
+      expect(setArgsForUpdateCall(1)).toMatchObject({ chatbotUrl: `https://${fqdn}`, albDnsName: fqdn });
+    });
+
+    // The platform later sends reindex requests to these, so whoever holds the
+    // shared webhook secret must not be able to choose where.
+    it.each([
+      ["chatbotUrl", "http://169.254.169.254"],
+      ["chatbotUrl", "http://127.0.0.1:3000"],
+      ["chatbotUrl", "http://chatbot-other-999.us-east-1.elb.amazonaws.com"],
+      ["albDnsName", "10.0.0.5"],
+      ["albDnsName", "chatbot-other-999.us-east-1.elb.amazonaws.com"],
+    ])("refuses a %s of %s and writes nothing", async (field, value) => {
+      const res = await callRoute({ body: { status: "succeeded", [field]: value } });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: expect.stringMatching(new RegExp(`^${field} refused: `)) });
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("still records a failure that carries a foreign address, without storing it", async () => {
+      const res = await callRoute({
+        body: { status: "failed", chatbotUrl: "http://169.254.169.254", errorMessage: "boom" },
+      });
+
+      expect(res.status).toBe(200);
+      expect(db.update).toHaveBeenCalledTimes(1);
+      expect(mockedDb.update.mock.calls[0][0]).toBe(deployments);
     });
 
     it("updates the tenant row when status is succeeded and docsSignerUrl is provided", async () => {

@@ -126,7 +126,7 @@ A single platform-wide ExternalId would not work. Every client's policy would ca
 Every `sts:AssumeRole` call and every subsequent API call made under those temporary credentials is recorded in the client's own AWS CloudTrail. The platform cannot suppress or alter these logs. Clients can verify platform activity by filtering CloudTrail for:
 
 - **Event name:** `AssumeRoleWithWebIdentity` (deploys, teardowns, checks) or `AssumeRole` (onboarding)
-- **Session name pattern:** `deploy-{slug}-*`, `destroy-{slug}-*`, `verify-{slug}-*`, or `tenant-onboarding-{slug}`
+- **Session name pattern:** `deploy-{slug}-*`, `destroy-{slug}-*`, `verify-{slug}-*`, or `tenant-onboarding-{slug}` and `tenant-onboarding-docs-{slug}` (the second writes the document signer's secret)
 - **`requestParameters.externalId`:** on onboarding calls, the tenant the call was made for
 
 A federated call additionally records the token's subject, so the client can confirm from their own logs that each deployment carried the environment belonging to the chatbot it claimed to be for.
@@ -557,15 +557,21 @@ SEC-E2E-04 runs these steps with hostile inputs, and mutation testing shows that
 
 **Now:** decryption requires a 16-byte tag (`authTagLength: 16`), a 12-byte IV and exactly three segments. Every stored ciphertext was written by `encryptSecret` with a full tag, so nothing stored is affected.
 
-### 18. The status webhook accepts any chatbot address
+### 18. ~~The status webhook accepts any chatbot address~~ — fixed
 
-`POST /api/deployments/{id}/status` records `chatbotUrl` and `albDnsName` from the run's callback. `chatbotUrl` must only parse as a URL, of any scheme, and `albDnsName` may be any string. Neither is checked against the tenant, unlike `docsSignerUrl`, which must be the tenant's own function ([`docsSigner.ts`](src/lib/docsSigner.ts)). The platform later sends each reindex request to `{chatbotUrl}/api/index`, or to `http://{albDnsName}` when the chatbot URL is a CloudFront one ([`reindex.ts`](src/lib/reindex.ts)), and an operator sees up to 300 characters of the reply.
+**Was:** `POST /api/deployments/{id}/status` recorded `chatbotUrl` and `albDnsName` from the run's callback. `chatbotUrl` only had to parse as a URL, of any scheme, and `albDnsName` could be any string. Neither was checked against the tenant, unlike `docsSignerUrl`, which must be the tenant's own function ([`docsSigner.ts`](src/lib/docsSigner.ts)). The platform later sends each reindex request to `{chatbotUrl}/api/index`, or to `http://{albDnsName}` when the chatbot URL is a CloudFront one ([`reindex.ts`](src/lib/reindex.ts)), and an operator sees up to 300 characters of the reply.
 
-Anyone holding `DEPLOY_WEBHOOK_SECRET` — a repository secret, so anyone who can change or add a workflow in the deploy repository — can therefore point a tenant at an address of their choosing. The platform would then send it requests from its own network position and show part of the answer: a server-side request forgery with partial read-back. The address is also shown on the tenant page as the chatbot's link; React refuses to render a `javascript:` URL there.
+Anyone holding `DEPLOY_WEBHOOK_SECRET` — a repository secret, so anyone who can change or add a workflow in the deploy repository — could therefore point a tenant at an address of their choosing. The platform would then send it requests from its own network position and show part of the answer: a server-side request forgery with partial read-back. An operator could reach the same path without the secret: a custom domain becomes the chatbot address, and the wizard checks only that it looks like a hostname, so a name that resolves to a loopback or private address was accepted.
 
 **Found by:** reading the webhook while extending its tests during the attack-matrix work.
 
-**Planned mitigation:** check both values against the hosts a tenant can legitimately have — its load balancer (`*.elb.amazonaws.com`), CloudFront distribution (`*.cloudfront.net`), Container App (`*.azurecontainerapps.io`) or its configured custom domain — and accept `https` only, except plain `http` for the load balancer of a tenant without a certificate.
+**Now** ([`chatbotAddress.ts`](src/lib/chatbotAddress.ts)):
+- **Only the tenant's own addresses are stored.** The webhook, and the reconcile path that recovers outputs from the run's artifact, accept an address only if Terraform could have built it for this tenant: on AWS its own load balancer in its own region (`chatbot-<slug>-<n>.<region>.elb.amazonaws.com`), a CloudFront distribution over `https`, or its custom domain; on Azure its own Container App in its own region over `https`, or its custom domain. A bare origin only: no credentials, port, path or query. A refused value fails the callback with `400`, or is dropped by reconcile.
+- **Checked again before every request**, so a value that reached the database another way is still never called.
+- **Resolved before every request.** A host that resolves to a private, loopback, link-local (cloud metadata), shared or reserved address is refused.
+- **Redirects are not followed**, so a reply cannot send the request on to a host none of these checks has seen.
+
+**What remains:** the request resolves the host again after the check. An operator who controls their custom domain's DNS could switch it between the two lookups. Load balancer, CloudFront and Container App names are not exposed to this, because their DNS belongs to the cloud provider.
 
 ---
 

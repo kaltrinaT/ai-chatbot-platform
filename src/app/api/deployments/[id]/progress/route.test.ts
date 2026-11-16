@@ -271,44 +271,20 @@ describe("GET /api/deployments/[id]/progress", () => {
       expect(dbUpdate).toHaveBeenCalledTimes(1);
     });
 
-    it("recovers chatbotUrl/albDnsName onto tenants when reconciling a deploy to succeeded", async () => {
-      dbOwnershipWhere.mockResolvedValue([
-        { deployment: deploymentRow({ kind: "deploy", status: "running", githubRunId: "123" }) },
-      ]);
-      fetchRunProgress.mockResolvedValue(runProgress({ runStatus: "completed", runConclusion: "success" }));
-      dbUpdateReturning.mockResolvedValue([
-        deploymentRow({ kind: "deploy", tenantId: "tenant-1", status: "succeeded" }),
-      ]);
-      dbReloadWhere.mockResolvedValue([deploymentRow({ kind: "deploy", status: "succeeded" })]);
-      fetchDeploymentOutputsArtifact.mockResolvedValue({
-        chatbotUrl: "https://chat.example.com",
-        albDnsName: "alb.example.com",
-      });
-
-      await callRoute();
-
-      // Two db.update() calls: the deployments row, then the tenants row.
-      expect(dbUpdate).toHaveBeenCalledTimes(2);
-      expect(dbUpdateSet).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({
-          chatbotUrl: "https://chat.example.com",
-          albDnsName: "alb.example.com",
-        }),
-      );
-    });
-
-    // The artifact comes from the same workflow as the webhook, so its
-    // docs-signer URL is held to the same check: the platform sends a secret
-    // to whatever ends up stored there.
-    describe("docsSignerUrl recovered from the artifact", () => {
+    // The artifact comes from the same workflow as the webhook, so its values
+    // are held to the same checks: the platform sends a secret to the
+    // docs-signer URL, and reindex requests to the chatbot address.
+    describe("outputs recovered from the artifact", () => {
       const tenantRow = {
         id: "tenant-1",
         slug: "acme",
         cloudProvider: "aws",
         awsRegion: "us-east-1",
+        azureRegion: null,
+        domain: null,
         docsSignerUrl: null,
       };
+      const ALB = "chatbot-acme-123.us-east-1.elb.amazonaws.com";
 
       function reconcilingADeploy() {
         dbOwnershipWhere.mockResolvedValue([
@@ -323,6 +299,36 @@ describe("GET /api/deployments/[id]/progress", () => {
           .mockResolvedValueOnce([tenantRow])
           .mockResolvedValueOnce([deploymentRow({ kind: "deploy", status: "succeeded" })]);
       }
+
+      it("recovers chatbotUrl/albDnsName onto tenants when reconciling a deploy to succeeded", async () => {
+        reconcilingADeploy();
+        fetchDeploymentOutputsArtifact.mockResolvedValue({ chatbotUrl: `http://${ALB}`, albDnsName: ALB });
+
+        await callRoute();
+
+        // Two db.update() calls: the deployments row, then the tenants row.
+        expect(dbUpdate).toHaveBeenCalledTimes(2);
+        expect(dbUpdateSet).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({ chatbotUrl: `http://${ALB}`, albDnsName: ALB }),
+        );
+      });
+
+      it("drops a chatbot address that is not the tenant's own", async () => {
+        reconcilingADeploy();
+        fetchDeploymentOutputsArtifact.mockResolvedValue({
+          chatbotUrl: "http://169.254.169.254",
+          albDnsName: "10.0.0.5",
+          docsSignerUrl: "https://abc123.lambda-url.us-east-1.on.aws/",
+        });
+
+        await callRoute();
+
+        const tenantUpdate = dbUpdateSet.mock.calls[1][0];
+        expect(tenantUpdate).toMatchObject({ docsSignerUrl: "https://abc123.lambda-url.us-east-1.on.aws/" });
+        expect(tenantUpdate).not.toHaveProperty("chatbotUrl");
+        expect(tenantUpdate).not.toHaveProperty("albDnsName");
+      });
 
       it("stores the tenant's own signer", async () => {
         reconcilingADeploy();
@@ -341,14 +347,14 @@ describe("GET /api/deployments/[id]/progress", () => {
       it("drops a foreign one but still recovers the rest", async () => {
         reconcilingADeploy();
         fetchDeploymentOutputsArtifact.mockResolvedValue({
-          chatbotUrl: "https://chat.example.com",
+          chatbotUrl: `http://${ALB}`,
           docsSignerUrl: "https://attacker.example/collect",
         });
 
         await callRoute();
 
         const tenantUpdate = dbUpdateSet.mock.calls[1][0];
-        expect(tenantUpdate).toMatchObject({ chatbotUrl: "https://chat.example.com" });
+        expect(tenantUpdate).toMatchObject({ chatbotUrl: `http://${ALB}` });
         expect(tenantUpdate).not.toHaveProperty("docsSignerUrl");
       });
     });

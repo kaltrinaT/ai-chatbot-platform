@@ -416,6 +416,7 @@ export default async function TenantDetailPage({
                 <RedeployButton tenantId={tenant.id} disabled={isDeploying} />
                 <DeleteTenantButton
                   tenantId={tenant.id}
+                  allowLocalRemoval={tenant.cloudProvider === "azure" && tenantDeploys.some((d) => d.kind === "destroy" && d.status === "failed")}
                   slug={tenant.slug}
                   disabled={isDeploying}
                   disabledReason={isDeploying ? "A deployment is already in progress" : undefined}

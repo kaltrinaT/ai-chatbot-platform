@@ -79,6 +79,7 @@ import {
   triggerDeployment,
   triggerTenantDestroy,
   retrievalMinScore,
+  chatbotName,
 } from "./deploy";
 
 // db is the mock above; this view of it exposes the vi.fn() properties.
@@ -97,6 +98,7 @@ function declaredInputs(workflowFile: string): string[] {
 
 const baseAwsTenant = {
   id: "tenant-1",
+  name: "Acme Helpdesk",
   slug: "acme-co",
   cloudProvider: "aws" as const,
   llmProvider: "openai",
@@ -115,6 +117,7 @@ const baseAwsTenant = {
 
 const baseAzureTenant = {
   id: "tenant-2",
+  name: "Beta Assistant",
   slug: "beta-co",
   cloudProvider: "azure" as const,
   llmProvider: "anthropic",
@@ -233,6 +236,7 @@ describe("triggerDeployment", () => {
         inputs: expect.objectContaining({
           deployment_id: "deploy-1",
           tenant_slug: "acme-co",
+          chatbot_name: "Acme Helpdesk",
           aws_account_id: "111111111111",
           your_ecr_image: "111111111111.dkr.ecr.us-east-1.amazonaws.com/chatbot:v1.2.3",
           your_frontend_ecr_image: "111111111111.dkr.ecr.us-east-1.amazonaws.com/frontend:v1.2.3",
@@ -367,6 +371,7 @@ describe("triggerDeployment", () => {
       azure_region: "eastus",
       vector_store: "pgvector",
       chatbot_version: "v2",
+      chatbot_name: "Beta Assistant",
     });
     expect(config).not.toHaveProperty("your_ecr_image");
     expect(config).not.toHaveProperty("your_frontend_ecr_image");
@@ -493,6 +498,45 @@ describe("triggerTenantDestroy", () => {
     dbUpdateWhere.mockResolvedValue(undefined);
     dbDeleteWhere.mockResolvedValue(undefined);
     createWorkflowDispatch.mockResolvedValue({});
+  });
+
+  it("removes an Azure tenant locally after failed teardown without contacting cloud services", async () => {
+    dbSelectWhere.mockResolvedValueOnce([{ ...destroyTenant, cloudProvider: "azure" }])
+      .mockResolvedValueOnce([{ id: "failed-destroy" }]);
+    await triggerTenantDestroy({ tenantId: "tenant-1", triggeredByUserId: "u1", removeOnly: true });
+    expect(createWorkflowDispatch).not.toHaveBeenCalled();
+    expect(deleteViaSigner).not.toHaveBeenCalled();
+    expect(db.update).toHaveBeenCalled();
+    expect(dbUpdateWhere).toHaveBeenCalledTimes(2);
+    const updates = vi.mocked(db.update).mock.results;
+    expect(updates[0].value.set).toHaveBeenCalledWith(expect.objectContaining({
+      deletedAt: expect.any(Date),
+      llmApiKeyEncrypted: null,
+      pineconeApiKeyEncrypted: null,
+      docsSignerSecretEncrypted: null,
+    }));
+    expect(updates[1].value.set).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed",
+      errorMessage: expect.stringContaining("Cloud cleanup was not performed"),
+    }));
+  });
+
+  it("refuses local removal without a failed cloud teardown", async () => {
+    dbSelectWhere.mockResolvedValueOnce([{ ...destroyTenant, cloudProvider: "azure" }])
+      .mockResolvedValueOnce([]);
+    await expect(triggerTenantDestroy({ tenantId: "tenant-1", triggeredByUserId: "u1", removeOnly: true }))
+      .rejects.toThrow("Attempt cloud teardown");
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(createWorkflowDispatch).not.toHaveBeenCalled();
+  });
+
+  it("refuses local removal while another deployment holds the tenant slot", async () => {
+    dbSelectWhere.mockResolvedValueOnce([{ ...destroyTenant, cloudProvider: "azure" }])
+      .mockResolvedValueOnce([{ id: "failed-destroy" }]);
+    dbInsertReturning.mockRejectedValueOnce({ code: "23505", constraint: "deployments_one_active_per_tenant" });
+    await expect(triggerTenantDestroy({ tenantId: "tenant-1", triggeredByUserId: "u1", removeOnly: true }))
+      .rejects.toThrow(DeploymentInProgressError);
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   // Teardown used to refuse anything but AWS, which left an Azure tenant
@@ -670,5 +714,22 @@ describe("retrievalMinScore", () => {
     expect(retrievalMinScore({ retrieval_min_score: -0.2 })).toBe("");
     expect(retrievalMinScore({ retrieval_min_score: "not a number" })).toBe("");
     warn.mockRestore();
+  });
+});
+
+describe("chatbotName", () => {
+  it("passes an ordinary name through unchanged", () => {
+    expect(chatbotName("Acme Helpdesk")).toBe("Acme Helpdesk");
+  });
+
+  // Both deploy workflows refuse an input with a line break, so one left in
+  // the name would fail every deploy of that tenant.
+  it("collapses line breaks and runs of whitespace into single spaces", () => {
+    expect(chatbotName("  Acme\r\nHR\tHelpdesk \n")).toBe("Acme HR Helpdesk");
+  });
+
+  it("returns an empty string for a missing name, which leaves the UI's default", () => {
+    expect(chatbotName(null)).toBe("");
+    expect(chatbotName(undefined)).toBe("");
   });
 });

@@ -23,7 +23,7 @@ on:
         description: "Tenant identifier (3-18 chars, lowercase, hyphens ok — e.g. acme-corp)"
         required: true
       config:
-        description: 'JSON: {"azure_subscription_id","azure_tenant_id","azure_client_id","azure_region","llm_provider","llm_model","chatbot_version","domain","vector_store"}'
+        description: 'JSON: {"azure_subscription_id","azure_tenant_id","azure_client_id","azure_region","llm_provider","llm_model","chatbot_version","chatbot_name","domain","vector_store"}'
         required: true
       # No secret is an input. GitHub records dispatch inputs in the run's
       # event payload, readable by anyone with access to this repository, so
@@ -200,6 +200,7 @@ jobs:
             echo "llm_provider=$(echo "$CONFIG_JSON" | jq -r '.llm_provider')"
             echo "llm_model=$(echo "$CONFIG_JSON" | jq -r '.llm_model // ""')"
             echo "chatbot_version=$(echo "$CONFIG_JSON" | jq -r '.chatbot_version // "latest"')"
+            echo "chatbot_name=$(echo "$CONFIG_JSON" | jq -r '.chatbot_name // ""')"
             echo "domain=$(echo "$CONFIG_JSON" | jq -r '.domain // ""')"
             echo "vector_store=$(echo "$CONFIG_JSON" | jq -r '.vector_store // "pinecone"')"
             echo "retrieval_min_score=$(echo "$CONFIG_JSON" | jq -r '.retrieval_min_score // ""')"
@@ -411,6 +412,7 @@ jobs:
           CFG_DOMAIN: ${{ steps.cfg.outputs.domain }}
           CFG_VECTOR_STORE: ${{ steps.cfg.outputs.vector_store }}
           CFG_RETRIEVAL_MIN_SCORE: ${{ steps.cfg.outputs.retrieval_min_score }}
+          CFG_CHATBOT_NAME: ${{ steps.cfg.outputs.chatbot_name }}
           IMAGE_URI: ${{ steps.pinned.outputs.image_uri }}
           FRONTEND_URI: ${{ steps.pinned.outputs.frontend_uri }}
           EXTRA_CORS_ORIGIN: ${{ vars.EXTRA_CORS_ORIGIN }}
@@ -429,6 +431,7 @@ jobs:
             -var="domain=${CFG_DOMAIN}" \
             -var="vector_store=${CFG_VECTOR_STORE}" \
             -var="retrieval_min_score=${CFG_RETRIEVAL_MIN_SCORE}" \
+            -var="chatbot_name=${CFG_CHATBOT_NAME}" \
             -var="image_uri=${IMAGE_URI}" \
             -var="frontend_image_uri=${FRONTEND_URI}" \
             -var="platform_origin=${{ secrets.PLATFORM_BASE_URL }}" \

@@ -1,4 +1,5 @@
 import type { tenants } from "@/db/schema";
+import { albDnsNameProblem, chatbotUrlProblem, publicAddressProblem, type AddressTenant } from "@/lib/chatbotAddress";
 
 type Tenant = typeof tenants.$inferSelect;
 
@@ -62,6 +63,7 @@ export function controlPlaneUrl(
  */
 export async function triggerReindex(
   tenant: Pick<Tenant, "slug" | "chatbotUrl" | "s3DocsBucket" | "s3DocsPrefix"> &
+    AddressTenant &
     Partial<Pick<Tenant, "albDnsName">>,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!tenant.chatbotUrl) {
@@ -69,6 +71,18 @@ export async function triggerReindex(
   }
 
   const baseUrl = controlPlaneUrl(tenant)!;
+
+  // Checked again at the moment of use, as callDocsSigner does: a value that
+  // reached the database before the webhook checked it, or by hand, is still
+  // never called, and a custom domain is resolved first (see chatbotAddress.ts).
+  const viaLoadBalancer = baseUrl !== tenant.chatbotUrl;
+  const problem =
+    chatbotUrlProblem(tenant, tenant.chatbotUrl) ??
+    (viaLoadBalancer ? albDnsNameProblem(tenant, tenant.albDnsName ?? "") : null) ??
+    (await publicAddressProblem(new URL(baseUrl).hostname));
+  if (problem) {
+    return { ok: false, error: `Refusing to call ${baseUrl}: ${problem}` };
+  }
 
   try {
     const res = await fetch(`${baseUrl}/api/index`, {
@@ -79,6 +93,9 @@ export async function triggerReindex(
         bucket: docsBucketName(tenant),
         prefix: tenant.s3DocsPrefix ?? "",
       }),
+      // A redirect would carry the request, and the reply shown below, to a
+      // host none of the checks above has seen.
+      redirect: "manual",
       signal: AbortSignal.timeout(REINDEX_TIMEOUT_MS),
     });
     if (!res.ok) {
